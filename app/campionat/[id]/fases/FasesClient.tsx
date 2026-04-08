@@ -1,0 +1,496 @@
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import Button from '@/components/ui/Button';
+import Input from '@/components/ui/Input';
+import Select from '@/components/ui/Select';
+import Badge from '@/components/ui/Badge';
+import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
+import EmptyState from '@/components/ui/EmptyState';
+import type { PhaseConfig, Tiebreaker } from '@/lib/pairing/types';
+
+interface Grup { id: string; name: string }
+interface Fase {
+  id: string;
+  order: number;
+  name: string;
+  method: string;
+  startRound: number;
+  endRound: number;
+  tiebreakers: Tiebreaker[];
+  config: PhaseConfig;
+  isComplete: boolean;
+}
+
+const METODES = [
+  { value: 'swiss',            label: 'Sistema suís' },
+  { value: 'round_robin',      label: 'Round Robin' },
+  { value: 'king_of_the_hill', label: 'Rei del turó' },
+  { value: 'manual',           label: 'Manual / CSV' },
+];
+
+const DESEMPATS: { value: Tiebreaker; label: string }[] = [
+  { value: 'median_buchholz', label: 'Median Buchholz' },
+  { value: 'buchholz',        label: 'Buchholz' },
+  { value: 'berger',          label: 'Berger (Sonneborn-Berger)' },
+  { value: 'spread',          label: 'Diferència de puntuació' },
+  { value: 'wins',            label: 'Nombre de victòries' },
+  { value: 'cumulative',      label: 'Punts acumulats' },
+  { value: 'direct_encounter', label: 'Encontre directe' },
+];
+
+const METHOD_BADGES: Record<string, { label: string; color: 'blue' | 'green' | 'purple' | 'gray' }> = {
+  swiss:            { label: 'Suís',        color: 'blue' },
+  round_robin:      { label: 'Round Robin', color: 'green' },
+  king_of_the_hill: { label: 'Rei del turó', color: 'purple' },
+  manual:           { label: 'Manual',      color: 'gray' },
+};
+
+export default function FasesClient({
+  tournamentId,
+  fases,
+  grups,
+}: {
+  tournamentId: string;
+  fases: Fase[];
+  grups: Grup[];
+}) {
+  const router = useRouter();
+  const [mostrarForm, setMostrarForm] = useState(false);
+
+  return (
+    <div className="space-y-5">
+      <div className="flex items-center gap-3">
+        <p className="text-sm text-gray-500 flex-1">
+          Defineix les fases del campionat. Cada fase cobreix un rang de rondes amb el seu sistema d&apos;aparellament.
+        </p>
+        {!mostrarForm && (
+          <Button size="sm" onClick={() => setMostrarForm(true)}>+ Nova fase</Button>
+        )}
+      </div>
+
+      {mostrarForm && (
+        <Card>
+          <CardHeader><CardTitle>Nova fase</CardTitle></CardHeader>
+          <NovaFaseForm
+            tournamentId={tournamentId}
+            fases={fases}
+            grups={grups}
+            onDone={() => { setMostrarForm(false); router.refresh(); }}
+            onCancel={() => setMostrarForm(false)}
+          />
+        </Card>
+      )}
+
+      {fases.length === 0 && !mostrarForm ? (
+        <EmptyState
+          title="Sense fases"
+          description="Afegeix fases per definir com es generaran els aparellaments. Exemple: rondes 1–20 Round Robin per grups, rondes 21–28 Sistema Suís."
+          action={<Button onClick={() => setMostrarForm(true)}>+ Nova fase</Button>}
+        />
+      ) : (
+        <div className="space-y-3">
+          {fases.map((fase) => (
+            <FaseCard key={fase.id} fase={fase} grups={grups} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Targeta de fase ──────────────────────────────────────────────────────────
+
+function FaseCard({ fase, grups }: { fase: Fase; grups: Grup[] }) {
+  const badge = METHOD_BADGES[fase.method] ?? { label: fase.method, color: 'gray' as const };
+  const grupMap = new Map(grups.map(g => [g.id, g.name]));
+
+  const configInfo = describeConfig(fase.config, grupMap);
+
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-start gap-4">
+      <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center font-bold text-gray-600">
+        {fase.order}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <h3 className="font-semibold text-gray-900">{fase.name}</h3>
+          <Badge color={badge.color}>{badge.label}</Badge>
+          {fase.isComplete && <Badge color="gray">Completada</Badge>}
+        </div>
+        <p className="text-sm text-gray-500 mt-1">
+          Rondes {fase.startRound} – {fase.endRound}
+          {' · '}
+          {fase.endRound - fase.startRound + 1} ronda{fase.endRound - fase.startRound + 1 !== 1 ? 'es' : ''}
+        </p>
+        {configInfo && <p className="text-xs text-gray-400 mt-1">{configInfo}</p>}
+        {fase.tiebreakers.length > 0 && (
+          <p className="text-xs text-gray-400 mt-1">
+            Desempats: {fase.tiebreakers.map(t =>
+              DESEMPATS.find(d => d.value === t)?.label ?? t
+            ).join(' → ')}
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function describeConfig(config: PhaseConfig, grupMap: Map<string, string>): string {
+  if (config.method === 'round_robin') {
+    const scope = config.scope === 'intra_group' ? 'intra-grupal'
+      : config.scope === 'inter_group' ? 'inter-grupal' : 'global';
+    const doble = config.doubleRound ? ' (doble volta)' : '';
+    return `Round Robin ${scope}${doble}`;
+  }
+  if (config.method === 'swiss') {
+    const carry = config.carryStandingsFromPhaseIds.length > 0
+      ? `Hereta classificació de fases anteriors`
+      : 'Classificació independent';
+    return carry;
+  }
+  if (config.method === 'king_of_the_hill') {
+    const top = config.topN ? `Top ${config.topN}` : 'Tots';
+    return `${top} · ${config.carryStandingsFromPhaseIds.length > 0 ? 'Hereta classificació' : 'Classificació independent'}`;
+  }
+  return '';
+}
+
+// ─── Formulari nova fase ──────────────────────────────────────────────────────
+
+function NovaFaseForm({
+  tournamentId,
+  fases,
+  grups,
+  onDone,
+  onCancel,
+}: {
+  tournamentId: string;
+  fases: Fase[];
+  grups: Grup[];
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const [nom, setNom] = useState('');
+  const [metode, setMetode] = useState<string>('swiss');
+  const [startRound, setStartRound] = useState('');
+  const [endRound, setEndRound] = useState('');
+  const [desempats, setDesempats] = useState<Tiebreaker[]>(['median_buchholz', 'buchholz', 'spread']);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  // Configuració específica per mètode
+  const [rrScope, setRrScope] = useState<'intra_group' | 'inter_group' | 'all'>('intra_group');
+  const [rrDoble, setRrDoble] = useState(false);
+  const [swissAvoidRematches, setSwissAvoidRematches] = useState(true);
+  const [swissCarry, setSwissCarry] = useState<string[]>([]);
+  const [kothTopN, setKothTopN] = useState('');
+  const [kothCarry, setKothCarry] = useState<string[]>([]);
+
+  // Calcula el punt de partida recomanat
+  const nextStart = fases.length > 0
+    ? Math.max(...fases.map(f => f.endRound)) + 1
+    : 1;
+
+  function buildConfig(): PhaseConfig {
+    if (metode === 'swiss') {
+      return {
+        method: 'swiss',
+        avoidRematches: swissAvoidRematches,
+        byeHandling: 'lowest_ranked',
+        scoreGroupWindowSize: 2,
+        carryStandingsFromPhaseIds: swissCarry,
+      };
+    }
+    if (metode === 'round_robin') {
+      return {
+        method: 'round_robin',
+        scope: rrScope,
+        doubleRound: rrDoble,
+      };
+    }
+    if (metode === 'king_of_the_hill') {
+      return {
+        method: 'king_of_the_hill',
+        topN: kothTopN ? parseInt(kothTopN) : null,
+        carryStandingsFromPhaseIds: kothCarry,
+      };
+    }
+    return { method: 'manual', allowCsvImport: true };
+  }
+
+  function toggleDesempat(d: Tiebreaker) {
+    setDesempats(prev =>
+      prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]
+    );
+  }
+
+  function moveDesempat(d: Tiebreaker, dir: -1 | 1) {
+    setDesempats(prev => {
+      const i = prev.indexOf(d);
+      if (i < 0) return prev;
+      const next = [...prev];
+      const j = i + dir;
+      if (j < 0 || j >= next.length) return prev;
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    if (!nom.trim() || !startRound || !endRound) {
+      setError('Cal nom, ronda inicial i ronda final');
+      return;
+    }
+    setLoading(true);
+
+    const res = await fetch(`/api/tournaments/${tournamentId}/phases`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: nom.trim(),
+        method: metode,
+        startRound: parseInt(startRound),
+        endRound: parseInt(endRound),
+        tiebreakers: desempats,
+        config: buildConfig(),
+      }),
+    });
+
+    if (res.ok) {
+      onDone();
+    } else {
+      const d = await res.json();
+      setError(d.error ?? 'Error en crear la fase');
+      setLoading(false);
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-5">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="sm:col-span-1">
+          <Input
+            label="Nom de la fase"
+            value={nom}
+            onChange={e => setNom(e.target.value)}
+            placeholder="ex. Fase de grups"
+            required
+          />
+        </div>
+        <Select label="Mètode" value={metode} onChange={e => setMetode(e.target.value)}>
+          {METODES.map(m => <option key={m.value} value={m.value}>{m.label}</option>)}
+        </Select>
+        <div className="grid grid-cols-2 gap-2">
+          <Input
+            label="Ronda inicial"
+            type="number"
+            min={1}
+            value={startRound}
+            onChange={e => setStartRound(e.target.value)}
+            placeholder={nextStart.toString()}
+          />
+          <Input
+            label="Ronda final"
+            type="number"
+            min={startRound || 1}
+            value={endRound}
+            onChange={e => setEndRound(e.target.value)}
+          />
+        </div>
+      </div>
+
+      {/* Configuració específica del mètode */}
+      {metode === 'swiss' && (
+        <ConfigSwiss
+          avoidRematches={swissAvoidRematches}
+          setAvoidRematches={setSwissAvoidRematches}
+          carry={swissCarry}
+          setCarry={setSwissCarry}
+          fases={fases}
+        />
+      )}
+      {metode === 'round_robin' && (
+        <ConfigRoundRobin
+          scope={rrScope}
+          setScope={setRrScope}
+          doble={rrDoble}
+          setDoble={setRrDoble}
+          grups={grups}
+        />
+      )}
+      {metode === 'king_of_the_hill' && (
+        <ConfigKotH
+          topN={kothTopN}
+          setTopN={setKothTopN}
+          carry={kothCarry}
+          setCarry={setKothCarry}
+          fases={fases}
+        />
+      )}
+
+      {/* Desempats */}
+      {metode !== 'manual' && (
+        <div>
+          <p className="text-sm font-medium text-gray-700 mb-2">
+            Ordre de desempats
+            <span className="font-normal text-gray-400 ml-2">Selecciona i ordena</span>
+          </p>
+          <div className="space-y-1">
+            {DESEMPATS.map(d => {
+              const idx = desempats.indexOf(d.value);
+              const actiu = idx >= 0;
+              return (
+                <div key={d.value} className={`flex items-center gap-2 rounded-lg px-3 py-2 ${actiu ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50 border border-transparent'}`}>
+                  <input
+                    type="checkbox"
+                    checked={actiu}
+                    onChange={() => toggleDesempat(d.value)}
+                    className="accent-blue-600"
+                  />
+                  <span className={`text-sm flex-1 ${actiu ? 'text-blue-800 font-medium' : 'text-gray-500'}`}>
+                    {actiu ? `${idx + 1}. ` : ''}{d.label}
+                  </span>
+                  {actiu && (
+                    <div className="flex gap-0.5">
+                      <button type="button" onClick={() => moveDesempat(d.value, -1)}
+                        className="p-0.5 text-blue-500 hover:text-blue-700 disabled:opacity-30" disabled={idx === 0}>▲</button>
+                      <button type="button" onClick={() => moveDesempat(d.value, 1)}
+                        className="p-0.5 text-blue-500 hover:text-blue-700 disabled:opacity-30" disabled={idx === desempats.length - 1}>▼</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {error && <p className="text-sm text-red-600">{error}</p>}
+
+      <div className="flex gap-2">
+        <Button type="submit" loading={loading}>Crear fase</Button>
+        <Button type="button" variant="ghost" onClick={onCancel}>Cancel·lar</Button>
+      </div>
+    </form>
+  );
+}
+
+// ─── Sub-configuracions per mètode ───────────────────────────────────────────
+
+function ConfigSwiss({
+  avoidRematches, setAvoidRematches, carry, setCarry, fases,
+}: {
+  avoidRematches: boolean;
+  setAvoidRematches: (v: boolean) => void;
+  carry: string[];
+  setCarry: (v: string[]) => void;
+  fases: Fase[];
+}) {
+  return (
+    <div className="bg-blue-50 rounded-lg p-4 space-y-3">
+      <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Configuració Suís</p>
+      <label className="flex items-center gap-2 text-sm text-gray-700">
+        <input type="checkbox" checked={avoidRematches} onChange={e => setAvoidRematches(e.target.checked)} className="accent-blue-600" />
+        Evitar revanxes
+      </label>
+      {fases.length > 0 && (
+        <div>
+          <p className="text-sm font-medium text-gray-700 mb-1">Heretar classificació de:</p>
+          {fases.map(f => (
+            <label key={f.id} className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={carry.includes(f.id)}
+                onChange={e => setCarry(e.target.checked ? [...carry, f.id] : carry.filter(x => x !== f.id))}
+                className="accent-blue-600"
+              />
+              Fase {f.order}: {f.name} (rondes {f.startRound}–{f.endRound})
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ConfigRoundRobin({
+  scope, setScope, doble, setDoble, grups,
+}: {
+  scope: 'intra_group' | 'inter_group' | 'all';
+  setScope: (v: 'intra_group' | 'inter_group' | 'all') => void;
+  doble: boolean;
+  setDoble: (v: boolean) => void;
+  grups: Grup[];
+}) {
+  return (
+    <div className="bg-green-50 rounded-lg p-4 space-y-3">
+      <p className="text-xs font-semibold text-green-700 uppercase tracking-wide">Configuració Round Robin</p>
+      <Select
+        label="Àmbit"
+        value={scope}
+        onChange={e => setScope(e.target.value as typeof scope)}
+      >
+        <option value="all">Tots els jugadors (sense grups)</option>
+        <option value="intra_group" disabled={grups.length === 0}>
+          Intra-grupal (round robin dins de cada grup)
+        </option>
+        <option value="inter_group" disabled={grups.length < 2}>
+          Inter-grupal (jugadors d&apos;un grup contra els d&apos;un altre)
+        </option>
+      </Select>
+      {grups.length === 0 && scope !== 'all' && (
+        <p className="text-xs text-amber-700 bg-amber-50 rounded p-2">
+          Cal crear grups primer per usar els modes intra/inter-grupal.
+        </p>
+      )}
+      <label className="flex items-center gap-2 text-sm text-gray-700">
+        <input type="checkbox" checked={doble} onChange={e => setDoble(e.target.checked)} className="accent-green-600" />
+        Doble volta (cada parella juga dos cops)
+      </label>
+    </div>
+  );
+}
+
+function ConfigKotH({
+  topN, setTopN, carry, setCarry, fases,
+}: {
+  topN: string;
+  setTopN: (v: string) => void;
+  carry: string[];
+  setCarry: (v: string[]) => void;
+  fases: Fase[];
+}) {
+  return (
+    <div className="bg-purple-50 rounded-lg p-4 space-y-3">
+      <p className="text-xs font-semibold text-purple-700 uppercase tracking-wide">Configuració Rei del turó</p>
+      <Input
+        label="Limitar als N millors (deixar buit per a tots)"
+        type="number"
+        min={2}
+        value={topN}
+        onChange={e => setTopN(e.target.value)}
+        placeholder="ex. 8"
+      />
+      {fases.length > 0 && (
+        <div>
+          <p className="text-sm font-medium text-gray-700 mb-1">Heretar classificació de:</p>
+          {fases.map(f => (
+            <label key={f.id} className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={carry.includes(f.id)}
+                onChange={e => setCarry(e.target.checked ? [...carry, f.id] : carry.filter(x => x !== f.id))}
+                className="accent-purple-600"
+              />
+              Fase {f.order}: {f.name}
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
