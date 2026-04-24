@@ -1,4 +1,4 @@
-import { sqliteTable, text, integer, index, uniqueIndex } from 'drizzle-orm/sqlite-core';
+import { sqliteTable, text, integer, index, uniqueIndex, primaryKey } from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 import type { PhaseConfig, Tiebreaker, GameOutcome } from '@/lib/pairing/types';
 
@@ -107,6 +107,16 @@ export const pairings = sqliteTable('pairings', {
   index('pairings_player2_idx').on(t.player2Id),
 ]);
 
+// ─── Absències per ronda ──────────────────────────────────────────────────────
+
+export const roundAbsences = sqliteTable('round_absences', {
+  roundId:  text('round_id').notNull().references(() => rounds.id, { onDelete: 'cascade' }),
+  playerId: text('player_id').notNull().references(() => players.id, { onDelete: 'cascade' }),
+}, (t) => [
+  primaryKey({ columns: [t.roundId, t.playerId] }),
+  index('round_absences_round_idx').on(t.roundId),
+]);
+
 // ─── Tipus exportats per a ús a l'aplicació ───────────────────────────────────
 
 export type Tournament = typeof tournaments.$inferSelect;
@@ -121,3 +131,4 @@ export type Round = typeof rounds.$inferSelect;
 export type NewRound = typeof rounds.$inferInsert;
 export type Pairing = typeof pairings.$inferSelect;
 export type NewPairing = typeof pairings.$inferInsert;
+export type RoundAbsence = typeof roundAbsences.$inferSelect;

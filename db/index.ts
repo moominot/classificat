@@ -95,6 +95,12 @@ sqlite.exec(`
     board_image_url TEXT
   );
 
+  CREATE TABLE IF NOT EXISTS round_absences (
+    round_id TEXT NOT NULL REFERENCES rounds(id) ON DELETE CASCADE,
+    player_id TEXT NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+    PRIMARY KEY (round_id, player_id)
+  );
+
   CREATE INDEX IF NOT EXISTS groups_tournament_idx ON groups(tournament_id);
   CREATE INDEX IF NOT EXISTS players_tournament_idx ON players(tournament_id);
   CREATE INDEX IF NOT EXISTS players_group_idx ON players(group_id);
@@ -103,6 +109,7 @@ sqlite.exec(`
   CREATE INDEX IF NOT EXISTS pairings_round_idx ON pairings(round_id);
   CREATE INDEX IF NOT EXISTS pairings_player1_idx ON pairings(player1_id);
   CREATE INDEX IF NOT EXISTS pairings_player2_idx ON pairings(player2_id);
+  CREATE INDEX IF NOT EXISTS round_absences_round_idx ON round_absences(round_id);
 `);
 
 export const db = drizzle(sqlite, { schema });

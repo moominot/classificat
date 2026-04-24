@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import Button from '@/components/ui/Button';
 import Badge from '@/components/ui/Badge';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
@@ -195,7 +196,12 @@ function JugadorsLlista({
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
-                  <span className="font-medium text-sm text-gray-900 truncate">{j.name}</span>
+                  <Link
+                    href={`/campionat/${tournamentId}/jugadors/${j.id}`}
+                    className="font-medium text-sm text-gray-900 hover:text-blue-600 transition-colors truncate"
+                  >
+                    {j.name}
+                  </Link>
                   {!j.isActive && <Badge color="gray">Inactiu</Badge>}
                 </div>
                 <div className="flex gap-3 text-xs text-gray-400 mt-0.5">
