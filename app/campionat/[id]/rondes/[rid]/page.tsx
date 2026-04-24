@@ -1,11 +1,13 @@
 import { db } from '@/db';
-import { rounds, pairings, players, phases } from '@/db/schema';
+import { rounds, pairings, players, phases, roundAbsences } from '@/db/schema';
 import { eq, and } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import Badge from '@/components/ui/Badge';
 import GenerarAparellaments from './GenerarAparellaments';
 import ResultatAparellament from './ResultatAparellament';
+import CsvImportExport from './CsvImportExport';
+import AccionsRonda from './AccionsRonda';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,6 +33,21 @@ export default async function RondaPage({
 
   // Enriqueix amb noms de jugadors
   const tots_jugadors = await db.select().from(players).where(eq(players.tournamentId, id));
+
+  // Absències de la ronda actual i de l'anterior (per pre-omplir)
+  const absencies_actuals = await db
+    .select()
+    .from(roundAbsences)
+    .where(eq(roundAbsences.roundId, rid));
+
+  const [ronda_anterior] = await db
+    .select()
+    .from(rounds)
+    .where(and(eq(rounds.tournamentId, id), eq(rounds.number, ronda.number - 1)));
+
+  const absencies_anteriors = ronda_anterior
+    ? await db.select().from(roundAbsences).where(eq(roundAbsences.roundId, ronda_anterior.id))
+    : [];
   const playerMap = new Map(tots_jugadors.map(p => [p.id, p.name]));
 
   const aparellaments_enriquits = tots_aparellaments
@@ -72,12 +89,33 @@ export default async function RondaPage({
         </div>
       </div>
 
+      {/* Accions de gestió */}
+      <div className="flex flex-wrap items-center gap-2">
+        {totals > 0 && (
+          <CsvImportExport
+            tournamentId={id}
+            roundId={rid}
+            roundNumber={ronda.number}
+            rondaTancada={ronda.isComplete}
+          />
+        )}
+        <AccionsRonda
+          tournamentId={id}
+          roundId={rid}
+          rondaTancada={ronda.isComplete}
+          teAparellaments={totals > 0}
+          teResultats={jugades > 0}
+        />
+      </div>
+
       {/* Genera aparellaments si no n'hi ha */}
       {totals === 0 && !ronda.isComplete && (
         <GenerarAparellaments
           tournamentId={id}
           roundId={rid}
           roundNumber={ronda.number}
+          players={tots_jugadors.filter(p => p.isActive).map(p => ({ id: p.id, name: p.name }))}
+          previousAbsentIds={absencies_anteriors.map(a => a.playerId)}
         />
       )}
 
@@ -102,6 +140,15 @@ export default async function RondaPage({
           Byes: {aparellaments_enriquits
             .filter(p => p.player2Id === null)
             .map(p => p.player1Name)
+            .join(', ')}
+        </div>
+      )}
+
+      {/* Absències */}
+      {absencies_actuals.length > 0 && (
+        <div className="text-xs text-gray-400 px-1">
+          Absents: {absencies_actuals
+            .map(a => playerMap.get(a.playerId) ?? '?')
             .join(', ')}
         </div>
       )}

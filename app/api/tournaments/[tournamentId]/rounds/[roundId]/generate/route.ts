@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
-import { rounds, pairings, phases, players, groups } from '@/db/schema';
+import { rounds, pairings, phases, players, groups, roundAbsences } from '@/db/schema';
 import { eq, and, inArray } from 'drizzle-orm';
 import { v4 as uuid } from 'uuid';
 import { generatePairings } from '@/lib/pairing/engine';
@@ -40,11 +40,30 @@ export async function POST(req: Request, { params }: Params) {
   const [phase] = await db.select().from(phases).where(eq(phases.id, round.phaseId));
   if (!phase) return NextResponse.json({ error: 'Fase no trobada' }, { status: 404 });
 
-  // Carrega els jugadors actius del campionat
-  const dbPlayers = await db
+  // Llegeix els absents del cos de la petició
+  let absentPlayerIds: string[] = [];
+  try {
+    const body = await req.json().catch(() => ({}));
+    if (Array.isArray(body.absentPlayerIds)) {
+      absentPlayerIds = body.absentPlayerIds.filter((x: unknown) => typeof x === 'string');
+    }
+  } catch { /* body buit, cap absent */ }
+
+  // Desa les absències
+  if (absentPlayerIds.length > 0) {
+    await db.insert(roundAbsences).values(
+      absentPlayerIds.map(pid => ({ roundId, playerId: pid }))
+    ).onConflictDoNothing();
+  }
+
+  // Carrega els jugadors actius del campionat (excloent absents)
+  const dbPlayersAll = await db
     .select()
     .from(players)
     .where(and(eq(players.tournamentId, tournamentId), eq(players.isActive, true)));
+
+  const absentSet = new Set(absentPlayerIds);
+  const dbPlayers = dbPlayersAll.filter(p => !absentSet.has(p.id));
 
   // Determina quines fases cal incloure per al càlcul de classificació
   const carryPhaseIds = getCarryPhaseIds(phase.config as EnginePhase['config']);

@@ -222,7 +222,7 @@ function FormulariResultat({
       </div>
 
       {/* Estadístiques Scrabble */}
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-rows-2 gap-2">
         <div className="space-y-2">
           <p className="text-xs font-semibold text-gray-400 uppercase">Bingos</p>
           <div className="grid grid-cols-2 gap-2">
