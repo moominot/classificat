@@ -10,13 +10,14 @@ interface PlayerRaw {
   draws: number;
   byes: number;
   gamesPlayed: number;
-  spread: number; // diferència total de puntuació Scrabble
+  spread: number;
+  totalScore: number;      // suma de punts de fitxa a favor (partides reals, sense byes)
+  realGamesPlayed: number; // partides sense byes
   opponentResults: Array<{
     opponentId: string;
     opponentPoints: number;
     outcome: 'win' | 'loss' | 'draw' | 'bye' | 'forfeit';
   }>;
-  cumulativePoints: number[];
 }
 
 /**
@@ -44,8 +45,9 @@ export function computeStandings(
       byes: 0,
       gamesPlayed: 0,
       spread: 0,
+      totalScore: 0,
+      realGamesPlayed: 0,
       opponentResults: [],
-      cumulativePoints: [],
     });
   }
 
@@ -53,11 +55,6 @@ export function computeStandings(
   const sortedRounds = [...rounds].sort((a, b) => a.number - b.number);
 
   for (const round of sortedRounds) {
-    // Punta acumulada a l'inici d'aquesta ronda per a cada jugador
-    const pointsBeforeRound = new Map<string, number>(
-      [...rawMap.entries()].map(([id, r]) => [id, r.points])
-    );
-
     for (const pairing of round.pairings) {
       if (!pairing.result) continue;
 
@@ -68,7 +65,6 @@ export function computeStandings(
       if (!p1) continue;
 
       if (isBye) {
-        // Bye: victòria automàtica sense oponent real
         p1.points += 1;
         p1.byes += 1;
         p1.wins += 1;
@@ -86,9 +82,10 @@ export function computeStandings(
         const s2 = result.p2Score ?? 0;
         const spread = s1 - s2;
 
-        // Actualitza estadístiques de jugador 1
         p1.gamesPlayed += 1;
+        p1.realGamesPlayed += 1;
         p1.spread += spread;
+        p1.totalScore += s1;
         if (result.outcome1 === 'win') {
           p1.points += 1;
           p1.wins += 1;
@@ -99,9 +96,10 @@ export function computeStandings(
           p1.losses += 1;
         }
 
-        // Actualitza estadístiques de jugador 2
         p2.gamesPlayed += 1;
+        p2.realGamesPlayed += 1;
         p2.spread -= spread;
+        p2.totalScore += s2;
         if (result.outcome2 === 'win') {
           p2.points += 1;
           p2.wins += 1;
@@ -112,10 +110,9 @@ export function computeStandings(
           p2.losses += 1;
         }
 
-        // Registra oponents per als desempats
         p1.opponentResults.push({
           opponentId: player2Id!,
-          opponentPoints: 0, // s'emplena en una passada final
+          opponentPoints: 0,
           outcome: result.outcome1 ?? 'loss',
         });
         p2.opponentResults.push({
@@ -124,11 +121,6 @@ export function computeStandings(
           outcome: result.outcome2 ?? 'loss',
         });
       }
-    }
-
-    // Registra punts acumulats d'aquesta ronda per a cada jugador
-    for (const [id, raw] of rawMap) {
-      raw.cumulativePoints.push(raw.points - (pointsBeforeRound.get(id) ?? 0));
     }
   }
 
@@ -215,6 +207,7 @@ function defaultTiebreakers() {
     medianBuchholz: 0,
     berger: 0,
     cumulative: 0,
+    avgScore: 0,
     spread: 0,
     wins: 0,
     directEncounterResult: -1,

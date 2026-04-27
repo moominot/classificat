@@ -8,7 +8,11 @@ import Select from '@/components/ui/Select';
 import Badge from '@/components/ui/Badge';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import EmptyState from '@/components/ui/EmptyState';
-import type { PhaseConfig, Tiebreaker } from '@/lib/pairing/types';
+import type {
+  PhaseConfig, Tiebreaker, SeedingCriterion,
+  SwissConfig, RoundRobinConfig, KingOfTheHillConfig,
+} from '@/lib/pairing/types';
+import { DEFAULT_SEEDING_CRITERIA } from '@/lib/pairing/types';
 
 interface Grup { id: string; name: string }
 interface Fase {
@@ -34,9 +38,10 @@ const DESEMPATS: { value: Tiebreaker; label: string }[] = [
   { value: 'median_buchholz', label: 'Median Buchholz' },
   { value: 'buchholz',        label: 'Buchholz' },
   { value: 'berger',          label: 'Berger (Sonneborn-Berger)' },
-  { value: 'spread',          label: 'Diferència de puntuació' },
+  { value: 'spread',          label: 'Diferència de puntuació (spread)' },
   { value: 'wins',            label: 'Nombre de victòries' },
-  { value: 'cumulative',      label: 'Punts acumulats' },
+  { value: 'cumulative',      label: 'Total punts a favor' },
+  { value: 'avg_score',       label: 'Mitjana de puntuació a favor' },
   { value: 'direct_encounter', label: 'Encontre directe' },
 ];
 
@@ -92,7 +97,14 @@ export default function FasesClient({
       ) : (
         <div className="space-y-3">
           {fases.map((fase) => (
-            <FaseCard key={fase.id} fase={fase} grups={grups} />
+            <FaseCard
+              key={fase.id}
+              fase={fase}
+              grups={grups}
+              tournamentId={tournamentId}
+              fases={fases}
+              onRefresh={() => router.refresh()}
+            />
           ))}
         </div>
       )}
@@ -102,11 +114,67 @@ export default function FasesClient({
 
 // ─── Targeta de fase ──────────────────────────────────────────────────────────
 
-function FaseCard({ fase, grups }: { fase: Fase; grups: Grup[] }) {
+function FaseCard({
+  fase, grups, tournamentId, fases, onRefresh,
+}: {
+  fase: Fase;
+  grups: Grup[];
+  tournamentId: string;
+  fases: Fase[];
+  onRefresh: () => void;
+}) {
+  const [mode, setMode] = useState<'view' | 'edit' | 'delete'>('view');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState('');
+
   const badge = METHOD_BADGES[fase.method] ?? { label: fase.method, color: 'gray' as const };
   const grupMap = new Map(grups.map(g => [g.id, g.name]));
-
   const configInfo = describeConfig(fase.config, grupMap);
+
+  async function handleDelete() {
+    setDeleting(true);
+    setDeleteError('');
+    const res = await fetch(`/api/tournaments/${tournamentId}/phases/${fase.id}`, { method: 'DELETE' });
+    if (res.ok) {
+      onRefresh();
+    } else {
+      const d = await res.json();
+      setDeleteError(d.error ?? 'Error en esborrar la fase');
+      setDeleting(false);
+    }
+  }
+
+  if (mode === 'edit') {
+    return (
+      <div className="bg-white border border-blue-200 rounded-xl p-4">
+        <p className="text-sm font-semibold text-gray-700 mb-4">Editar fase: {fase.name}</p>
+        <EditarFaseForm
+          tournamentId={tournamentId}
+          fase={fase}
+          fases={fases.filter(f => f.id !== fase.id)}
+          grups={grups}
+          onDone={() => { setMode('view'); onRefresh(); }}
+          onCancel={() => setMode('view')}
+        />
+      </div>
+    );
+  }
+
+  if (mode === 'delete') {
+    return (
+      <div className="bg-white border border-red-200 rounded-xl p-4 space-y-3">
+        <p className="text-sm text-gray-800">
+          Segur que vols esborrar la fase <strong>{fase.name}</strong>?
+          S&apos;esborraran totes les rondes i aparellaments associats sense resultats.
+        </p>
+        {deleteError && <p className="text-sm text-red-600">{deleteError}</p>}
+        <div className="flex gap-2">
+          <Button variant="danger" size="sm" loading={deleting} onClick={handleDelete}>Esborrar</Button>
+          <Button variant="ghost" size="sm" onClick={() => { setMode('view'); setDeleteError(''); }}>Cancel·lar</Button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-start gap-4">
@@ -133,6 +201,11 @@ function FaseCard({ fase, grups }: { fase: Fase; grups: Grup[] }) {
           </p>
         )}
       </div>
+      <div className="flex gap-1 flex-shrink-0">
+        <Button size="sm" variant="ghost" onClick={() => setMode('edit')}>Editar</Button>
+        <Button size="sm" variant="ghost" onClick={() => setMode('delete')}
+          className="text-red-500 hover:bg-red-50">Esborrar</Button>
+      </div>
     </div>
   );
 }
@@ -145,16 +218,233 @@ function describeConfig(config: PhaseConfig, grupMap: Map<string, string>): stri
     return `Round Robin ${scope}${doble}`;
   }
   if (config.method === 'swiss') {
-    const carry = config.carryStandingsFromPhaseIds.length > 0
-      ? `Hereta classificació de fases anteriors`
+    return config.carryStandingsFromPhaseIds.length > 0
+      ? 'Hereta classificació de fases anteriors'
       : 'Classificació independent';
-    return carry;
   }
   if (config.method === 'king_of_the_hill') {
     const top = config.topN ? `Top ${config.topN}` : 'Tots';
     return `${top} · ${config.carryStandingsFromPhaseIds.length > 0 ? 'Hereta classificació' : 'Classificació independent'}`;
   }
   return '';
+}
+
+// ─── Formulari editar fase ────────────────────────────────────────────────────
+
+function EditarFaseForm({
+  tournamentId,
+  fase,
+  fases,
+  grups,
+  onDone,
+  onCancel,
+}: {
+  tournamentId: string;
+  fase: Fase;
+  fases: Fase[];
+  grups: Grup[];
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const [nom, setNom] = useState(fase.name);
+  const [startRound, setStartRound] = useState(fase.startRound.toString());
+  const [endRound, setEndRound] = useState(fase.endRound.toString());
+  const [desempats, setDesempats] = useState<Tiebreaker[]>(fase.tiebreakers);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const swissConfig = fase.method === 'swiss' ? (fase.config as SwissConfig) : null;
+  const [swissAvoidRematches, setSwissAvoidRematches] = useState(swissConfig?.avoidRematches ?? true);
+  const [swissCarry, setSwissCarry] = useState<string[]>(swissConfig?.carryStandingsFromPhaseIds ?? []);
+  const [swissSeedingCriteria, setSwissSeedingCriteria] = useState<SeedingCriterion[]>(
+    swissConfig?.seedingCriteria?.length ? swissConfig.seedingCriteria : DEFAULT_SEEDING_CRITERIA
+  );
+
+  const rrConfig = fase.method === 'round_robin' ? (fase.config as RoundRobinConfig) : null;
+  const [rrScope, setRrScope] = useState<'intra_group' | 'inter_group' | 'all'>(rrConfig?.scope ?? 'all');
+  const [rrDoble, setRrDoble] = useState(rrConfig?.doubleRound ?? false);
+
+  const kothConfig = fase.method === 'king_of_the_hill' ? (fase.config as KingOfTheHillConfig) : null;
+  const [kothTopN, setKothTopN] = useState(kothConfig?.topN?.toString() ?? '');
+  const [kothCarry, setKothCarry] = useState<string[]>(kothConfig?.carryStandingsFromPhaseIds ?? []);
+
+  function buildConfig(): PhaseConfig {
+    if (fase.method === 'swiss') {
+      return {
+        method: 'swiss',
+        avoidRematches: swissAvoidRematches,
+        byeHandling: swissConfig?.byeHandling ?? 'lowest_ranked',
+        scoreGroupWindowSize: swissConfig?.scoreGroupWindowSize ?? 2,
+        carryStandingsFromPhaseIds: swissCarry,
+        seedingCriteria: swissSeedingCriteria,
+      };
+    }
+    if (fase.method === 'round_robin') {
+      return { method: 'round_robin', scope: rrScope, doubleRound: rrDoble };
+    }
+    if (fase.method === 'king_of_the_hill') {
+      return {
+        method: 'king_of_the_hill',
+        topN: kothTopN ? parseInt(kothTopN) : null,
+        carryStandingsFromPhaseIds: kothCarry,
+      };
+    }
+    return { method: 'manual', allowCsvImport: true };
+  }
+
+  function toggleDesempat(d: Tiebreaker) {
+    setDesempats(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]);
+  }
+
+  function moveDesempat(d: Tiebreaker, dir: -1 | 1) {
+    setDesempats(prev => {
+      const i = prev.indexOf(d);
+      if (i < 0) return prev;
+      const next = [...prev];
+      const j = i + dir;
+      if (j < 0 || j >= next.length) return prev;
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError('');
+    if (!nom.trim() || !startRound || !endRound) {
+      setError('Cal nom, ronda inicial i ronda final');
+      return;
+    }
+    setLoading(true);
+    const res = await fetch(`/api/tournaments/${tournamentId}/phases/${fase.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name: nom.trim(),
+        startRound: parseInt(startRound),
+        endRound: parseInt(endRound),
+        tiebreakers: desempats,
+        config: buildConfig(),
+      }),
+    });
+    if (res.ok) {
+      onDone();
+    } else {
+      const d = await res.json();
+      setError(d.error ?? 'Error en guardar la fase');
+      setLoading(false);
+    }
+  }
+
+  const methodLabel = METODES.find(m => m.value === fase.method)?.label ?? fase.method;
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-5">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="sm:col-span-1">
+          <Input
+            label="Nom de la fase"
+            value={nom}
+            onChange={e => setNom(e.target.value)}
+            required
+          />
+        </div>
+        <div>
+          <p className="text-sm font-medium text-gray-700 mb-1">Mètode</p>
+          <p className="text-sm text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">{methodLabel}</p>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          <Input
+            label="Ronda inicial"
+            type="number"
+            min={1}
+            value={startRound}
+            onChange={e => setStartRound(e.target.value)}
+          />
+          <Input
+            label="Ronda final"
+            type="number"
+            min={startRound || 1}
+            value={endRound}
+            onChange={e => setEndRound(e.target.value)}
+          />
+        </div>
+      </div>
+
+      {fase.method === 'swiss' && (
+        <ConfigSwiss
+          avoidRematches={swissAvoidRematches}
+          setAvoidRematches={setSwissAvoidRematches}
+          carry={swissCarry}
+          setCarry={setSwissCarry}
+          seedingCriteria={swissSeedingCriteria}
+          setSeedingCriteria={setSwissSeedingCriteria}
+          fases={fases}
+        />
+      )}
+      {fase.method === 'round_robin' && (
+        <ConfigRoundRobin
+          scope={rrScope}
+          setScope={setRrScope}
+          doble={rrDoble}
+          setDoble={setRrDoble}
+          grups={grups}
+        />
+      )}
+      {fase.method === 'king_of_the_hill' && (
+        <ConfigKotH
+          topN={kothTopN}
+          setTopN={setKothTopN}
+          carry={kothCarry}
+          setCarry={setKothCarry}
+          fases={fases}
+        />
+      )}
+
+      {fase.method !== 'manual' && (
+        <div>
+          <p className="text-sm font-medium text-gray-700 mb-2">
+            Ordre de desempats
+            <span className="font-normal text-gray-400 ml-2">Selecciona i ordena</span>
+          </p>
+          <div className="space-y-1">
+            {DESEMPATS.map(d => {
+              const idx = desempats.indexOf(d.value);
+              const actiu = idx >= 0;
+              return (
+                <div key={d.value} className={`flex items-center gap-2 rounded-lg px-3 py-2 ${actiu ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50 border border-transparent'}`}>
+                  <input
+                    type="checkbox"
+                    checked={actiu}
+                    onChange={() => toggleDesempat(d.value)}
+                    className="accent-blue-600"
+                  />
+                  <span className={`text-sm flex-1 ${actiu ? 'text-blue-800 font-medium' : 'text-gray-500'}`}>
+                    {actiu ? `${idx + 1}. ` : ''}{d.label}
+                  </span>
+                  {actiu && (
+                    <div className="flex gap-0.5">
+                      <button type="button" onClick={() => moveDesempat(d.value, -1)}
+                        className="p-0.5 text-blue-500 hover:text-blue-700 disabled:opacity-30" disabled={idx === 0}>▲</button>
+                      <button type="button" onClick={() => moveDesempat(d.value, 1)}
+                        className="p-0.5 text-blue-500 hover:text-blue-700 disabled:opacity-30" disabled={idx === desempats.length - 1}>▼</button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {error && <p className="text-sm text-red-600">{error}</p>}
+
+      <div className="flex gap-2">
+        <Button type="submit" loading={loading}>Guardar canvis</Button>
+        <Button type="button" variant="ghost" onClick={onCancel}>Cancel·lar</Button>
+      </div>
+    </form>
+  );
 }
 
 // ─── Formulari nova fase ──────────────────────────────────────────────────────
@@ -180,15 +470,14 @@ function NovaFaseForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  // Configuració específica per mètode
   const [rrScope, setRrScope] = useState<'intra_group' | 'inter_group' | 'all'>('intra_group');
   const [rrDoble, setRrDoble] = useState(false);
   const [swissAvoidRematches, setSwissAvoidRematches] = useState(true);
   const [swissCarry, setSwissCarry] = useState<string[]>([]);
+  const [swissSeedingCriteria, setSwissSeedingCriteria] = useState<SeedingCriterion[]>(DEFAULT_SEEDING_CRITERIA);
   const [kothTopN, setKothTopN] = useState('');
   const [kothCarry, setKothCarry] = useState<string[]>([]);
 
-  // Calcula el punt de partida recomanat
   const nextStart = fases.length > 0
     ? Math.max(...fases.map(f => f.endRound)) + 1
     : 1;
@@ -201,14 +490,11 @@ function NovaFaseForm({
         byeHandling: 'lowest_ranked',
         scoreGroupWindowSize: 2,
         carryStandingsFromPhaseIds: swissCarry,
+        seedingCriteria: swissSeedingCriteria,
       };
     }
     if (metode === 'round_robin') {
-      return {
-        method: 'round_robin',
-        scope: rrScope,
-        doubleRound: rrDoble,
-      };
+      return { method: 'round_robin', scope: rrScope, doubleRound: rrDoble };
     }
     if (metode === 'king_of_the_hill') {
       return {
@@ -221,9 +507,7 @@ function NovaFaseForm({
   }
 
   function toggleDesempat(d: Tiebreaker) {
-    setDesempats(prev =>
-      prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]
-    );
+    setDesempats(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]);
   }
 
   function moveDesempat(d: Tiebreaker, dir: -1 | 1) {
@@ -246,7 +530,6 @@ function NovaFaseForm({
       return;
     }
     setLoading(true);
-
     const res = await fetch(`/api/tournaments/${tournamentId}/phases`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -259,7 +542,6 @@ function NovaFaseForm({
         config: buildConfig(),
       }),
     });
-
     if (res.ok) {
       onDone();
     } else {
@@ -303,13 +585,14 @@ function NovaFaseForm({
         </div>
       </div>
 
-      {/* Configuració específica del mètode */}
       {metode === 'swiss' && (
         <ConfigSwiss
           avoidRematches={swissAvoidRematches}
           setAvoidRematches={setSwissAvoidRematches}
           carry={swissCarry}
           setCarry={setSwissCarry}
+          seedingCriteria={swissSeedingCriteria}
+          setSeedingCriteria={setSwissSeedingCriteria}
           fases={fases}
         />
       )}
@@ -332,7 +615,6 @@ function NovaFaseForm({
         />
       )}
 
-      {/* Desempats */}
       {metode !== 'manual' && (
         <div>
           <p className="text-sm font-medium text-gray-700 mb-2">
@@ -381,15 +663,44 @@ function NovaFaseForm({
 
 // ─── Sub-configuracions per mètode ───────────────────────────────────────────
 
+const SEEDING_CRITERION_LABELS: Record<SeedingCriterion, string> = {
+  points: 'Punts',
+  elo:    'BARRUF',
+  rank:   'Classificació',
+  name:   'Nom',
+};
+const ALL_SEEDING_CRITERIA: SeedingCriterion[] = ['points', 'elo', 'rank', 'name'];
+
 function ConfigSwiss({
-  avoidRematches, setAvoidRematches, carry, setCarry, fases,
+  avoidRematches, setAvoidRematches, carry, setCarry,
+  seedingCriteria, setSeedingCriteria, fases,
 }: {
   avoidRematches: boolean;
   setAvoidRematches: (v: boolean) => void;
   carry: string[];
   setCarry: (v: string[]) => void;
+  seedingCriteria: SeedingCriterion[];
+  setSeedingCriteria: (v: SeedingCriterion[]) => void;
   fases: Fase[];
 }) {
+  function toggleCriterion(c: SeedingCriterion) {
+    setSeedingCriteria(
+      seedingCriteria.includes(c)
+        ? seedingCriteria.filter(x => x !== c)
+        : [...seedingCriteria, c]
+    );
+  }
+
+  function moveCriterion(c: SeedingCriterion, dir: -1 | 1) {
+    const i = seedingCriteria.indexOf(c);
+    if (i < 0) return;
+    const next = [...seedingCriteria];
+    const j = i + dir;
+    if (j < 0 || j >= next.length) return;
+    [next[i], next[j]] = [next[j], next[i]];
+    setSeedingCriteria(next);
+  }
+
   return (
     <div className="bg-blue-50 rounded-lg p-4 space-y-3">
       <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Configuració Suís</p>
@@ -397,6 +708,39 @@ function ConfigSwiss({
         <input type="checkbox" checked={avoidRematches} onChange={e => setAvoidRematches(e.target.checked)} className="accent-blue-600" />
         Evitar revanxes
       </label>
+
+      <div>
+        <p className="text-sm font-medium text-gray-700 mb-1">Ordre de seeding</p>
+        <div className="space-y-1">
+          {ALL_SEEDING_CRITERIA.map(c => {
+            const active = seedingCriteria.includes(c);
+            const pos = seedingCriteria.indexOf(c);
+            return (
+              <div key={c} className={`flex items-center gap-2 rounded px-2 py-1 text-sm ${active ? 'bg-blue-100 text-blue-800' : 'text-gray-500'}`}>
+                <input
+                  type="checkbox"
+                  checked={active}
+                  onChange={() => toggleCriterion(c)}
+                  className="accent-blue-600 flex-shrink-0"
+                />
+                {active && (
+                  <span className="w-4 text-xs font-mono text-blue-500 flex-shrink-0">{pos + 1}.</span>
+                )}
+                <span className={active ? '' : 'ml-4'}>{SEEDING_CRITERION_LABELS[c]}</span>
+                {active && (
+                  <div className="ml-auto flex gap-0.5">
+                    <button type="button" onClick={() => moveCriterion(c, -1)} disabled={pos === 0}
+                      className="px-1 text-blue-400 hover:text-blue-700 disabled:opacity-30 text-xs">▲</button>
+                    <button type="button" onClick={() => moveCriterion(c, 1)} disabled={pos === seedingCriteria.length - 1}
+                      className="px-1 text-blue-400 hover:text-blue-700 disabled:opacity-30 text-xs">▼</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
       {fases.length > 0 && (
         <div>
           <p className="text-sm font-medium text-gray-700 mb-1">Heretar classificació de:</p>

@@ -28,7 +28,7 @@ export async function GET(req: Request, { params }: Params) {
 export async function POST(req: Request, { params }: Params) {
   const { tournamentId } = await params;
   const body = await req.json();
-  const { name, rating, groupId } = body;
+  const { name, rating, groupId, phone, club } = body;
 
   if (!name || typeof name !== 'string' || name.trim().length === 0) {
     return NextResponse.json({ error: 'Cal un nom de jugador' }, { status: 400 });
@@ -50,6 +50,8 @@ export async function POST(req: Request, { params }: Params) {
     name: name.trim(),
     rating: rating ?? null,
     groupId: groupId ?? null,
+    phone: phone ?? null,
+    club: club ?? null,
     isActive: true,
     createdAt: new Date(),
   };

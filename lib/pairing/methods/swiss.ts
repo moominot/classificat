@@ -5,7 +5,9 @@ import type {
   PairingWarning,
   Standing,
   SwissConfig,
+  SeedingCriterion,
 } from '../types';
+import { DEFAULT_SEEDING_CRITERIA } from '../types';
 import { buildRematchSet, hasPlayed } from '../utils/rematch';
 import { assignBye } from '../utils/bye';
 
@@ -24,29 +26,49 @@ export function generateSwissPairings(ctx: PairingContext): PairingEngineResult 
   const warnings: PairingWarning[] = [];
 
   // Filtra jugadors actius
-  let activePlayers = ctx.players.filter((p) => p.isActive);
+  const activePlayers = ctx.players.filter((p) => p.isActive);
+
+  // Construeix mapes d'accés ràpid
+  const standingMap = new Map(ctx.standings.map((s) => [s.playerId, s]));
+  const isFirstRound = ctx.roundNumber === ctx.phase.startRound;
+  const ratingMap = new Map(ctx.players.map((p) => [p.id, p.rating ?? null]));
+  const nameMap = new Map(ctx.players.map((p) => [p.id, p.name]));
+
+  const seedingCriteria = config.seedingCriteria?.length
+    ? config.seedingCriteria
+    : DEFAULT_SEEDING_CRITERIA;
+
+  // Ordena TOTS els jugadors pel criteri configurat
+  // Cal fer-ho abans del bye per garantir que el bye va al darrer del seeding
+  const allSorted = sortByStanding(activePlayers, standingMap, ratingMap, nameMap, seedingCriteria);
 
   // Construeix el Set de revanxes
   const rematchSet = buildRematchSet(ctx.previousPairings);
 
   // Genera bye si el nombre de jugadors és imparell
   const byes: GeneratedPairing[] = [];
-  if (activePlayers.length % 2 !== 0) {
-    const { byePlayerId, remaining } = assignBye(
-      activePlayers,
-      ctx.standings,
-      ctx.previousPairings,
-      config.byeHandling
-    );
-    activePlayers = remaining;
-    byes.push({ tableNumber: -1, player1Id: byePlayerId, player2Id: null });
+  let sorted: typeof allSorted;
+
+  if (allSorted.length % 2 !== 0) {
+    if (isFirstRound) {
+      // Primera ronda: el bye va al darrer del seeding (ELO més baix)
+      const byePlayer = allSorted[allSorted.length - 1];
+      sorted = allSorted.slice(0, -1);
+      byes.push({ tableNumber: -1, player1Id: byePlayer.id, player2Id: null });
+    } else {
+      // Rondes següents: usa la lògica configurada (least_byes, lowest_ranked, etc.)
+      const { byePlayerId, remaining } = assignBye(
+        activePlayers,
+        ctx.standings,
+        ctx.previousPairings,
+        config.byeHandling
+      );
+      sorted = sortByStanding(remaining, standingMap, ratingMap, nameMap, seedingCriteria);
+      byes.push({ tableNumber: -1, player1Id: byePlayerId, player2Id: null });
+    }
+  } else {
+    sorted = allSorted;
   }
-
-  // Construeix un mapa de classificació per a accés ràpid
-  const standingMap = new Map(ctx.standings.map((s) => [s.playerId, s]));
-
-  // Ordena els jugadors per punts (descendent), llavors pels desempats configurats
-  const sorted = sortByStanding(activePlayers, standingMap);
 
   // Intenta aparellar amb avoidRematches = true primer,
   // si no és possible relaxa la restricció
@@ -74,23 +96,44 @@ export function generateSwissPairings(ctx: PairingContext): PairingEngineResult 
 
   // Afegeix el bye i assigna números de taula
   const allPairings: GeneratedPairing[] = [...result, ...byes];
-  assignTableNumbers(allPairings, standingMap);
+  assignTableNumbers(allPairings, standingMap, ratingMap);
 
-  return { pairings: allPairings, warnings };
+  return { pairings: allPairings, warnings, seedingOrder: sorted.map((p) => p.id) };
 }
 
 // ─── Ordenació ────────────────────────────────────────────────────────────────
 
 function sortByStanding(
   players: { id: string }[],
-  standingMap: Map<string, Standing>
+  standingMap: Map<string, Standing>,
+  ratingMap: Map<string, number | null>,
+  nameMap: Map<string, string>,
+  criteria: SeedingCriterion[]
 ): { id: string }[] {
   return [...players].sort((a, b) => {
-    const sa = standingMap.get(a.id);
-    const sb = standingMap.get(b.id);
-    const ra = sa?.rank ?? 9999;
-    const rb = sb?.rank ?? 9999;
-    return ra - rb; // millor classificat primer
+    for (const criterion of criteria) {
+      let cmp = 0;
+      if (criterion === 'points') {
+        const pa = standingMap.get(a.id)?.points ?? 0;
+        const pb = standingMap.get(b.id)?.points ?? 0;
+        cmp = pb - pa; // descendent
+      } else if (criterion === 'elo') {
+        const ra = ratingMap.get(a.id) ?? null;
+        const rb = ratingMap.get(b.id) ?? null;
+        if (ra === null && rb === null) cmp = 0;
+        else if (ra === null) cmp = 1;
+        else if (rb === null) cmp = -1;
+        else cmp = rb - ra; // descendent
+      } else if (criterion === 'rank') {
+        const ra = standingMap.get(a.id)?.rank ?? 9999;
+        const rb = standingMap.get(b.id)?.rank ?? 9999;
+        cmp = ra - rb; // ascendent
+      } else if (criterion === 'name') {
+        cmp = (nameMap.get(a.id) ?? '').localeCompare(nameMap.get(b.id) ?? '');
+      }
+      if (cmp !== 0) return cmp;
+    }
+    return 0;
   });
 }
 
@@ -287,33 +330,46 @@ function fallbackPair(players: Player[]): GeneratedPairing[] {
 
 function assignTableNumbers(
   pairings: GeneratedPairing[],
-  standingMap: Map<string, Standing>
+  standingMap: Map<string, Standing>,
+  ratingMap: Map<string, number | null>
 ): void {
-  // Ordena per rang mitjà dels jugadors (millors jugadors = taula 1)
   const withRanks = pairings
     .filter((p) => p.player2Id !== null)
     .sort((a, b) => {
-      const avgA = avgRank(a.player1Id, a.player2Id!, standingMap);
-      const avgB = avgRank(b.player1Id, b.player2Id!, standingMap);
-      return avgA - avgB;
+      const [ptsA, eloA] = bestPlayerStats(a.player1Id, a.player2Id!, standingMap, ratingMap);
+      const [ptsB, eloB] = bestPlayerStats(b.player1Id, b.player2Id!, standingMap, ratingMap);
+      if (ptsA !== ptsB) return ptsB - ptsA;           // punts ↓
+      if (eloA !== eloB) {
+        if (eloA === null) return 1;
+        if (eloB === null) return -1;
+        return eloB - eloA;                             // ELO ↓
+      }
+      return 0;
     });
 
-  withRanks.forEach((p, i) => {
-    p.tableNumber = i + 1;
-  });
-
-  // El bye és l'última taula (o marcada amb 0)
-  pairings.filter((p) => p.player2Id === null).forEach((p) => {
-    p.tableNumber = 0;
-  });
+  withRanks.forEach((p, i) => { p.tableNumber = i + 1; });
+  const lastTable = withRanks.length + 1;
+  pairings.filter((p) => p.player2Id === null).forEach((p) => { p.tableNumber = lastTable; });
 }
 
-function avgRank(
+// Retorna [punts, ELO] del millor jugador de l'aparellament
+// Millor = més punts; si empaten en punts, el d'ELO més alt
+function bestPlayerStats(
   p1Id: string,
   p2Id: string,
-  standingMap: Map<string, Standing>
-): number {
-  const r1 = standingMap.get(p1Id)?.rank ?? 9999;
-  const r2 = standingMap.get(p2Id)?.rank ?? 9999;
-  return (r1 + r2) / 2;
+  standingMap: Map<string, Standing>,
+  ratingMap: Map<string, number | null>
+): [number, number | null] {
+  const pts1 = standingMap.get(p1Id)?.points ?? 0;
+  const pts2 = standingMap.get(p2Id)?.points ?? 0;
+  const elo1 = ratingMap.get(p1Id) ?? null;
+  const elo2 = ratingMap.get(p2Id) ?? null;
+
+  if (pts1 !== pts2) {
+    return pts1 > pts2 ? [pts1, elo1] : [pts2, elo2];
+  }
+  // Mateixos punts: el millor ELO és el del grup
+  const bestElo = elo1 !== null && elo2 !== null ? Math.max(elo1, elo2)
+    : elo1 ?? elo2;
+  return [pts1, bestElo];
 }

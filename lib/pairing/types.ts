@@ -8,7 +8,8 @@ export type Tiebreaker =
   | 'berger'            // Sonneborn-Berger: suma de punts dels oponents batuts
   | 'wins'              // Nombre de victòries
   | 'direct_encounter'  // Resultat directe entre jugadors empatats
-  | 'cumulative'        // Suma acumulada de punts per ronda
+  | 'cumulative'        // Suma total de punts a favor (puntuació de les fitxes)
+  | 'avg_score'         // Mitjana de puntuació a favor per partida
   | 'spread';           // Diferència de puntuació total (específic Scrabble)
 
 export type GameOutcome = 'win' | 'loss' | 'draw' | 'bye' | 'forfeit';
@@ -17,6 +18,14 @@ export type ByeHandling =
   | 'lowest_ranked'     // Bye al jugador millor classificat del darrer grup de punts
   | 'random_last_group' // Aleatori del darrer grup de punts
   | 'least_byes';       // Jugador amb menys byes anteriors
+
+export type SeedingCriterion =
+  | 'points'  // Punts totals (descendent)
+  | 'elo'     // Puntuació ELO (descendent, null al final)
+  | 'rank'    // Rànquing de classificació (ascendent)
+  | 'name';   // Nom alfabètic (ascendent)
+
+export const DEFAULT_SEEDING_CRITERIA: SeedingCriterion[] = ['points', 'elo', 'name'];
 
 // ─── Core Domain ─────────────────────────────────────────────────────────────
 
@@ -44,6 +53,7 @@ export interface SwissConfig {
   byeHandling: ByeHandling;
   scoreGroupWindowSize: number;  // quants grups considerar per creuaments
   carryStandingsFromPhaseIds: string[];
+  seedingCriteria: SeedingCriterion[];  // ordre de seeding (per defecte: points, elo, name)
 }
 
 export interface RoundRobinConfig {
@@ -134,7 +144,8 @@ export interface TiebreakerValues {
   buchholz: number;
   medianBuchholz: number;
   berger: number;
-  cumulative: number;
+  cumulative: number;  // suma total de punts de fitxa a favor
+  avgScore: number;    // mitjana de punts a favor per partida real
   spread: number;
   wins: number;
   directEncounterResult: number; // 1=victòria, 0.5=empat, 0=derrota, -1=no s'han enfrontat
@@ -166,6 +177,7 @@ export interface GeneratedPairing {
 export interface PairingEngineResult {
   pairings: GeneratedPairing[];
   warnings: PairingWarning[];
+  seedingOrder?: string[]; // IDs de jugadors en l'ordre usat per aparellar
 }
 
 export interface PairingWarning {

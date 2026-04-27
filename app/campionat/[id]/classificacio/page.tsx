@@ -4,7 +4,33 @@ import { eq, asc } from 'drizzle-orm';
 import Link from 'next/link';
 import { computeStandings } from '@/lib/pairing/standings';
 import { loadEngineRounds, loadAllPairings } from '@/lib/db-helpers';
-import type { Phase as EnginePhase } from '@/lib/pairing/types';
+import type { Phase as EnginePhase, Tiebreaker, Standing } from '@/lib/pairing/types';
+
+const TIEBREAKER_COL: Record<Tiebreaker, {
+  label: string;
+  cell: (s: Standing) => string;
+  className?: string;
+} | null> = {
+  median_buchholz:  { label: 'Med.Buch.',   cell: s => s.tiebreakers.medianBuchholz.toFixed(1) },
+  buchholz:         { label: 'Buchholz',    cell: s => s.tiebreakers.buchholz.toFixed(1) },
+  berger:           { label: 'Berger',      cell: s => s.tiebreakers.berger.toFixed(1) },
+  spread:           { label: 'Spread',      cell: s => (s.spread > 0 ? '+' : '') + s.spread, className: 'spread' },
+  wins:             null,
+  cumulative:       { label: 'Total PF',    cell: s => s.tiebreakers.cumulative.toFixed(0) },
+  avg_score:        { label: 'Mitjana PF',  cell: s => s.tiebreakers.avgScore.toFixed(1) },
+  direct_encounter: { label: 'Enc.dir.',    cell: s => s.tiebreakers.directEncounterResult >= 0 ? s.tiebreakers.directEncounterResult.toFixed(1) : '—' },
+};
+
+const TIEBREAKER_LABEL: Record<Tiebreaker, string> = {
+  median_buchholz:  'Buchholz medià',
+  buchholz:         'Buchholz',
+  berger:           'Berger',
+  spread:           'Diferència',
+  wins:             'Victòries',
+  cumulative:       'Total punts a favor',
+  avg_score:        'Mitjana punts a favor',
+  direct_encounter: 'Enc. directe',
+};
 import { Card } from '@/components/ui/Card';
 
 export const dynamic = 'force-dynamic';
@@ -150,76 +176,88 @@ export default async function ClassificacioPage({
       </div>
 
       {/* ── General ── */}
-      {pestanya === 'general' && (
-        <>
-          <p className="text-sm text-gray-500">
-            {rondesJugades} ronda{rondesJugades !== 1 ? 'es' : ''} computades
-            {' · '}
-            {standings.filter(s => s.gamesPlayed > 0).length} jugadors amb partides
-          </p>
-          <Card padding={false}>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-gray-100">
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-10">#</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Jugador</th>
-                    <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Pts</th>
-                    <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">V</th>
-                    <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">D</th>
-                    <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">PJ</th>
-                    <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden md:table-cell">Spread</th>
-                    <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden md:table-cell">Buchholz</th>
-                    <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden lg:table-cell">Med. Buch.</th>
-                    <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden lg:table-cell">Berger</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-50">
-                  {standings.map((s) => {
-                    const jugador = playerMap.get(s.playerId);
-                    const isPodi = s.rank <= 3 && s.gamesPlayed > 0;
-                    return (
-                      <tr key={s.playerId} className={`${isPodi ? 'bg-amber-50' : 'hover:bg-gray-50'} transition-colors`}>
-                        <td className="px-4 py-3">
-                          <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                            s.rank === 1 ? 'bg-amber-400 text-amber-900' :
-                            s.rank === 2 ? 'bg-gray-300 text-gray-700' :
-                            s.rank === 3 ? 'bg-amber-600 text-white' :
-                            'bg-gray-100 text-gray-500'
-                          }`}>
-                            {s.rank}
-                          </div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <Link href={`/campionat/${id}/jugadors/${s.playerId}`} className="font-medium text-gray-900 hover:text-blue-600 transition-colors">
-                            {jugador?.name ?? '?'}
-                          </Link>
-                          {!jugador?.isActive && <span className="text-xs text-gray-400 ml-2">Inactiu</span>}
-                        </td>
-                        <td className="px-3 py-3 text-center font-bold text-gray-900">{s.points}</td>
-                        <td className="px-3 py-3 text-center text-green-600 font-medium">{s.wins}</td>
-                        <td className="px-3 py-3 text-center text-red-500 font-medium">{s.losses}</td>
-                        <td className="px-3 py-3 text-center text-gray-500 hidden sm:table-cell">{s.gamesPlayed}</td>
-                        <td className={`px-3 py-3 text-center hidden md:table-cell font-medium ${
-                          s.spread > 0 ? 'text-green-600' : s.spread < 0 ? 'text-red-500' : 'text-gray-400'
-                        }`}>
-                          {s.spread > 0 ? '+' : ''}{s.spread}
-                        </td>
-                        <td className="px-3 py-3 text-center text-gray-500 hidden md:table-cell">{s.tiebreakers.buchholz.toFixed(1)}</td>
-                        <td className="px-3 py-3 text-center text-gray-500 hidden lg:table-cell">{s.tiebreakers.medianBuchholz.toFixed(1)}</td>
-                        <td className="px-3 py-3 text-center text-gray-500 hidden lg:table-cell">{s.tiebreakers.berger.toFixed(1)}</td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-          <p className="text-xs text-gray-400 text-right">
-            Desempats: {(tiebreakers as string[]).join(' → ')}
-          </p>
-        </>
-      )}
+      {pestanya === 'general' && (() => {
+        // Columnes de desempat en l'ordre configurat (excloent 'wins', que ja és columna fixa)
+        const tbCols = tiebreakers
+          .map(t => ({ key: t, def: TIEBREAKER_COL[t] }))
+          .filter((x): x is { key: Tiebreaker; def: NonNullable<typeof TIEBREAKER_COL[Tiebreaker]> } => x.def !== null);
+        // Classes responsive: 1a → sm, 2a → md, resta → lg
+        const responsiveClass = (i: number) =>
+          i === 0 ? 'hidden sm:table-cell' : i === 1 ? 'hidden md:table-cell' : 'hidden lg:table-cell';
+
+        return (
+          <>
+            <p className="text-sm text-gray-500">
+              {rondesJugades} ronda{rondesJugades !== 1 ? 'es' : ''} computades
+              {' · '}
+              {standings.filter(s => s.gamesPlayed > 0).length} jugadors amb partides
+            </p>
+            <Card padding={false}>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-gray-100">
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-10">#</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Jugador</th>
+                      <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Pts</th>
+                      <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">V</th>
+                      <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">D</th>
+                      <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">PJ</th>
+                      {tbCols.map(({ key, def }, i) => (
+                        <th key={key} className={`text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide ${responsiveClass(i)}`}>
+                          {def.label}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-gray-50">
+                    {standings.map((s) => {
+                      const jugador = playerMap.get(s.playerId);
+                      const isPodi = s.rank <= 3 && s.gamesPlayed > 0;
+                      return (
+                        <tr key={s.playerId} className={`${isPodi ? 'bg-amber-50' : 'hover:bg-gray-50'} transition-colors`}>
+                          <td className="px-4 py-3">
+                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                              s.rank === 1 ? 'bg-amber-400 text-amber-900' :
+                              s.rank === 2 ? 'bg-gray-300 text-gray-700' :
+                              s.rank === 3 ? 'bg-amber-600 text-white' :
+                              'bg-gray-100 text-gray-500'
+                            }`}>
+                              {s.rank}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <Link href={`/campionat/${id}/jugadors/${s.playerId}`} className="font-medium text-gray-900 hover:text-blue-600 transition-colors">
+                              {jugador?.name ?? '?'}
+                            </Link>
+                            {!jugador?.isActive && <span className="text-xs text-gray-400 ml-2">Inactiu</span>}
+                          </td>
+                          <td className="px-3 py-3 text-center font-bold text-gray-900">{s.points}</td>
+                          <td className="px-3 py-3 text-center text-green-600 font-medium">{s.wins}</td>
+                          <td className="px-3 py-3 text-center text-red-500 font-medium">{s.losses}</td>
+                          <td className="px-3 py-3 text-center text-gray-500 hidden sm:table-cell">{s.gamesPlayed}</td>
+                          {tbCols.map(({ key, def }, i) => (
+                            <td key={key} className={`px-3 py-3 text-center ${responsiveClass(i)} ${
+                              def.className === 'spread'
+                                ? s.spread > 0 ? 'text-green-600 font-medium' : s.spread < 0 ? 'text-red-500 font-medium' : 'text-gray-400'
+                                : 'text-gray-500'
+                            }`}>
+                              {def.cell(s)}
+                            </td>
+                          ))}
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+            <p className="text-xs text-gray-400 text-right">
+              Desempats: {tiebreakers.map(t => TIEBREAKER_LABEL[t]).join(' → ')}
+            </p>
+          </>
+        );
+      })()}
 
       {/* ── Scrabbles ── */}
       {pestanya === 'scrabbles' && (

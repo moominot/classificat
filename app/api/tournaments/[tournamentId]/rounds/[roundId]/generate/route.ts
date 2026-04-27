@@ -184,11 +184,20 @@ export async function POST(req: Request, { params }: Params) {
     await db.insert(pairings).values(newPairings);
   }
 
+  const playerInfoMap = new Map(enginePlayers.map((p) => [p.id, { name: p.name, rating: p.rating ?? null }]));
+  const seedingOrder = (result.seedingOrder ?? []).map((id, i) => ({
+    seed: i + 1,
+    playerId: id,
+    name: playerInfoMap.get(id)?.name ?? id,
+    rating: playerInfoMap.get(id)?.rating ?? null,
+  }));
+
   return NextResponse.json({
     roundId: round.id,
     roundNumber: round.number,
     pairings: newPairings,
     warnings: result.warnings,
+    seedingOrder,
   }, { status: 201 });
 }
 

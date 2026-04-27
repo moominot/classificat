@@ -112,5 +112,12 @@ sqlite.exec(`
   CREATE INDEX IF NOT EXISTS round_absences_round_idx ON round_absences(round_id);
 `);
 
+// Migracions incrementals per a columnes afegides posteriorment
+const playerCols = new Set(
+  (sqlite.pragma('table_info(players)') as { name: string }[]).map(c => c.name)
+);
+if (!playerCols.has('phone')) sqlite.exec('ALTER TABLE players ADD COLUMN phone TEXT');
+if (!playerCols.has('club'))  sqlite.exec('ALTER TABLE players ADD COLUMN club TEXT');
+
 export const db = drizzle(sqlite, { schema });
 export type DB = typeof db;

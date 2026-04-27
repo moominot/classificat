@@ -33,6 +33,8 @@ export const players = sqliteTable('players', {
   name:         text('name').notNull(),
   rating:       integer('rating'),
   groupId:      text('group_id').references(() => groups.id, { onDelete: 'set null' }),
+  phone:        text('phone'),
+  club:         text('club'),
   isActive:     integer('is_active', { mode: 'boolean' }).notNull().default(true),
   createdAt:    integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 }, (t) => [

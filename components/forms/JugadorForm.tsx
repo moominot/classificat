@@ -7,12 +7,20 @@ import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 
 interface Grup { id: string; name: string }
-interface Jugador { id: string; name: string; rating: number | null; groupId: string | null; isActive: boolean }
+interface Jugador {
+  id: string;
+  name: string;
+  rating: number | null;
+  groupId: string | null;
+  phone: string | null;
+  club: string | null;
+  isActive: boolean;
+}
 
 interface JugadorFormProps {
   tournamentId: string;
   grups: Grup[];
-  jugador?: Jugador;   // si s'edita
+  jugador?: Jugador;
   onDone?: () => void;
 }
 
@@ -21,6 +29,8 @@ export default function JugadorForm({ tournamentId, grups, jugador, onDone }: Ju
   const [nom, setNom] = useState(jugador?.name ?? '');
   const [rating, setRating] = useState(jugador?.rating?.toString() ?? '');
   const [grupId, setGrupId] = useState(jugador?.groupId ?? '');
+  const [phone, setPhone] = useState(jugador?.phone ?? '');
+  const [club, setClub] = useState(jugador?.club ?? '');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -42,6 +52,8 @@ export default function JugadorForm({ tournamentId, grups, jugador, onDone }: Ju
         name: nom.trim(),
         rating: rating ? parseInt(rating) : null,
         groupId: grupId || null,
+        phone: phone.trim() || null,
+        club: club.trim() || null,
       }),
     });
 
@@ -68,7 +80,7 @@ export default function JugadorForm({ tournamentId, grups, jugador, onDone }: Ju
       />
       <div className="grid grid-cols-2 gap-3">
         <Input
-          label="Puntuació ELO (opcional)"
+          label="BARRUF (opcional)"
           type="number"
           value={rating}
           onChange={e => setRating(e.target.value)}
@@ -86,6 +98,21 @@ export default function JugadorForm({ tournamentId, grups, jugador, onDone }: Ju
             ))}
           </Select>
         )}
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <Input
+          label="Club (opcional)"
+          value={club}
+          onChange={e => setClub(e.target.value)}
+          placeholder="ex. Club Escrabble BCN"
+        />
+        <Input
+          label="Telèfon (opcional)"
+          type="tel"
+          value={phone}
+          onChange={e => setPhone(e.target.value)}
+          placeholder="ex. 612 345 678"
+        />
       </div>
       <div className="flex gap-2 pt-1">
         <Button type="submit" loading={loading} disabled={!nom.trim()}>

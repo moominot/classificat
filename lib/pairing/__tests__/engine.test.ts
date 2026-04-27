@@ -28,7 +28,7 @@ function makeStanding(playerId: string, rank: number, points: number): Standing 
     byes: 0,
     gamesPlayed: points,
     spread: points * 10,
-    tiebreakers: { buchholz: 0, medianBuchholz: 0, berger: 0, cumulative: 0, spread: 0, wins: points, directEncounterResult: -1 },
+    tiebreakers: { buchholz: 0, medianBuchholz: 0, berger: 0, cumulative: 0, avgScore: 0, spread: 0, wins: points, directEncounterResult: -1 },
   };
 }
 
@@ -101,6 +101,7 @@ console.log('\n=== Test 3: Sistema suís (6 jugadors, ronda 1) ===');
     byeHandling: 'lowest_ranked',
     scoreGroupWindowSize: 2,
     carryStandingsFromPhaseIds: [],
+    seedingCriteria: ['points', 'elo', 'name'],
   } as SwissConfig);
 
   const ctx = makeCtx(phase, players, standings);
@@ -131,6 +132,7 @@ console.log('\n=== Test 4: Sistema suís (4 jugadors, 2a ronda amb revanxa) ==='
     byeHandling: 'lowest_ranked',
     scoreGroupWindowSize: 2,
     carryStandingsFromPhaseIds: [],
+    seedingCriteria: ['points', 'elo', 'name'],
   } as SwissConfig);
 
   // Tots ja s'han enfrontat a tots

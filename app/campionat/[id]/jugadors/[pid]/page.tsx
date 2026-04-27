@@ -70,15 +70,20 @@ export default async function JugadorDetallPage({
           {jugador.name[0]?.toUpperCase()}
         </div>
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             <h2 className="text-2xl font-bold text-gray-900">{jugador.name}</h2>
             {!jugador.isActive && <Badge color="gray">Inactiu</Badge>}
           </div>
-          {myStanding && myStanding.gamesPlayed > 0 && (
-            <p className="text-sm text-gray-500 mt-0.5">
-              Posició {myStanding.rank} · {myStanding.points} punt{myStanding.points !== 1 ? 's' : ''}
-            </p>
-          )}
+          <div className="flex flex-wrap gap-3 text-sm text-gray-500 mt-1">
+            {myStanding && myStanding.gamesPlayed > 0 && (
+              <span>Posició {myStanding.rank} · {myStanding.points} punt{myStanding.points !== 1 ? 's' : ''}</span>
+            )}
+            {jugador.rating != null && (
+              <span className="font-medium text-blue-700">BARRUF {jugador.rating}</span>
+            )}
+            {jugador.club && <span>{jugador.club}</span>}
+            {jugador.phone && <span>{jugador.phone}</span>}
+          </div>
         </div>
       </div>
 

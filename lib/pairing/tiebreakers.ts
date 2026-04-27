@@ -15,6 +15,8 @@ export function getTiebreakerValue(standing: StandingLike, tb: Tiebreaker): numb
       return standing.tiebreakers.berger;
     case 'cumulative':
       return standing.tiebreakers.cumulative;
+    case 'avg_score':
+      return standing.tiebreakers.avgScore;
     case 'spread':
       return standing.tiebreakers.spread;
     case 'wins':
@@ -45,8 +47,9 @@ interface PlayerResultMap {
   playerId: string;
   points: number;
   wins: number;
+  totalScore: number;      // suma de punts de fitxa a favor (partides reals)
+  realGamesPlayed: number; // partides jugades sense byes
   opponentResults: Array<{ opponentId: string; opponentPoints: number; outcome: 'win' | 'loss' | 'draw' | 'bye' | 'forfeit' }>;
-  cumulativePoints: number[]; // punts acumulats al final de cada ronda [ronda1, ronda2, ...]
 }
 
 /**
@@ -80,17 +83,21 @@ export function computeAllTiebreakers(
       return acc;
     }, 0);
 
-    // Cumulative: suma acumulada de punts per ronda
-    const cumulative = r.cumulativePoints.reduce((acc, pts) => acc + pts, 0);
+    // Cumulative: suma total de punts de fitxa a favor
+    const cumulative = r.totalScore;
+
+    // Avg score: mitjana de punts a favor per partida real
+    const avgScore = r.realGamesPlayed > 0 ? r.totalScore / r.realGamesPlayed : 0;
 
     out.set(playerId, {
       buchholz,
       medianBuchholz,
       berger,
       cumulative,
-      spread: 0, // s'omple a standings.ts on es té la info de puntuació Scrabble
+      avgScore,
+      spread: 0,
       wins: r.wins,
-      directEncounterResult: -1, // s'omple per parella a standings.ts
+      directEncounterResult: -1,
     });
   }
 
