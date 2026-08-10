@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { useIsDirector } from '@/components/DirectorContext';
 import type { PairingWarning } from '@/lib/pairing/types';
 
 interface Jugador {
@@ -35,7 +36,10 @@ export default function GenerarAparellaments({
   previousAbsentIds?: string[];
 }) {
   const router = useRouter();
+  const isDirector = useIsDirector();
   const [absentIds, setAbsentIds] = useState<Set<string>>(new Set(previousAbsentIds));
+
+  if (!isDirector) return null;
   const [modal, setModal] = useState<{
     isFirstRound: boolean;
     seedingOrder: SeedEntry[];

@@ -4,6 +4,7 @@ import type {
   CsvPairingRow,
 } from './types';
 import { generateSwissPairings } from './methods/swiss';
+import { generateSwissFidePairings } from './methods/swiss-fide';
 import { generateRoundRobinPairings } from './methods/round-robin';
 import { generateKingOfTheHillPairings } from './methods/king-of-the-hill';
 import { generateManualPairings } from './methods/manual';
@@ -26,6 +27,9 @@ export function generatePairings(
   switch (method) {
     case 'swiss':
       return generateSwissPairings(ctx);
+
+    case 'swiss_fide':
+      return generateSwissFidePairings(ctx);
 
     case 'round_robin':
       return generateRoundRobinPairings(ctx);

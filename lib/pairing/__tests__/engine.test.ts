@@ -137,8 +137,8 @@ console.log('\n=== Test 4: Sistema suís (4 jugadors, 2a ronda amb revanxa) ==='
 
   // Tots ja s'han enfrontat a tots
   const previousPairings = [
-    { player1Id: 'P1', player2Id: 'P2', roundNumber: 1, phaseId: 'phase1' },
-    { player1Id: 'P3', player2Id: 'P4', roundNumber: 1, phaseId: 'phase1' },
+    { player1Id: 'P1', player2Id: 'P2', roundNumber: 1, phaseId: 'phase1', outcome1: 'win' as const },
+    { player1Id: 'P3', player2Id: 'P4', roundNumber: 1, phaseId: 'phase1', outcome1: 'win' as const },
   ];
 
   const ctx: PairingContext = { ...makeCtx(phase, players, standings), previousPairings };

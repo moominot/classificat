@@ -1,0 +1,13 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"  # Nginx farà el proxy; no exposar directament a internet
+    volumes:
+      - ./data:/data              # Base de dades SQLite (persistent)
+      - ./uploads:/app/app/public/uploads  # Imatges pujades (persistent)
+    environment:
+      DATA_DIR: /data
+    env_file:
+      - .env.production           # Crea aquest fitxer al servidor (veure .env.production.example)

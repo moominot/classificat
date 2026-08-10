@@ -14,7 +14,9 @@ function pairKey(p1Id: string, p2Id: string): string {
 export function buildRematchSet(previousPairings: PreviousPairing[]): Set<string> {
   const set = new Set<string>();
   for (const p of previousPairings) {
-    set.add(pairKey(p.player1Id, p.player2Id));
+    if (p.player2Id !== null) {
+      set.add(pairKey(p.player1Id, p.player2Id));
+    }
   }
   return set;
 }

@@ -35,7 +35,7 @@ import { Card } from '@/components/ui/Card';
 
 export const dynamic = 'force-dynamic';
 
-type Pestanya = 'general' | 'scrabbles' | 'jugada' | 'conjunta' | 'individual';
+type Pestanya = 'general' | 'scrabbles' | 'jugada' | 'conjunta' | 'individual' | 'desempats';
 
 const PESTANYES: { id: Pestanya; label: string }[] = [
   { id: 'general',    label: 'General' },
@@ -43,6 +43,7 @@ const PESTANYES: { id: Pestanya; label: string }[] = [
   { id: 'jugada',     label: 'Jugada' },
   { id: 'conjunta',   label: 'Partida conjunta' },
   { id: 'individual', label: 'Partida individual' },
+  { id: 'desempats',  label: 'Desempats' },
 ];
 
 export default async function ClassificacioPage({
@@ -78,6 +79,36 @@ export default async function ClassificacioPage({
   const tiebreakers = (totes_fases[0]?.tiebreakers ?? ['median_buchholz', 'buchholz', 'spread']) as EnginePhase['tiebreakers'];
   const standings = computeStandings(engineRounds, tots_jugadors.map(p => p.id), tiebreakers);
   const rondesJugades = engineRounds.filter(r => r.pairings.some(p => p.result !== null)).length;
+
+  // ── Desglossament de desempats per jugador ───────────────────────────────────
+  interface OponentDetall {
+    ronda: number;
+    oponentNom: string;
+    oponentId: string;
+    outcome: 'win' | 'loss' | 'draw' | 'bye';
+    oponentPts: number;
+  }
+  const standingsPtsMap = new Map(standings.map(s => [s.playerId, s.points]));
+  const breakdownMap = new Map<string, OponentDetall[]>();
+  for (const j of tots_jugadors) breakdownMap.set(j.id, []);
+
+  for (const round of engineRounds) {
+    for (const pairing of round.pairings) {
+      if (!pairing.result) continue;
+      const isBye = pairing.player2Id === null;
+      const push = (pid: string, oppId: string, outcome: OponentDetall['outcome']) => {
+        breakdownMap.get(pid)?.push({
+          ronda: round.number,
+          oponentId: oppId,
+          oponentNom: oppId === '__bye__' ? 'BYE' : (playerMap.get(oppId)?.name ?? '?'),
+          outcome,
+          oponentPts: oppId === '__bye__' ? 0.5 : (standingsPtsMap.get(oppId) ?? 0),
+        });
+      };
+      push(pairing.player1Id, isBye ? '__bye__' : pairing.player2Id!, isBye ? 'bye' : (pairing.result.outcome1 as OponentDetall['outcome']));
+      if (!isBye) push(pairing.player2Id!, pairing.player1Id, pairing.result.outcome2 as OponentDetall['outcome']);
+    }
+  }
 
   // ── Estadístiques per pestanyes ──────────────────────────────────────────────
 
@@ -379,10 +410,12 @@ export default async function ClassificacioPage({
                     </td>
                     <td className="px-3 py-3 text-center text-gray-500 hidden sm:table-cell">{x.ronda}</td>
                     <td className="px-4 py-3">
-                      <span className="font-medium text-gray-900">{x.jugador1.name}</span>
-                      <span className="text-gray-400 mx-1">·</span>
-                      <span className="font-medium text-gray-900">{x.jugador2.name}</span>
-                      <span className="text-xs text-gray-400 ml-2">({x.p1Score} + {x.p2Score})</span>
+                      <div className="flex flex-wrap items-baseline gap-x-1 gap-y-0.5">
+                        <span className="font-medium text-gray-900 truncate max-w-[120px]">{x.jugador1.name}</span>
+                        <span className="text-gray-300 text-xs">·</span>
+                        <span className="font-medium text-gray-900 truncate max-w-[120px]">{x.jugador2.name}</span>
+                        <span className="text-xs text-gray-400 whitespace-nowrap">({x.p1Score}+{x.p2Score})</span>
+                      </div>
                     </td>
                     <td className="px-3 py-3 text-center font-bold text-blue-600">{x.total}</td>
                   </tr>
@@ -391,6 +424,113 @@ export default async function ClassificacioPage({
             </table>
           </div>
         </Card>
+      )}
+
+      {/* ── Desempats (debug) ── */}
+      {pestanya === 'desempats' && (
+        <div className="space-y-4">
+          <p className="text-xs text-gray-400">
+            Pts oponent = punts de torneig finals de l'oponent (victòria=1, empat=0.5, derrota=0, BYE fictici=0.5).
+            Les files ombrejades s'exclouen del Buchholz medià.
+          </p>
+          {standings.filter(s => s.gamesPlayed > 0).map(s => {
+            const jugador = playerMap.get(s.playerId);
+            if (!jugador) return null;
+            const detalls = (breakdownMap.get(s.playerId) ?? []).slice().sort((a, b) => a.ronda - b.ronda);
+            const scores = detalls.map(d => d.oponentPts);
+            const buchholz = scores.reduce((a, b) => a + b, 0);
+
+            let exclMinIdx = -1, exclMaxIdx = -1;
+            if (scores.length >= 3) {
+              const minVal = Math.min(...scores);
+              const maxVal = Math.max(...scores);
+              exclMinIdx = scores.indexOf(minVal);
+              exclMaxIdx = scores.lastIndexOf(maxVal);
+              if (exclMaxIdx === exclMinIdx) {
+                const next = scores.indexOf(maxVal, exclMinIdx + 1);
+                exclMaxIdx = next !== -1 ? next : exclMinIdx === 0 ? 1 : 0;
+              }
+            }
+
+            const median = scores.filter((_, i) => i !== exclMinIdx && i !== exclMaxIdx).reduce((a, b) => a + b, 0);
+            const berger = detalls.reduce((acc, d) => {
+              if (d.outcome === 'win') return acc + d.oponentPts;
+              if (d.outcome === 'draw') return acc + d.oponentPts * 0.5;
+              return acc;
+            }, 0);
+
+            return (
+              <Card key={s.playerId} padding={false}>
+                <div className="px-4 py-2 border-b border-gray-100 flex items-center justify-between gap-2 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-gray-400 w-5 text-center">{s.rank}</span>
+                    <span className="font-semibold text-gray-900">{jugador.name}</span>
+                    <span className="text-xs text-gray-400">{s.points} pts</span>
+                  </div>
+                  <div className="flex gap-3 text-xs tabular-nums">
+                    <span className="text-gray-500">Buch <strong className="text-gray-800">{buchholz.toFixed(1)}</strong></span>
+                    <span className="text-gray-500">Med <strong className="text-gray-800">{median.toFixed(1)}</strong></span>
+                    <span className="text-gray-500">Berg <strong className="text-gray-800">{berger.toFixed(1)}</strong></span>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="bg-gray-50 border-b border-gray-100">
+                        <th className="text-left px-3 py-1.5 font-medium text-gray-400">R</th>
+                        <th className="text-left px-3 py-1.5 font-medium text-gray-400">Oponent</th>
+                        <th className="text-center px-2 py-1.5 font-medium text-gray-400">Res</th>
+                        <th className="text-center px-2 py-1.5 font-medium text-gray-400">Pts op.</th>
+                        <th className="text-center px-2 py-1.5 font-medium text-gray-400">→ Buchholz</th>
+                        <th className="text-center px-2 py-1.5 font-medium text-gray-400">→ Berger</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {detalls.map((d, i) => {
+                        const exclos = i === exclMinIdx || i === exclMaxIdx;
+                        const bergerContrib = d.outcome === 'win' ? d.oponentPts : d.outcome === 'draw' ? d.oponentPts * 0.5 : 0;
+                        return (
+                          <tr key={i} className={exclos ? 'bg-gray-50 opacity-40' : ''}>
+                            <td className="px-3 py-1.5 text-gray-400">{d.ronda}</td>
+                            <td className="px-3 py-1.5 font-medium text-gray-800">
+                              {d.oponentNom}
+                              {i === exclMinIdx && <span className="text-gray-300 ml-1">(−mín)</span>}
+                              {i === exclMaxIdx && <span className="text-gray-300 ml-1">(−màx)</span>}
+                            </td>
+                            <td className="px-2 py-1.5 text-center">
+                              <span className={`font-bold ${
+                                d.outcome === 'win' ? 'text-green-600' :
+                                d.outcome === 'loss' ? 'text-red-500' :
+                                d.outcome === 'draw' ? 'text-blue-500' : 'text-gray-300'
+                              }`}>
+                                {d.outcome === 'win' ? 'V' : d.outcome === 'loss' ? 'D' : d.outcome === 'draw' ? 'E' : 'BYE'}
+                              </span>
+                            </td>
+                            <td className="px-2 py-1.5 text-center tabular-nums text-gray-700">{d.oponentPts.toFixed(1)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums text-gray-500">
+                              {exclos ? <span className="line-through text-gray-300">{d.oponentPts.toFixed(1)}</span> : `+${d.oponentPts.toFixed(1)}`}
+                            </td>
+                            <td className="px-2 py-1.5 text-center tabular-nums text-gray-500">
+                              {bergerContrib > 0 ? `+${bergerContrib.toFixed(1)}` : '—'}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr className="border-t border-gray-200 bg-gray-50 font-semibold">
+                        <td colSpan={3} className="px-3 py-1.5 text-gray-500">Total</td>
+                        <td className="px-2 py-1.5 text-center text-gray-700 tabular-nums">{buchholz.toFixed(1)}</td>
+                        <td className="px-2 py-1.5 text-center text-gray-800 tabular-nums">{median.toFixed(1)}</td>
+                        <td className="px-2 py-1.5 text-center text-gray-800 tabular-nums">{berger.toFixed(1)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </Card>
+            );
+          })}
+        </div>
       )}
 
       {/* ── Partida individual ── */}

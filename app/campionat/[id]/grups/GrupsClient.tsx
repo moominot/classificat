@@ -7,6 +7,7 @@ import Input from '@/components/ui/Input';
 import Badge from '@/components/ui/Badge';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import EmptyState from '@/components/ui/EmptyState';
+import { useIsDirector } from '@/components/DirectorContext';
 
 interface Grup { id: string; name: string; order: number }
 interface Jugador { id: string; name: string; groupId: string | null; isActive: boolean }
@@ -21,6 +22,7 @@ export default function GrupsClient({
   jugadors: Jugador[];
 }) {
   const router = useRouter();
+  const isDirector = useIsDirector();
   const [nomNouGrup, setNomNouGrup] = useState('');
   const [loadingNou, setLoadingNou] = useState(false);
   const [assignant, setAssignant] = useState<string | null>(null); // jugadorId
@@ -53,26 +55,28 @@ export default function GrupsClient({
 
   return (
     <div className="space-y-5">
-      {/* Crear nou grup */}
-      <Card>
-        <CardHeader><CardTitle>Crear grup</CardTitle></CardHeader>
-        <div className="flex gap-3">
-          <Input
-            value={nomNouGrup}
-            onChange={e => setNomNouGrup(e.target.value)}
-            placeholder="ex. A, B, Preferent, Regional..."
-            onKeyDown={e => e.key === 'Enter' && crearGrup()}
-          />
-          <Button onClick={crearGrup} loading={loadingNou} disabled={!nomNouGrup.trim()}>
-            Crear
-          </Button>
-        </div>
-        {grups.length === 0 && (
-          <p className="text-sm text-gray-500 mt-3">
-            Els grups permeten fer round robin intern i Swiss global a la fase final.
-          </p>
-        )}
-      </Card>
+      {/* Crear nou grup (només director) */}
+      {isDirector && (
+        <Card>
+          <CardHeader><CardTitle>Crear grup</CardTitle></CardHeader>
+          <div className="flex gap-3">
+            <Input
+              value={nomNouGrup}
+              onChange={e => setNomNouGrup(e.target.value)}
+              placeholder="ex. A, B, Preferent, Regional..."
+              onKeyDown={e => e.key === 'Enter' && crearGrup()}
+            />
+            <Button onClick={crearGrup} loading={loadingNou} disabled={!nomNouGrup.trim()}>
+              Crear
+            </Button>
+          </div>
+          {grups.length === 0 && (
+            <p className="text-sm text-gray-500 mt-3">
+              Els grups permeten fer round robin intern i Swiss global a la fase final.
+            </p>
+          )}
+        </Card>
+      )}
 
       {grups.length === 0 ? (
         <EmptyState
@@ -102,18 +106,20 @@ export default function GrupsClient({
                           {j.name[0]}
                         </div>
                         <span className="flex-1 text-sm text-gray-800">{j.name}</span>
-                        <div className="relative">
-                          <select
-                            value={j.groupId ?? ''}
-                            onChange={e => assignarGrup(j.id, e.target.value || null)}
-                            className="text-xs border border-gray-200 rounded px-2 py-1 text-gray-500 bg-white"
-                          >
-                            <option value="">Sense grup</option>
-                            {grups.map(gg => (
-                              <option key={gg.id} value={gg.id}>Grup {gg.name}</option>
-                            ))}
-                          </select>
-                        </div>
+                        {isDirector && (
+                          <div className="relative">
+                            <select
+                              value={j.groupId ?? ''}
+                              onChange={e => assignarGrup(j.id, e.target.value || null)}
+                              className="text-xs border border-gray-200 rounded px-2 py-1 text-gray-500 bg-white"
+                            >
+                              <option value="">Sense grup</option>
+                              {grups.map(gg => (
+                                <option key={gg.id} value={gg.id}>Grup {gg.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                        )}
                       </li>
                     ))}
                   </ul>
@@ -136,16 +142,18 @@ export default function GrupsClient({
                       {j.name[0]}
                     </div>
                     <span className="flex-1 text-sm text-gray-700">{j.name}</span>
-                    <select
-                      value=""
-                      onChange={e => assignarGrup(j.id, e.target.value || null)}
-                      className="text-xs border border-gray-200 rounded px-2 py-1 text-gray-500 bg-white"
-                    >
-                      <option value="">Assignar grup...</option>
-                      {grups.map(g => (
-                        <option key={g.id} value={g.id}>Grup {g.name}</option>
-                      ))}
-                    </select>
+                    {isDirector && (
+                      <select
+                        value=""
+                        onChange={e => assignarGrup(j.id, e.target.value || null)}
+                        className="text-xs border border-gray-200 rounded px-2 py-1 text-gray-500 bg-white"
+                      >
+                        <option value="">Assignar grup...</option>
+                        {grups.map(g => (
+                          <option key={g.id} value={g.id}>Grup {g.name}</option>
+                        ))}
+                      </select>
+                    )}
                   </li>
                 ))}
               </ul>

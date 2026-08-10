@@ -20,7 +20,7 @@ export async function PUT(req: Request, { params }: Params) {
     pairingId, p1Score, p2Score, outcome1, outcome2,
     p1Scrabbles, p2Scrabbles,
     p1BestWord, p2BestWord, p1BestWordScore, p2BestWordScore,
-    location, comments,
+    location, comments, sheetImageUrl,
   } = body;
 
   if (!pairingId) return NextResponse.json({ error: 'Cal pairingId' }, { status: 400 });
@@ -70,6 +70,7 @@ export async function PUT(req: Request, { params }: Params) {
     p2BestWordScore: p2BestWordScore ?? null,
     location: location ?? null,
     comments: comments ?? null,
+    sheetImageUrl: sheetImageUrl ?? null,
     reportedAt: new Date(),
   }).where(eq(pairings.id, pairingId));
 

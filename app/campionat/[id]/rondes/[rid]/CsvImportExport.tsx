@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
+import { useIsDirector } from '@/components/DirectorContext';
 
 interface Props {
   tournamentId: string;
@@ -13,7 +14,10 @@ interface Props {
 
 export default function CsvImportExport({ tournamentId, roundId, roundNumber, rondaTancada }: Props) {
   const router = useRouter();
+  const isDirector = useIsDirector();
   const fileRef = useRef<HTMLInputElement>(null);
+
+  if (!isDirector) return null;
   const [importing, setImporting] = useState(false);
   const [missatge, setMissatge] = useState<{ tipus: 'ok' | 'error'; text: string } | null>(null);
 

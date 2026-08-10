@@ -1,0 +1,11 @@
+node_modules
+.next
+.data
+data
+uploads
+.env*
+!.env.production.example
+dist
+*.log
+.git
+.gitignore

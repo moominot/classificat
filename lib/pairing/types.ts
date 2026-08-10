@@ -1,6 +1,6 @@
 // ─── Enumerations ────────────────────────────────────────────────────────────
 
-export type PairingMethod = 'swiss' | 'round_robin' | 'king_of_the_hill' | 'manual';
+export type PairingMethod = 'swiss' | 'swiss_fide' | 'round_robin' | 'king_of_the_hill' | 'manual';
 
 export type Tiebreaker =
   | 'median_buchholz'   // Buchholz menys el millor i pitjor oponent
@@ -56,6 +56,13 @@ export interface SwissConfig {
   seedingCriteria: SeedingCriterion[];  // ordre de seeding (per defecte: points, elo, name)
 }
 
+export interface SwissFideConfig {
+  method: 'swiss_fide';
+  scope: 'all' | 'intra_group';  // 'all' = tots junts, 'intra_group' = cada grup per separat
+  carryStandingsFromPhaseIds: string[];
+  expectedRounds?: number;  // per millorar l'assignació del bye a les darreres rondes
+}
+
 export interface RoundRobinConfig {
   method: 'round_robin';
   scope: 'intra_group' | 'inter_group' | 'all';
@@ -76,6 +83,7 @@ export interface ManualConfig {
 
 export type PhaseConfig =
   | SwissConfig
+  | SwissFideConfig
   | RoundRobinConfig
   | KingOfTheHillConfig
   | ManualConfig;
@@ -155,9 +163,10 @@ export interface TiebreakerValues {
 
 export interface PreviousPairing {
   player1Id: string;
-  player2Id: string;
+  player2Id: string | null;  // null = bye
   roundNumber: number;
   phaseId: string;
+  outcome1: GameOutcome | null;  // resultat del jugador 1 (null = no reportat)
 }
 
 export interface PairingContext {

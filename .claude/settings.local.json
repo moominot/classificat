@@ -3,7 +3,26 @@
     "allow": [
       "Bash(npm run *)",
       "Bash(npm install *)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebSearch",
+      "WebFetch(domain:api.github.com)",
+      "Bash(node -e \"require\\('@anthropic-ai/sdk'\\); console.log\\('ok'\\)\")",
+      "WebFetch(domain:www.npmjs.com)",
+      "Bash(gh api *)",
+      "Bash(python -c \"import json,sys; [print\\(f['name'], f['type']\\) for f in json.load\\(sys.stdin\\)]\")",
+      "Bash(python -c \"import json,sys,base64; d=json.load\\(sys.stdin\\); print\\(base64.b64decode\\(d['content']\\).decode\\(\\)\\)\")",
+      "Bash(python -c \"import json,sys,base64; print\\(base64.b64decode\\(json.load\\(sys.stdin\\)['content']\\).decode\\('utf-8'\\)\\)\")",
+      "Bash(python -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\('version:', d['version']\\); print\\('exports:', list\\(d['exports'].keys\\(\\)\\)\\)\")",
+      "Bash(node -e \"const p = require\\('./node_modules/next/package.json'\\); console.log\\(p.version\\)\")",
+      "Bash(npx next *)",
+      "Bash(python -c \"import json; d=json.load\\(open\\('package.json'\\)\\); [print\\(k,'=',v\\) for k,v in d.get\\('scripts',{}\\).items\\(\\)]\")",
+      "Bash(node -e ' *)",
+      "Bash(npx drizzle-kit *)",
+      "Bash(Get-ChildItem -Path \"d:\\\\Users\\\\tonil\\\\Documents\\\\PROGRAMES PROPIS\\\\classificat-1\" -Recurse -Directory)",
+      "Bash(Select-Object -First 20 FullName)",
+      "Bash(xargs head -30)"
     ]
   }
 }

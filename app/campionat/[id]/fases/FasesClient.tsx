@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { useIsDirector } from '@/components/DirectorContext';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
@@ -10,7 +11,7 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import EmptyState from '@/components/ui/EmptyState';
 import type {
   PhaseConfig, Tiebreaker, SeedingCriterion,
-  SwissConfig, RoundRobinConfig, KingOfTheHillConfig,
+  SwissConfig, SwissFideConfig, RoundRobinConfig, KingOfTheHillConfig,
 } from '@/lib/pairing/types';
 import { DEFAULT_SEEDING_CRITERIA } from '@/lib/pairing/types';
 
@@ -28,7 +29,8 @@ interface Fase {
 }
 
 const METODES = [
-  { value: 'swiss',            label: 'Sistema suís' },
+  { value: 'swiss_fide',       label: 'Sistema suís FIDE (recomanat)' },
+  { value: 'swiss',            label: 'Sistema suís (clàssic)' },
   { value: 'round_robin',      label: 'Round Robin' },
   { value: 'king_of_the_hill', label: 'Rei del turó' },
   { value: 'manual',           label: 'Manual / CSV' },
@@ -46,6 +48,7 @@ const DESEMPATS: { value: Tiebreaker; label: string }[] = [
 ];
 
 const METHOD_BADGES: Record<string, { label: string; color: 'blue' | 'green' | 'purple' | 'gray' }> = {
+  swiss_fide:       { label: 'Suís FIDE',   color: 'blue' },
   swiss:            { label: 'Suís',        color: 'blue' },
   round_robin:      { label: 'Round Robin', color: 'green' },
   king_of_the_hill: { label: 'Rei del turó', color: 'purple' },
@@ -62,6 +65,7 @@ export default function FasesClient({
   grups: Grup[];
 }) {
   const router = useRouter();
+  const isDirector = useIsDirector();
   const [mostrarForm, setMostrarForm] = useState(false);
 
   return (
@@ -70,12 +74,12 @@ export default function FasesClient({
         <p className="text-sm text-gray-500 flex-1">
           Defineix les fases del campionat. Cada fase cobreix un rang de rondes amb el seu sistema d&apos;aparellament.
         </p>
-        {!mostrarForm && (
+        {isDirector && !mostrarForm && (
           <Button size="sm" onClick={() => setMostrarForm(true)}>+ Nova fase</Button>
         )}
       </div>
 
-      {mostrarForm && (
+      {isDirector && mostrarForm && (
         <Card>
           <CardHeader><CardTitle>Nova fase</CardTitle></CardHeader>
           <NovaFaseForm
@@ -92,7 +96,7 @@ export default function FasesClient({
         <EmptyState
           title="Sense fases"
           description="Afegeix fases per definir com es generaran els aparellaments. Exemple: rondes 1–20 Round Robin per grups, rondes 21–28 Sistema Suís."
-          action={<Button onClick={() => setMostrarForm(true)}>+ Nova fase</Button>}
+          action={isDirector ? <Button onClick={() => setMostrarForm(true)}>+ Nova fase</Button> : undefined}
         />
       ) : (
         <div className="space-y-3">
@@ -123,6 +127,7 @@ function FaseCard({
   fases: Fase[];
   onRefresh: () => void;
 }) {
+  const isDirector = useIsDirector();
   const [mode, setMode] = useState<'view' | 'edit' | 'delete'>('view');
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
@@ -177,35 +182,39 @@ function FaseCard({
   }
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-4 flex items-start gap-4">
-      <div className="flex-shrink-0 w-10 h-10 rounded-full bg-gray-100 flex items-center justify-center font-bold text-gray-600">
-        {fase.order}
-      </div>
-      <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 flex-wrap">
-          <h3 className="font-semibold text-gray-900">{fase.name}</h3>
-          <Badge color={badge.color}>{badge.label}</Badge>
-          {fase.isComplete && <Badge color="gray">Completada</Badge>}
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+      <div className="p-4 flex items-start gap-3">
+        <div className="flex-shrink-0 w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center font-bold text-gray-600 text-sm">
+          {fase.order}
         </div>
-        <p className="text-sm text-gray-500 mt-1">
-          Rondes {fase.startRound} – {fase.endRound}
-          {' · '}
-          {fase.endRound - fase.startRound + 1} ronda{fase.endRound - fase.startRound + 1 !== 1 ? 'es' : ''}
-        </p>
-        {configInfo && <p className="text-xs text-gray-400 mt-1">{configInfo}</p>}
-        {fase.tiebreakers.length > 0 && (
-          <p className="text-xs text-gray-400 mt-1">
-            Desempats: {fase.tiebreakers.map(t =>
-              DESEMPATS.find(d => d.value === t)?.label ?? t
-            ).join(' → ')}
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="font-semibold text-gray-900">{fase.name}</h3>
+            <Badge color={badge.color}>{badge.label}</Badge>
+            {fase.isComplete && <Badge color="gray">Completada</Badge>}
+          </div>
+          <p className="text-sm text-gray-500 mt-1">
+            Rondes {fase.startRound}–{fase.endRound}
+            {' · '}
+            {fase.endRound - fase.startRound + 1} ronda{fase.endRound - fase.startRound + 1 !== 1 ? 'es' : ''}
           </p>
-        )}
+          {configInfo && <p className="text-xs text-gray-400 mt-1">{configInfo}</p>}
+          {fase.tiebreakers.length > 0 && (
+            <p className="text-xs text-gray-400 mt-1 leading-relaxed">
+              Desempats: {fase.tiebreakers.map(t =>
+                DESEMPATS.find(d => d.value === t)?.label ?? t
+              ).join(' → ')}
+            </p>
+          )}
+        </div>
       </div>
-      <div className="flex gap-1 flex-shrink-0">
-        <Button size="sm" variant="ghost" onClick={() => setMode('edit')}>Editar</Button>
-        <Button size="sm" variant="ghost" onClick={() => setMode('delete')}
-          className="text-red-500 hover:bg-red-50">Esborrar</Button>
-      </div>
+      {isDirector && (
+        <div className="border-t border-gray-100 px-3 py-2 flex gap-1">
+          <Button size="sm" variant="ghost" onClick={() => setMode('edit')}>Editar</Button>
+          <Button size="sm" variant="ghost" onClick={() => setMode('delete')}
+            className="text-red-500 hover:bg-red-50">Esborrar</Button>
+        </div>
+      )}
     </div>
   );
 }
@@ -216,6 +225,11 @@ function describeConfig(config: PhaseConfig, grupMap: Map<string, string>): stri
       : config.scope === 'inter_group' ? 'inter-grupal' : 'global';
     const doble = config.doubleRound ? ' (doble volta)' : '';
     return `Round Robin ${scope}${doble}`;
+  }
+  if (config.method === 'swiss_fide') {
+    return config.carryStandingsFromPhaseIds.length > 0
+      ? 'FIDE Dutch · Hereta classificació de fases anteriors'
+      : 'FIDE Dutch · Classificació independent';
   }
   if (config.method === 'swiss') {
     return config.carryStandingsFromPhaseIds.length > 0
@@ -260,6 +274,13 @@ function EditarFaseForm({
     swissConfig?.seedingCriteria?.length ? swissConfig.seedingCriteria : DEFAULT_SEEDING_CRITERIA
   );
 
+  const swissFideConfig = fase.method === 'swiss_fide' ? (fase.config as SwissFideConfig) : null;
+  const [swissFideScope, setSwissFideScope] = useState<'all' | 'intra_group'>(swissFideConfig?.scope ?? 'all');
+  const [swissFideCarry, setSwissFideCarry] = useState<string[]>(swissFideConfig?.carryStandingsFromPhaseIds ?? []);
+  const [swissFideExpectedRounds, setSwissFideExpectedRounds] = useState(
+    swissFideConfig?.expectedRounds?.toString() ?? ''
+  );
+
   const rrConfig = fase.method === 'round_robin' ? (fase.config as RoundRobinConfig) : null;
   const [rrScope, setRrScope] = useState<'intra_group' | 'inter_group' | 'all'>(rrConfig?.scope ?? 'all');
   const [rrDoble, setRrDoble] = useState(rrConfig?.doubleRound ?? false);
@@ -269,6 +290,14 @@ function EditarFaseForm({
   const [kothCarry, setKothCarry] = useState<string[]>(kothConfig?.carryStandingsFromPhaseIds ?? []);
 
   function buildConfig(): PhaseConfig {
+    if (fase.method === 'swiss_fide') {
+      return {
+        method: 'swiss_fide',
+        scope: swissFideScope,
+        carryStandingsFromPhaseIds: swissFideCarry,
+        expectedRounds: swissFideExpectedRounds ? parseInt(swissFideExpectedRounds) : undefined,
+      };
+    }
     if (fase.method === 'swiss') {
       return {
         method: 'swiss',
@@ -371,6 +400,18 @@ function EditarFaseForm({
         </div>
       </div>
 
+      {fase.method === 'swiss_fide' && (
+        <ConfigSwissFide
+          scope={swissFideScope}
+          setScope={setSwissFideScope}
+          carry={swissFideCarry}
+          setCarry={setSwissFideCarry}
+          expectedRounds={swissFideExpectedRounds}
+          setExpectedRounds={setSwissFideExpectedRounds}
+          fases={fases}
+          grups={grups}
+        />
+      )}
       {fase.method === 'swiss' && (
         <ConfigSwiss
           avoidRematches={swissAvoidRematches}
@@ -463,7 +504,7 @@ function NovaFaseForm({
   onCancel: () => void;
 }) {
   const [nom, setNom] = useState('');
-  const [metode, setMetode] = useState<string>('swiss');
+  const [metode, setMetode] = useState<string>('swiss_fide');
   const [startRound, setStartRound] = useState('');
   const [endRound, setEndRound] = useState('');
   const [desempats, setDesempats] = useState<Tiebreaker[]>(['median_buchholz', 'buchholz', 'spread']);
@@ -475,6 +516,9 @@ function NovaFaseForm({
   const [swissAvoidRematches, setSwissAvoidRematches] = useState(true);
   const [swissCarry, setSwissCarry] = useState<string[]>([]);
   const [swissSeedingCriteria, setSwissSeedingCriteria] = useState<SeedingCriterion[]>(DEFAULT_SEEDING_CRITERIA);
+  const [swissFideScope, setSwissFideScope] = useState<'all' | 'intra_group'>('all');
+  const [swissFideCarry, setSwissFideCarry] = useState<string[]>([]);
+  const [swissFideExpectedRounds, setSwissFideExpectedRounds] = useState('');
   const [kothTopN, setKothTopN] = useState('');
   const [kothCarry, setKothCarry] = useState<string[]>([]);
 
@@ -483,6 +527,14 @@ function NovaFaseForm({
     : 1;
 
   function buildConfig(): PhaseConfig {
+    if (metode === 'swiss_fide') {
+      return {
+        method: 'swiss_fide',
+        scope: swissFideScope,
+        carryStandingsFromPhaseIds: swissFideCarry,
+        expectedRounds: swissFideExpectedRounds ? parseInt(swissFideExpectedRounds) : undefined,
+      };
+    }
     if (metode === 'swiss') {
       return {
         method: 'swiss',
@@ -585,6 +637,18 @@ function NovaFaseForm({
         </div>
       </div>
 
+      {metode === 'swiss_fide' && (
+        <ConfigSwissFide
+          scope={swissFideScope}
+          setScope={setSwissFideScope}
+          carry={swissFideCarry}
+          setCarry={setSwissFideCarry}
+          expectedRounds={swissFideExpectedRounds}
+          setExpectedRounds={setSwissFideExpectedRounds}
+          fases={fases}
+          grups={grups}
+        />
+      )}
       {metode === 'swiss' && (
         <ConfigSwiss
           avoidRematches={swissAvoidRematches}
@@ -741,6 +805,70 @@ function ConfigSwiss({
         </div>
       </div>
 
+      {fases.length > 0 && (
+        <div>
+          <p className="text-sm font-medium text-gray-700 mb-1">Heretar classificació de:</p>
+          {fases.map(f => (
+            <label key={f.id} className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={carry.includes(f.id)}
+                onChange={e => setCarry(e.target.checked ? [...carry, f.id] : carry.filter(x => x !== f.id))}
+                className="accent-blue-600"
+              />
+              Fase {f.order}: {f.name} (rondes {f.startRound}–{f.endRound})
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ConfigSwissFide({
+  scope, setScope, carry, setCarry, expectedRounds, setExpectedRounds, fases, grups,
+}: {
+  scope: 'all' | 'intra_group';
+  setScope: (v: 'all' | 'intra_group') => void;
+  carry: string[];
+  setCarry: (v: string[]) => void;
+  expectedRounds: string;
+  setExpectedRounds: (v: string) => void;
+  fases: Fase[];
+  grups: Grup[];
+}) {
+  return (
+    <div className="bg-blue-50 rounded-lg p-4 space-y-3">
+      <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Configuració Suís FIDE</p>
+      <p className="text-xs text-blue-600">
+        Usa l&apos;algorisme holandès FIDE amb matching global òptim (blossom). Gestiona automàticament revanxes, floats i bye.
+      </p>
+      <Select
+        label="Àmbit"
+        value={scope}
+        onChange={e => setScope(e.target.value as 'all' | 'intra_group')}
+      >
+        <option value="all">Tots els jugadors (global)</option>
+        <option value="intra_group" disabled={grups.length === 0}>
+          Per grups (Swiss independent dins de cada grup)
+        </option>
+      </Select>
+      {grups.length === 0 && scope === 'intra_group' && (
+        <p className="text-xs text-amber-700 bg-amber-50 rounded p-2">
+          Cal crear grups primer per usar el mode per grups.
+        </p>
+      )}
+      <Input
+        label="Total de rondes previstes (opcional)"
+        type="number"
+        min={1}
+        value={expectedRounds}
+        onChange={e => setExpectedRounds(e.target.value)}
+        placeholder="ex. 7"
+      />
+      <p className="text-xs text-gray-500">
+        Indica el total de rondes per optimitzar l&apos;assignació del bye a les darreres rondes.
+      </p>
       {fases.length > 0 && (
         <div>
           <p className="text-sm font-medium text-gray-700 mb-1">Heretar classificació de:</p>

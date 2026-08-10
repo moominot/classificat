@@ -62,10 +62,10 @@ export function computeAllTiebreakers(
   const out = new Map<string, TiebreakerValues>();
 
   for (const [playerId, r] of results) {
-    // Buchholz: suma de punts dels oponents
+    // Buchholz: suma de punts dels oponents.
+    // El bye compta com un oponent fictici amb 0.5 punts (comportament SP98).
     const opponentScores = r.opponentResults
-      .filter((o) => o.opponentId !== '__bye__')
-      .map((o) => o.opponentPoints);
+      .map((o) => o.opponentId === '__bye__' ? 0.5 : o.opponentPoints);
 
     const buchholz = opponentScores.reduce((acc, s) => acc + s, 0);
 

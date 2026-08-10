@@ -49,7 +49,7 @@ export const phases = sqliteTable('phases', {
   tournamentId: text('tournament_id').notNull().references(() => tournaments.id, { onDelete: 'cascade' }),
   order:        integer('order').notNull(),
   name:         text('name').notNull(),
-  method:       text('method', { enum: ['swiss', 'round_robin', 'king_of_the_hill', 'manual'] }).notNull(),
+  method:       text('method', { enum: ['swiss', 'swiss_fide', 'round_robin', 'king_of_the_hill', 'manual'] }).notNull(),
   startRound:   integer('start_round').notNull(),
   endRound:     integer('end_round').notNull(),
   // Columnes JSON: Drizzle gestiona la serialització

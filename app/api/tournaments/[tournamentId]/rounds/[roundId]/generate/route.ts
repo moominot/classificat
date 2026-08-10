@@ -12,6 +12,7 @@ import type {
   PreviousPairing,
   Phase as EnginePhase,
   SwissConfig,
+  SwissFideConfig,
   KingOfTheHillConfig,
 } from '@/lib/pairing/types';
 
@@ -117,18 +118,17 @@ export async function POST(req: Request, { params }: Params) {
     phase.tiebreakers as EnginePhase['tiebreakers']
   );
 
-  // Construeix l'historial d'aparellaments previs per evitar revanxes
-  const previousPairings: PreviousPairing[] = allPairings
-    .filter((p) => p.player2Id !== null)
-    .map((p) => {
-      const r = relevantRounds.find((rr) => rr.id === p.roundId)!;
-      return {
-        player1Id: p.player1Id,
-        player2Id: p.player2Id!,
-        roundNumber: r.number,
-        phaseId: r.phaseId,
-      };
-    });
+  // Construeix l'historial d'aparellaments previs (inclou byes amb player2Id=null)
+  const previousPairings: PreviousPairing[] = allPairings.map((p) => {
+    const r = relevantRounds.find((rr) => rr.id === p.roundId)!;
+    return {
+      player1Id: p.player1Id,
+      player2Id: p.player2Id ?? null,
+      roundNumber: r.number,
+      phaseId: r.phaseId,
+      outcome1: (p.outcome1 as PreviousPairing['outcome1']) ?? null,
+    };
+  });
 
   // Construeix el context del motor
   const enginePlayers: EnginePlayer[] = dbPlayers.map((p) => ({
@@ -203,6 +203,7 @@ export async function POST(req: Request, { params }: Params) {
 
 function getCarryPhaseIds(config: EnginePhase['config']): string[] {
   if (config.method === 'swiss') return (config as SwissConfig).carryStandingsFromPhaseIds;
+  if (config.method === 'swiss_fide') return (config as SwissFideConfig).carryStandingsFromPhaseIds;
   if (config.method === 'king_of_the_hill') return (config as KingOfTheHillConfig).carryStandingsFromPhaseIds;
   return [];
 }
