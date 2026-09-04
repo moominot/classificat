@@ -1,11 +1,11 @@
 import { db } from '@/db';
-import { pairings, players, rounds, phases } from '@/db/schema';
-import { eq } from 'drizzle-orm';
+import { pairings, players, rounds, phases, questionDefinitions, pairingAnswers } from '@/db/schema';
+import { eq, asc } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import Badge from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
-import FormulariResultatPartida from './FormulariResultatPartida';
+import FormulariResultatWizard from './FormulariResultatWizard';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,6 +23,13 @@ export default async function PartidaDetallPage({
   if (!round || round.tournamentId !== id) notFound();
 
   const [phase] = await db.select().from(phases).where(eq(phases.id, round.phaseId));
+
+  const [questions, answers] = await Promise.all([
+    db.select().from(questionDefinitions).where(eq(questionDefinitions.tournamentId, id)).orderBy(asc(questionDefinitions.order)),
+    db.select().from(pairingAnswers).where(eq(pairingAnswers.pairingId, paid)),
+  ]);
+  const customQuestions = questions.filter(q => !q.isBuiltin);
+  const answerMap = new Map(answers.map(a => [`${a.questionId}:${a.player ?? 'm'}`, a]));
 
   const [p1, p2] = await Promise.all([
     db.select().from(players).where(eq(players.id, pairing.player1Id)).then(r => r[0]),
@@ -172,21 +179,64 @@ export default async function PartidaDetallPage({
             )}
           </div>
 
-          {/* Foto del full */}
-          {pairing.sheetImageUrl && (
-            <a
-              href={pairing.sheetImageUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="mt-3 pt-3 border-t border-border flex items-center gap-2 text-xs text-ink-3 hover:text-accent-ink transition-colors"
-            >
-              <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              Veure full de puntuació
-            </a>
+          {/* Fotos */}
+          {(pairing.sheetImageUrl || pairing.boardImageUrl) && (
+            <div className="mt-3 pt-3 border-t border-border flex flex-wrap gap-2">
+              {pairing.sheetImageUrl && (
+                <a href={pairing.sheetImageUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-xs text-ink-3 hover:text-accent-ink transition-colors">
+                  <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  Veure full de puntuació
+                </a>
+              )}
+              {pairing.boardImageUrl && (
+                <a href={pairing.boardImageUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-xs text-ink-3 hover:text-accent-ink transition-colors">
+                  <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                  </svg>
+                  Veure foto del tauler
+                </a>
+              )}
+            </div>
           )}
+        </Card>
+      )}
+
+      {/* Preguntes personalitzades del director */}
+      {customQuestions.length > 0 && customQuestions.some(q => answerMap.has(`${q.id}:1`) || answerMap.has(`${q.id}:2`) || answerMap.has(`${q.id}:m`)) && (
+        <Card>
+          <div className="space-y-2 text-sm">
+            {customQuestions.map(q => {
+              const players = q.scope === 'player' ? [1, 2] as const : [null];
+              const parts = players.map(player => {
+                const a = answerMap.get(`${q.id}:${player ?? 'm'}`);
+                if (!a) return null;
+                if (q.type === 'image') return a.imageUrl ? { label: player === 1 ? p1?.name : player === 2 ? p2?.name : undefined, url: a.imageUrl } : null;
+                if (q.type === 'wordvalue') return a.textValue ? `${a.textValue} (${a.numberValue ?? 0})` : null;
+                return a.textValue ?? a.numberValue?.toString() ?? null;
+              }).filter((x): x is NonNullable<typeof x> => x !== null);
+              if (parts.length === 0) return null;
+              return (
+                <div key={q.id} className="flex items-center justify-between gap-3 border-b border-border pb-2 last:border-b-0 last:pb-0">
+                  <span className="text-ink-3">{q.label}</span>
+                  {q.type === 'image' ? (
+                    <div className="flex gap-2">
+                      {(parts as { label?: string; url: string }[]).map((p, i) => (
+                        <a key={i} href={p.url} target="_blank" rel="noopener noreferrer" className="text-xs text-accent-ink hover:underline">
+                          {p.label ?? 'Foto'}
+                        </a>
+                      ))}
+                    </div>
+                  ) : (
+                    <span className="text-ink font-medium text-right">{(parts as string[]).join(' – ')}</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </Card>
       )}
 
@@ -214,16 +264,17 @@ export default async function PartidaDetallPage({
 
       {/* Formulari (gestiona el seu propi Card i show/hide) */}
       {!isBye && (
-        <FormulariResultatPartida
+        <FormulariResultatWizard
           aparellament={{
             ...pairing,
             player1Name: p1?.name ?? '?',
             player2Name: p2?.name ?? '?',
-            sheetImageUrl: pairing.sheetImageUrl ?? null,
           }}
           tournamentId={id}
           roundId={round.id}
           rondaTancada={round.isComplete}
+          questions={questions}
+          existingAnswers={answers}
         />
       )}
     </div>

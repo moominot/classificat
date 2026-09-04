@@ -122,13 +122,15 @@ export async function POST(req: Request) {
   const pairingId = formData.get('pairingId') as string | null;
   const p1Name = (formData.get('p1Name') as string | null) ?? 'Jugador 1';
   const p2Name = (formData.get('p2Name') as string | null) ?? 'Jugador 2';
+  const kind = (formData.get('kind') as string | null) === 'board' ? 'board' : 'sheet';
 
   if (!file) return NextResponse.json({ error: 'Cal un fitxer' }, { status: 400 });
   if (!pairingId) return NextResponse.json({ error: 'Cal pairingId' }, { status: 400 });
   if (!file.type.startsWith('image/'))
     return NextResponse.json({ error: 'El fitxer ha de ser una imatge' }, { status: 400 });
 
-  const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'score-sheets');
+  const folder = kind === 'board' ? 'board-photos' : 'score-sheets';
+  const uploadDir = path.join(process.cwd(), 'public', 'uploads', folder);
   fs.mkdirSync(uploadDir, { recursive: true });
 
   const buffer = Buffer.from(await file.arrayBuffer());
@@ -139,7 +141,13 @@ export async function POST(req: Request) {
   const filename = `${pairingId}-${Date.now()}.${extMap[mimeType]}`;
   fs.writeFileSync(path.join(uploadDir, filename), buffer);
 
-  const url = `/uploads/score-sheets/${filename}`;
+  const url = `/uploads/${folder}/${filename}`;
+
+  // La foto del tauler només es desa: no té sentit passar-la per l'OCR del
+  // full de puntuació.
+  if (kind === 'board') {
+    return NextResponse.json({ url, fields: emptyFields() }, { status: 201 });
+  }
 
   // Extracció OCR amb Claude Vision
   let fields: OcrFields = emptyFields();

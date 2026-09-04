@@ -122,6 +122,43 @@ export const pairings = sqliteTable('pairings', {
   index('pairings_player2_idx').on(t.player2Id),
 ]);
 
+// ─── Preguntes del formulari de resultat ──────────────────────────────────────
+
+export const questionDefinitions = sqliteTable('question_definitions', {
+  id:            text('id').primaryKey(),
+  tournamentId:  text('tournament_id').notNull().references(() => tournaments.id, { onDelete: 'cascade' }),
+  key:           text('key').notNull(),
+  isBuiltin:     integer('is_builtin', { mode: 'boolean' }).notNull().default(false),
+  type:          text('type', { enum: ['value', 'wordvalue', 'image'] }).notNull(),
+  scope:         text('scope', { enum: ['match', 'player'] }).notNull(),
+  label:         text('label').notNull(),
+  label1:        text('label1'),
+  label2:        text('label2'),
+  answerType:    text('answer_type', { enum: ['text', 'number'] }),
+  showInRanking: integer('show_in_ranking', { mode: 'boolean' }).notNull().default(false),
+  order:         integer('order').notNull().default(0),
+  createdAt:     integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (t) => [
+  index('question_definitions_tournament_idx').on(t.tournamentId),
+  uniqueIndex('question_definitions_tournament_key_uniq').on(t.tournamentId, t.key),
+]);
+
+// ─── Respostes de preguntes personalitzades ───────────────────────────────────
+
+export const pairingAnswers = sqliteTable('pairing_answers', {
+  id:          text('id').primaryKey(),
+  pairingId:   text('pairing_id').notNull().references(() => pairings.id, { onDelete: 'cascade' }),
+  questionId:  text('question_id').notNull().references(() => questionDefinitions.id, { onDelete: 'cascade' }),
+  player:      integer('player'),   // 1 | 2 | null (null si la pregunta és d'àmbit "match")
+  textValue:   text('text_value'),
+  numberValue: integer('number_value'),
+  imageUrl:    text('image_url'),
+}, (t) => [
+  index('pairing_answers_pairing_idx').on(t.pairingId),
+  index('pairing_answers_question_idx').on(t.questionId),
+  uniqueIndex('pairing_answers_uniq').on(t.pairingId, t.questionId, t.player),
+]);
+
 // ─── Absències per ronda ──────────────────────────────────────────────────────
 
 export const roundAbsences = sqliteTable('round_absences', {
@@ -149,3 +186,7 @@ export type NewRound = typeof rounds.$inferInsert;
 export type Pairing = typeof pairings.$inferSelect;
 export type NewPairing = typeof pairings.$inferInsert;
 export type RoundAbsence = typeof roundAbsences.$inferSelect;
+export type QuestionDefinition = typeof questionDefinitions.$inferSelect;
+export type NewQuestionDefinition = typeof questionDefinitions.$inferInsert;
+export type PairingAnswer = typeof pairingAnswers.$inferSelect;
+export type NewPairingAnswer = typeof pairingAnswers.$inferInsert;

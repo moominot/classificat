@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server';
 import { db } from '@/db';
-import { tournaments } from '@/db/schema';
+import { tournaments, questionDefinitions } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { v4 as uuid } from 'uuid';
+import { BUILTIN_QUESTIONS } from '@/lib/question-defs';
 
 export async function GET() {
   const all = await db.select().from(tournaments).orderBy(tournaments.createdAt);
@@ -33,6 +34,22 @@ export async function POST(req: Request) {
   };
 
   await db.insert(tournaments).values(tournament);
+
+  await db.insert(questionDefinitions).values(BUILTIN_QUESTIONS.map(q => ({
+    id: uuid(),
+    tournamentId: tournament.id,
+    key: q.key,
+    isBuiltin: true,
+    type: q.type,
+    scope: q.scope,
+    label: q.label,
+    label1: q.label1 ?? null,
+    label2: q.label2 ?? null,
+    answerType: q.answerType ?? null,
+    showInRanking: q.showInRanking,
+    order: q.order,
+  })));
+
   return NextResponse.json(tournament, { status: 201 });
 }
 

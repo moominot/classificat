@@ -1,6 +1,6 @@
 import { db } from '@/db';
-import { phases, players } from '@/db/schema';
-import { eq, asc } from 'drizzle-orm';
+import { phases, players, questionDefinitions, pairingAnswers } from '@/db/schema';
+import { eq, asc, inArray } from 'drizzle-orm';
 import Link from 'next/link';
 import { computeStandings } from '@/lib/pairing/standings';
 import { loadEngineRounds, loadAllPairings } from '@/lib/db-helpers';
@@ -35,16 +35,9 @@ import { Card } from '@/components/ui/Card';
 
 export const dynamic = 'force-dynamic';
 
-type Pestanya = 'general' | 'scrabbles' | 'jugada' | 'conjunta' | 'individual' | 'desempats';
-
-const PESTANYES: { id: Pestanya; label: string }[] = [
-  { id: 'general',    label: 'General' },
-  { id: 'scrabbles',  label: 'Scrabbles' },
-  { id: 'jugada',     label: 'Jugada' },
-  { id: 'conjunta',   label: 'Partida conjunta' },
-  { id: 'individual', label: 'Partida individual' },
-  { id: 'desempats',  label: 'Desempats' },
-];
+const FIXED_PESTANYES = ['general', 'scrabbles', 'jugada', 'conjunta', 'individual', 'desempats'] as const;
+type FixedPestanya = typeof FIXED_PESTANYES[number];
+type Pestanya = FixedPestanya | string; // string = `custom:<questionId>` per a rànquings personalitzats
 
 export default async function ClassificacioPage({
   params,
@@ -54,12 +47,28 @@ export default async function ClassificacioPage({
   searchParams: Promise<Record<string, string>>;
 }) {
   const [{ id }, sp] = await Promise.all([params, searchParams]);
-  const pestanya: Pestanya = (PESTANYES.some(p => p.id === sp.t) ? sp.t : 'general') as Pestanya;
 
-  const [totes_fases, tots_jugadors] = await Promise.all([
+  const [totes_fases, tots_jugadors, totesPreguntes] = await Promise.all([
     db.select().from(phases).where(eq(phases.tournamentId, id)).orderBy(asc(phases.order)),
     db.select().from(players).where(eq(players.tournamentId, id)).orderBy(asc(players.name)),
+    db.select().from(questionDefinitions).where(eq(questionDefinitions.tournamentId, id)).orderBy(asc(questionDefinitions.order)),
   ]);
+
+  // Preguntes personalitzades del director marcades per sortir a Classificació
+  const preguntesRanquing = totesPreguntes.filter(q => !q.isBuiltin && q.scope === 'player' && q.showInRanking);
+  const labelBingos = totesPreguntes.find(q => q.key === 'bingos')?.label ?? 'Scrabbles';
+  const labelMillorJugada = totesPreguntes.find(q => q.key === 'best_word')?.label ?? 'Jugada';
+
+  const PESTANYES: { id: Pestanya; label: string }[] = [
+    { id: 'general',    label: 'General' },
+    { id: 'scrabbles',  label: labelBingos },
+    { id: 'jugada',     label: labelMillorJugada },
+    { id: 'conjunta',   label: 'Partida conjunta' },
+    { id: 'individual', label: 'Partida individual' },
+    { id: 'desempats',  label: 'Desempats' },
+    ...preguntesRanquing.map(q => ({ id: `custom:${q.id}`, label: q.label })),
+  ];
+  const pestanya: Pestanya = PESTANYES.some(p => p.id === sp.t) ? sp.t : 'general';
 
   if (totes_fases.length === 0 || tots_jugadors.length === 0) {
     return (
@@ -184,6 +193,52 @@ export default async function ClassificacioPage({
     .map(([pid, d]) => ({ jugador: playerMap.get(pid)!, ...d }))
     .filter(x => x.jugador)
     .sort((a, b) => b.punts - a.punts);
+
+  // Rànquings de preguntes personalitzades: suma (tipus "value") o millor
+  // instància (tipus "wordvalue"), calculats sobre les respostes de totes
+  // les partides jugades del torneig.
+  const pairingMap = new Map(totesPart.map(p => [p.id, p]));
+  const preguntesRanquingAnswers = preguntesRanquing.length > 0
+    ? await db.select().from(pairingAnswers).where(
+        inArray(pairingAnswers.questionId, preguntesRanquing.map(q => q.id))
+      )
+    : [];
+
+  interface RankingValueRow { jugador: typeof tots_jugadors[number]; total: number; partides: number }
+  interface RankingWordRow { jugador: typeof tots_jugadors[number]; text: string; punts: number; ronda: number; rival: string }
+
+  const customRankings = new Map<string, { question: typeof preguntesRanquing[number]; value?: RankingValueRow[]; word?: RankingWordRow[] }>();
+  for (const q of preguntesRanquing) {
+    const answersForQ = preguntesRanquingAnswers.filter(a => a.questionId === q.id);
+    if (q.type === 'wordvalue') {
+      const best = new Map<string, RankingWordRow>();
+      for (const a of answersForQ) {
+        const pairing = pairingMap.get(a.pairingId);
+        if (!pairing || a.player == null || !a.textValue || a.numberValue == null) continue;
+        const pid = a.player === 1 ? pairing.player1Id : pairing.player2Id;
+        const rivalId = a.player === 1 ? pairing.player2Id : pairing.player1Id;
+        const jugador = pid ? playerMap.get(pid) : undefined;
+        if (!jugador) continue;
+        const prev = best.get(pid!);
+        if (!prev || a.numberValue > prev.punts) {
+          best.set(pid!, { jugador, text: a.textValue, punts: a.numberValue, ronda: pairing.roundNumber, rival: rivalId ?? 'bye' });
+        }
+      }
+      customRankings.set(q.id, { question: q, word: [...best.values()].sort((a, b) => b.punts - a.punts) });
+    } else {
+      const totals = new Map<string, RankingValueRow>();
+      for (const a of answersForQ) {
+        const pairing = pairingMap.get(a.pairingId);
+        if (!pairing || a.player == null || a.numberValue == null) continue;
+        const pid = a.player === 1 ? pairing.player1Id : pairing.player2Id;
+        const jugador = pid ? playerMap.get(pid) : undefined;
+        if (!jugador) continue;
+        const prev = totals.get(pid!) ?? { jugador, total: 0, partides: 0 };
+        totals.set(pid!, { jugador, total: prev.total + a.numberValue, partides: prev.partides + 1 });
+      }
+      customRankings.set(q.id, { question: q, value: [...totals.values()].sort((a, b) => b.total - a.total) });
+    }
+  }
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
@@ -582,6 +637,104 @@ export default async function ClassificacioPage({
           </div>
         </Card>
       )}
+
+      {/* ── Preguntes personalitzades ── */}
+      {pestanya.startsWith('custom:') && (() => {
+        const qid = pestanya.slice('custom:'.length);
+        const ranking = customRankings.get(qid);
+        if (!ranking) return null;
+        const { question, value, word } = ranking;
+
+        if (word) {
+          return (
+            <Card padding={false}>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide w-10">#</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Jugador</th>
+                      <th className="text-left px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">{question.label1 ?? 'Valor'}</th>
+                      <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">{question.label2 ?? 'Punts'}</th>
+                      <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide hidden sm:table-cell">Ronda</th>
+                      <th className="text-left px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide hidden md:table-cell">Rival</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {word.length === 0 ? (
+                      <tr><td colSpan={6} className="px-4 py-8 text-center text-ink-3 text-sm">Sense dades registrades</td></tr>
+                    ) : word.map((x, i) => (
+                      <tr key={x.jugador.id} className={`${i < 3 ? 'bg-accent-tint' : 'hover:bg-surface-2'} transition-colors`}>
+                        <td className="px-4 py-3">
+                          <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                            i === 0 ? 'bg-accent text-surface' :
+                            i === 1 ? 'bg-surface-2 text-ink-2' :
+                            i === 2 ? 'bg-accent-ink text-surface' :
+                            'bg-surface-2 text-ink-3'
+                          }`}>{i + 1}</div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Link href={`/campionat/${id}/jugadors/${x.jugador.id}`} className="font-medium text-ink hover:text-accent-ink transition-colors">
+                            {x.jugador.name}
+                          </Link>
+                        </td>
+                        <td className="px-3 py-3 font-mono font-semibold text-ink-2 uppercase">{x.text}</td>
+                        <td className="px-3 py-3 text-center font-bold text-accent-ink">{x.punts}</td>
+                        <td className="px-3 py-3 text-center text-ink-3 hidden sm:table-cell">{x.ronda}</td>
+                        <td className="px-3 py-3 text-ink-3 hidden md:table-cell">
+                          {playerMap.get(x.rival)?.name ?? (x.rival === 'bye' ? 'Bye' : '?')}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+          );
+        }
+
+        return (
+          <Card padding={false}>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-border">
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide w-10">#</th>
+                    <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Jugador</th>
+                    <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Total</th>
+                    <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide hidden sm:table-cell">Mitjana</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border">
+                  {(value ?? []).length === 0 ? (
+                    <tr><td colSpan={4} className="px-4 py-8 text-center text-ink-3 text-sm">Sense dades registrades</td></tr>
+                  ) : (value ?? []).map((x, i) => (
+                    <tr key={x.jugador.id} className={`${i < 3 ? 'bg-accent-tint' : 'hover:bg-surface-2'} transition-colors`}>
+                      <td className="px-4 py-3">
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                          i === 0 ? 'bg-accent text-surface' :
+                          i === 1 ? 'bg-surface-2 text-ink-2' :
+                          i === 2 ? 'bg-accent-ink text-surface' :
+                          'bg-surface-2 text-ink-3'
+                        }`}>{i + 1}</div>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Link href={`/campionat/${id}/jugadors/${x.jugador.id}`} className="font-medium text-ink hover:text-accent-ink transition-colors">
+                          {x.jugador.name}
+                        </Link>
+                      </td>
+                      <td className="px-3 py-3 text-center font-bold text-ink">{x.total}</td>
+                      <td className="px-3 py-3 text-center text-ink-3 hidden sm:table-cell">
+                        {(x.total / x.partides).toFixed(2)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        );
+      })()}
     </div>
   );
 }

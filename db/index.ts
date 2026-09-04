@@ -5,6 +5,7 @@ import path from 'path';
 import fs from 'fs';
 import { v4 as uuid } from 'uuid';
 import { hashPassword } from '../lib/auth';
+import { BUILTIN_QUESTIONS } from '../lib/question-defs';
 
 // Determina la ruta de la base de dades
 const DATA_DIR = process.env.DATA_DIR ?? path.join(process.cwd(), '.data');
@@ -117,6 +118,34 @@ sqlite.exec(`
     PRIMARY KEY (round_id, player_id)
   );
 
+  CREATE TABLE IF NOT EXISTS question_definitions (
+    id TEXT PRIMARY KEY,
+    tournament_id TEXT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+    key TEXT NOT NULL,
+    is_builtin INTEGER NOT NULL DEFAULT 0,
+    type TEXT NOT NULL CHECK(type IN ('value','wordvalue','image')),
+    scope TEXT NOT NULL CHECK(scope IN ('match','player')),
+    label TEXT NOT NULL,
+    label1 TEXT,
+    label2 TEXT,
+    answer_type TEXT CHECK(answer_type IN ('text','number')),
+    show_in_ranking INTEGER NOT NULL DEFAULT 0,
+    "order" INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+    UNIQUE(tournament_id, key)
+  );
+
+  CREATE TABLE IF NOT EXISTS pairing_answers (
+    id TEXT PRIMARY KEY,
+    pairing_id TEXT NOT NULL REFERENCES pairings(id) ON DELETE CASCADE,
+    question_id TEXT NOT NULL REFERENCES question_definitions(id) ON DELETE CASCADE,
+    player INTEGER,
+    text_value TEXT,
+    number_value INTEGER,
+    image_url TEXT,
+    UNIQUE(pairing_id, question_id, player)
+  );
+
   CREATE INDEX IF NOT EXISTS groups_tournament_idx ON groups(tournament_id);
   CREATE INDEX IF NOT EXISTS players_tournament_idx ON players(tournament_id);
   CREATE INDEX IF NOT EXISTS players_group_idx ON players(group_id);
@@ -126,6 +155,9 @@ sqlite.exec(`
   CREATE INDEX IF NOT EXISTS pairings_player1_idx ON pairings(player1_id);
   CREATE INDEX IF NOT EXISTS pairings_player2_idx ON pairings(player2_id);
   CREATE INDEX IF NOT EXISTS round_absences_round_idx ON round_absences(round_id);
+  CREATE INDEX IF NOT EXISTS question_definitions_tournament_idx ON question_definitions(tournament_id);
+  CREATE INDEX IF NOT EXISTS pairing_answers_pairing_idx ON pairing_answers(pairing_id);
+  CREATE INDEX IF NOT EXISTS pairing_answers_question_idx ON pairing_answers(question_id);
 `);
 
 // Migracions incrementals per a columnes afegides posteriorment
@@ -223,6 +255,29 @@ if (directorCount.c === 0 && process.env.DIRECTOR_PASSWORD) {
   sqlite.prepare(
     'INSERT INTO directors (id, username, password_hash, name, is_active) VALUES (?, ?, ?, ?, 1)'
   ).run(uuid(), 'director', hashPassword(process.env.DIRECTOR_PASSWORD), 'Director');
+}
+
+// Sembra les preguntes bàsiques (Resultat, Bingos, Millor jugada, Full de
+// puntuació, Foto del tauler) per a qualsevol torneig que encara no en tingui
+// cap — cobreix tant torneigs existents (migració) com el desplegament
+// inicial. Els torneigs nous ja les sembren en crear-se (POST /api/tournaments).
+const seedQuestionStmt = sqlite.prepare(`
+  INSERT INTO question_definitions
+    (id, tournament_id, key, is_builtin, type, scope, label, label1, label2, answer_type, show_in_ranking, "order")
+  VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
+`);
+const tournamentsWithoutQuestions = sqlite.prepare(`
+  SELECT t.id FROM tournaments t
+  WHERE NOT EXISTS (SELECT 1 FROM question_definitions q WHERE q.tournament_id = t.id)
+`).all() as { id: string }[];
+for (const t of tournamentsWithoutQuestions) {
+  for (const q of BUILTIN_QUESTIONS) {
+    seedQuestionStmt.run(
+      uuid(), t.id, q.key, q.type, q.scope, q.label,
+      q.label1 ?? null, q.label2 ?? null, q.answerType ?? null,
+      q.showInRanking ? 1 : 0, q.order
+    );
+  }
 }
 
 export const db = drizzle(sqlite, { schema });

@@ -17,6 +17,9 @@
   --color-loss: oklch(58% 0.19 25);
   --color-loss-tint: oklch(95% 0.03 25);
   --color-draw-tint: oklch(97% 0 0);
+  --color-p2: oklch(55% 0.14 250);
+  --color-p2-ink: oklch(30% 0.1 250);
+  --color-p2-tint: oklch(95% 0.02 250);
 }
 
 :root:not([data-theme="light"]) {
@@ -32,6 +35,7 @@
     --color-win-tint: oklch(28% 0.06 152);
     --color-loss-tint: oklch(30% 0.06 25);
     --color-draw-tint: oklch(27% 0.004 260);
+    --color-p2-tint: oklch(28% 0.05 250);
   }
 }
 
@@ -47,6 +51,7 @@
   --color-win-tint: oklch(28% 0.06 152);
   --color-loss-tint: oklch(30% 0.06 25);
   --color-draw-tint: oklch(27% 0.004 260);
+  --color-p2-tint: oklch(28% 0.05 250);
 }
 
 @theme inline {
@@ -65,6 +70,9 @@
   --color-loss: var(--color-loss);
   --color-loss-tint: var(--color-loss-tint);
   --color-draw-tint: var(--color-draw-tint);
+  --color-p2: var(--color-p2);
+  --color-p2-ink: var(--color-p2-ink);
+  --color-p2-tint: var(--color-p2-tint);
   --font-sans: var(--font-body);
   --font-display: var(--font-display);
 }

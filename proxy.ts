@@ -4,7 +4,7 @@ import { getIronSession } from 'iron-session';
 import { sessionOptions } from '@/lib/session';
 import type { SessionData } from '@/lib/session';
 
-const PUBLIC_API_WRITES = new Set(['/api/auth/login', '/api/auth/logout', '/api/preferences/theme']);
+const PUBLIC_API_WRITES = new Set(['/api/auth/login', '/api/auth/logout', '/api/preferences/theme', '/api/uploads/score-sheets']);
 
 const RESULT_SUBMISSION = /^\/api\/tournaments\/[^/]+\/rounds\/[^/]+\/result$/;
 
