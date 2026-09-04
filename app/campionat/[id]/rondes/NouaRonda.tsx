@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import Select from '@/components/ui/Select';
 import { useIsDirector } from '@/components/DirectorContext';
+import { readError } from '@/lib/http';
 
 interface Fase { id: string; name: string; startRound: number; endRound: number; order: number }
 
@@ -42,8 +43,7 @@ export default function NouaRonda({
       setObert(false);
       router.push(`/campionat/${tournamentId}/rondes/${data.id}`);
     } else {
-      const d = await res.json();
-      setError(d.error ?? 'Error en crear la ronda');
+      setError(await readError(res, 'Error en crear la ronda'));
       setLoading(false);
     }
   }

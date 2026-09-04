@@ -6,6 +6,7 @@ import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { useIsDirector } from '@/components/DirectorContext';
 import type { PairingWarning } from '@/lib/pairing/types';
+import { readError } from '@/lib/http';
 
 interface Jugador {
   id: string;
@@ -69,8 +70,7 @@ export default function GenerarAparellaments({
       const data = await res.json();
       setModal(data);
     } else {
-      const d = await res.json();
-      setError(d.error ?? 'Error en carregar el seeding');
+      setError(await readError(res, 'Error en carregar el seeding'));
     }
     setLoadingPreview(false);
   }
@@ -95,8 +95,7 @@ export default function GenerarAparellaments({
       setModal(null);
       router.refresh();
     } else {
-      const d = await res.json();
-      setError(d.error ?? 'Error en generar els aparellaments');
+      setError(await readError(res, 'Error en generar els aparellaments'));
     }
     setLoadingGenerar(false);
   }

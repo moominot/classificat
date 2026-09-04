@@ -3,6 +3,7 @@
 import { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
+import { readError } from '@/lib/http';
 
 interface Grup { id: string; name: string }
 
@@ -135,8 +136,7 @@ export default function ImportarJugadors({ tournamentId, grups }: { tournamentId
       });
       if (res.ok) ok.push(fila.nom);
       else {
-        const d = await res.json();
-        errors.push(`${fila.nom}: ${d.error ?? 'error'}`);
+        errors.push(`${fila.nom}: ${await readError(res, 'error')}`);
       }
     }
 

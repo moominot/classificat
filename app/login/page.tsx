@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { readError } from '@/lib/http';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -24,8 +25,7 @@ export default function LoginPage() {
       router.push('/');
       router.refresh();
     } else {
-      const d = await res.json();
-      setError(d.error ?? 'Error en iniciar sessió');
+      setError(await readError(res, 'Error en iniciar sessió'));
       setLoading(false);
     }
   }

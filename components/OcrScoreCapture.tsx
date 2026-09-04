@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import Button from '@/components/ui/Button';
 import type { OcrFields } from '@/app/api/uploads/score-sheets/route';
+import { readError } from '@/lib/http';
 
 export type { OcrFields };
 
@@ -38,8 +39,7 @@ export default function OcrScoreCapture({ pairingId, p1Name, p2Name, disabled, o
 
       const res = await fetch('/api/uploads/score-sheets', { method: 'POST', body: fd });
       if (!res.ok) {
-        const d = await res.json();
-        throw new Error(d.error ?? 'Error en processar la imatge');
+        throw new Error(await readError(res, 'Error en processar la imatge'));
       }
       const { url, fields } = await res.json();
 

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
+import { readError } from '@/lib/http';
 
 interface Grup { id: string; name: string }
 interface Jugador {
@@ -61,8 +62,7 @@ export default function JugadorForm({ tournamentId, grups, jugador, onDone }: Ju
       router.refresh();
       onDone?.();
     } else {
-      const data = await res.json();
-      setError(data.error ?? 'Error en desar el jugador');
+      setError(await readError(res, 'Error en desar el jugador'));
       setLoading(false);
     }
   }

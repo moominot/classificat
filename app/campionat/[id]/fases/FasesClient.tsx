@@ -9,6 +9,7 @@ import Select from '@/components/ui/Select';
 import Badge from '@/components/ui/Badge';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import EmptyState from '@/components/ui/EmptyState';
+import { readError } from '@/lib/http';
 import type {
   PhaseConfig, Tiebreaker, SeedingCriterion,
   SwissConfig, SwissFideConfig, RoundRobinConfig, KingOfTheHillConfig,
@@ -143,8 +144,7 @@ function FaseCard({
     if (res.ok) {
       onRefresh();
     } else {
-      const d = await res.json();
-      setDeleteError(d.error ?? 'Error en esborrar la fase');
+      setDeleteError(await readError(res, 'Error en esborrar la fase'));
       setDeleting(false);
     }
   }
@@ -359,8 +359,7 @@ function EditarFaseForm({
     if (res.ok) {
       onDone();
     } else {
-      const d = await res.json();
-      setError(d.error ?? 'Error en guardar la fase');
+      setError(await readError(res, 'Error en guardar la fase'));
       setLoading(false);
     }
   }
@@ -597,8 +596,7 @@ function NovaFaseForm({
     if (res.ok) {
       onDone();
     } else {
-      const d = await res.json();
-      setError(d.error ?? 'Error en crear la fase');
+      setError(await readError(res, 'Error en crear la fase'));
       setLoading(false);
     }
   }

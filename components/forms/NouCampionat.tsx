@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
+import { readError } from '@/lib/http';
 
 export default function NouCampionat() {
   const router = useRouter();
@@ -28,8 +29,7 @@ export default function NouCampionat() {
       const data = await res.json();
       router.push(`/campionat/${data.id}/jugadors`);
     } else {
-      const data = await res.json();
-      setError(data.error ?? 'Error en crear el campionat');
+      setError(await readError(res, 'Error en crear el campionat'));
       setLoading(false);
     }
   }

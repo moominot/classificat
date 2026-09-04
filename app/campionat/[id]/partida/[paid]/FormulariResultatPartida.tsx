@@ -6,6 +6,7 @@ import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import { Card } from '@/components/ui/Card';
 import OcrScoreCapture, { type OcrFields } from '@/components/OcrScoreCapture';
+import { readError } from '@/lib/http';
 
 interface Aparellament {
   id: string;
@@ -95,8 +96,7 @@ export default function FormulariResultatPartida({ aparellament: ap, tournamentI
       setShowForm(false);
       router.refresh();
     } else {
-      const d = await res.json();
-      setError(d.error ?? 'Error en desar el resultat');
+      setError(await readError(res, 'Error en desar el resultat'));
       setLoading(false);
     }
   }

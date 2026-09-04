@@ -9,6 +9,7 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import JugadorForm from './JugadorForm';
 import ImportarJugadors from './ImportarJugadors';
 import { useIsDirector } from '@/components/DirectorContext';
+import { readError } from '@/lib/http';
 
 interface Grup { id: string; name: string }
 interface Jugador {
@@ -203,8 +204,7 @@ function JugadorRow({
     if (res.ok) {
       router.refresh();
     } else {
-      const d = await res.json();
-      setDelError(d.error ?? 'Error en esborrar el jugador');
+      setDelError(await readError(res, 'Error en esborrar el jugador'));
       setDeleting(false);
       setConfirmDel(false);
     }

@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import { useIsDirector } from '@/components/DirectorContext';
+import { readError } from '@/lib/http';
 
 interface Props {
   tournamentId: string;
@@ -49,11 +50,10 @@ export default function CsvImportExport({ tournamentId, roundId, roundNumber, ro
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(rows),
       });
-      const data = await res.json();
-
       if (!res.ok) {
-        setMissatge({ tipus: 'error', text: data.error ?? 'Error en importar' });
+        setMissatge({ tipus: 'error', text: await readError(res, 'Error en importar') });
       } else {
+        const data = await res.json();
         const extres = data.errors?.length ? ` (${data.errors.length} errors)` : '';
         setMissatge({ tipus: 'ok', text: `${data.updated} resultats importats${extres}` });
         router.refresh();
