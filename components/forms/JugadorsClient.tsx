@@ -64,7 +64,7 @@ export default function JugadorsClient({
     <div className="space-y-4">
       {/* Capçalera amb accions */}
       <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-sm text-gray-500 mr-2">
+        <span className="text-sm text-ink-3 mr-2">
           {jugadors.length} jugador{jugadors.length !== 1 ? 's' : ''}
         </span>
         {mode === 'llista' ? (
@@ -75,13 +75,13 @@ export default function JugadorsClient({
                 Importar CSV
               </Button>
             )}
-            <div className="ml-auto flex items-center gap-1 text-xs text-gray-500">
+            <div className="ml-auto flex items-center gap-1 text-xs text-ink-3">
               <span>Ordenar per:</span>
               {(['nom', 'elo'] as const).map(op => (
                 <button
                   key={op}
                   onClick={() => setOrdre(op)}
-                  className={`px-2 py-1 rounded capitalize transition-colors ${ordre === op ? 'bg-blue-100 text-blue-700 font-medium' : 'hover:bg-gray-100'}`}
+                  className={`px-2 py-1 rounded capitalize transition-colors ${ordre === op ? 'bg-accent-tint text-accent-ink font-medium' : 'hover:bg-surface-2'}`}
                 >
                   {op === 'nom' ? 'Nom' : 'BARRUF'}
                 </button>
@@ -118,7 +118,7 @@ export default function JugadorsClient({
       {/* Llista de jugadors */}
       {mode === 'llista' && (
         jugadors.length === 0 ? (
-          <div className="text-center py-16 text-gray-400">
+          <div className="text-center py-16 text-ink-3">
             <p className="text-sm">Cap jugador afegit. Comença afegint el primer jugador.</p>
           </div>
         ) : (
@@ -157,7 +157,7 @@ function JugadorsLlista({
   toggleActiu: (j: Jugador) => void;
 }) {
   return (
-    <ul className="divide-y divide-gray-100">
+    <ul className="divide-y divide-border">
       {jugadors.map((j) => (
         <JugadorRow
           key={j.id}
@@ -226,47 +226,47 @@ function JugadorRow({
   return (
     <li>
       <div className={`flex items-center gap-3 px-4 py-3 ${!j.isActive ? 'opacity-50' : ''}`}>
-        <div className="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 font-semibold text-sm flex-shrink-0">
+        <div className="w-8 h-8 rounded-full bg-accent-tint flex items-center justify-center text-accent-ink font-semibold text-sm flex-shrink-0">
           {j.name[0]?.toUpperCase()}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <Link
               href={`/campionat/${tournamentId}/jugadors/${j.id}`}
-              className="font-medium text-sm text-gray-900 hover:text-blue-600 transition-colors truncate"
+              className="font-medium text-sm text-ink hover:text-accent-ink transition-colors truncate"
             >
               {j.name}
             </Link>
             {!j.isActive && <Badge color="gray">Inactiu</Badge>}
           </div>
-          <div className="flex gap-3 text-xs text-gray-400 mt-0.5 flex-wrap">
+          <div className="flex gap-3 text-xs text-ink-3 mt-0.5 flex-wrap">
             {j.rating && <span>BARRUF {j.rating}</span>}
             {j.groupId && <span>Grup {grupMap.get(j.groupId)}</span>}
             {j.club && <span>{j.club}</span>}
             {j.phone && <span>{j.phone}</span>}
           </div>
-          {delError && <p className="text-xs text-red-600 mt-1">{delError}</p>}
+          {delError && <p className="text-xs text-loss mt-1">{delError}</p>}
         </div>
         {isDirector && (
           <div className="flex gap-1 flex-shrink-0 items-center">
             {confirmDel ? (
               <>
-                <span className="text-xs text-red-600 mr-1">Esborrar?</span>
+                <span className="text-xs text-loss mr-1">Esborrar?</span>
                 <button
                   onClick={handleDelete}
                   disabled={deleting}
-                  className="px-2 py-1 rounded text-xs bg-red-600 text-white hover:bg-red-700 disabled:opacity-50"
+                  className="px-2 py-1 rounded text-xs bg-loss text-white hover:opacity-90 disabled:opacity-50"
                 >Sí</button>
                 <button
                   onClick={() => setConfirmDel(false)}
-                  className="px-2 py-1 rounded text-xs text-gray-500 hover:bg-gray-100"
+                  className="px-2 py-1 rounded text-xs text-ink-3 hover:bg-surface-2"
                 >No</button>
               </>
             ) : (
               <>
                 <button
                   onClick={() => setEditant(j.id)}
-                  className="p-1.5 rounded text-gray-400 hover:text-gray-700 hover:bg-gray-100 transition-colors"
+                  className="p-1.5 rounded text-ink-3 hover:text-ink-2 hover:bg-surface-2 transition-colors"
                   title="Editar"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -278,8 +278,8 @@ function JugadorRow({
                   onClick={() => toggleActiu(j)}
                   className={`p-1.5 rounded transition-colors ${
                     j.isActive
-                      ? 'text-gray-400 hover:text-amber-600 hover:bg-amber-50'
-                      : 'text-green-600 hover:bg-green-50'
+                      ? 'text-ink-3 hover:text-accent-ink hover:bg-accent-tint'
+                      : 'text-win hover:bg-win-tint'
                   }`}
                   title={j.isActive ? 'Desactivar' : 'Activar'}
                 >
@@ -296,7 +296,7 @@ function JugadorRow({
                 </button>
                 <button
                   onClick={() => { setConfirmDel(true); setDelError(''); }}
-                  className="p-1.5 rounded text-gray-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                  className="p-1.5 rounded text-ink-3 hover:text-loss hover:bg-loss-tint transition-colors"
                   title="Esborrar jugador"
                 >
                   <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">

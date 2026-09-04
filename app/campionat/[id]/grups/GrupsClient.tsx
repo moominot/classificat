@@ -71,7 +71,7 @@ export default function GrupsClient({
             </Button>
           </div>
           {grups.length === 0 && (
-            <p className="text-sm text-gray-500 mt-3">
+            <p className="text-sm text-ink-3 mt-3">
               Els grups permeten fer round robin intern i Swiss global a la fase final.
             </p>
           )}
@@ -90,28 +90,28 @@ export default function GrupsClient({
             const jj = perGrup.get(g.id) ?? [];
             return (
               <Card key={g.id} padding={false}>
-                <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+                <div className="px-4 py-3 border-b border-border flex items-center justify-between">
                   <div className="flex items-center gap-2">
                     <span className="font-semibold text-sm">Grup {g.name}</span>
                     <Badge color="blue">{jj.length} jugadors</Badge>
                   </div>
                 </div>
                 {jj.length === 0 ? (
-                  <p className="text-sm text-gray-400 text-center py-6">Cap jugador assignat</p>
+                  <p className="text-sm text-ink-3 text-center py-6">Cap jugador assignat</p>
                 ) : (
-                  <ul className="divide-y divide-gray-50">
+                  <ul className="divide-y divide-border">
                     {jj.map(j => (
                       <li key={j.id} className="flex items-center gap-3 px-4 py-2.5">
-                        <div className="w-7 h-7 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 text-xs font-semibold flex-shrink-0">
+                        <div className="w-7 h-7 rounded-full bg-accent-tint flex items-center justify-center text-accent-ink text-xs font-semibold flex-shrink-0">
                           {j.name[0]}
                         </div>
-                        <span className="flex-1 text-sm text-gray-800">{j.name}</span>
+                        <span className="flex-1 text-sm text-ink-2">{j.name}</span>
                         {isDirector && (
                           <div className="relative">
                             <select
                               value={j.groupId ?? ''}
                               onChange={e => assignarGrup(j.id, e.target.value || null)}
-                              className="text-xs border border-gray-200 rounded px-2 py-1 text-gray-500 bg-white"
+                              className="text-xs border border-border rounded px-2 py-1 text-ink-3 bg-surface"
                             >
                               <option value="">Sense grup</option>
                               {grups.map(gg => (
@@ -131,22 +131,22 @@ export default function GrupsClient({
           {/* Jugadors sense grup */}
           {senseGrup.length > 0 && (
             <Card padding={false}>
-              <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-2">
-                <span className="font-semibold text-sm text-gray-500">Sense grup</span>
+              <div className="px-4 py-3 border-b border-border flex items-center gap-2">
+                <span className="font-semibold text-sm text-ink-3">Sense grup</span>
                 <Badge color="gray">{senseGrup.length}</Badge>
               </div>
-              <ul className="divide-y divide-gray-50">
+              <ul className="divide-y divide-border">
                 {senseGrup.map(j => (
                   <li key={j.id} className="flex items-center gap-3 px-4 py-2.5">
-                    <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 text-xs font-semibold flex-shrink-0">
+                    <div className="w-7 h-7 rounded-full bg-surface-2 flex items-center justify-center text-ink-3 text-xs font-semibold flex-shrink-0">
                       {j.name[0]}
                     </div>
-                    <span className="flex-1 text-sm text-gray-700">{j.name}</span>
+                    <span className="flex-1 text-sm text-ink-2">{j.name}</span>
                     {isDirector && (
                       <select
                         value=""
                         onChange={e => assignarGrup(j.id, e.target.value || null)}
-                        className="text-xs border border-gray-200 rounded px-2 py-1 text-gray-500 bg-white"
+                        className="text-xs border border-border rounded px-2 py-1 text-ink-3 bg-surface"
                       >
                         <option value="">Assignar grup...</option>
                         {grups.map(g => (

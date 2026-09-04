@@ -94,7 +94,7 @@ export default function CsvImportExport({ tournamentId, roundId, roundNumber, ro
       )}
 
       {missatge && (
-        <span className={`text-xs ${missatge.tipus === 'ok' ? 'text-green-600' : 'text-red-600'}`}>
+        <span className={`text-xs ${missatge.tipus === 'ok' ? 'text-win' : 'text-loss'}`}>
           {missatge.text}
         </span>
       )}

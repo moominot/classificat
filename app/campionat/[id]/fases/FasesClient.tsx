@@ -72,7 +72,7 @@ export default function FasesClient({
   return (
     <div className="space-y-5">
       <div className="flex items-center gap-3">
-        <p className="text-sm text-gray-500 flex-1">
+        <p className="text-sm text-ink-3 flex-1">
           Defineix les fases del campionat. Cada fase cobreix un rang de rondes amb el seu sistema d&apos;aparellament.
         </p>
         {isDirector && !mostrarForm && (
@@ -151,8 +151,8 @@ function FaseCard({
 
   if (mode === 'edit') {
     return (
-      <div className="bg-white border border-blue-200 rounded-xl p-4">
-        <p className="text-sm font-semibold text-gray-700 mb-4">Editar fase: {fase.name}</p>
+      <div className="bg-surface border border-accent rounded-xl p-4">
+        <p className="text-sm font-semibold text-ink-2 mb-4">Editar fase: {fase.name}</p>
         <EditarFaseForm
           tournamentId={tournamentId}
           fase={fase}
@@ -167,12 +167,12 @@ function FaseCard({
 
   if (mode === 'delete') {
     return (
-      <div className="bg-white border border-red-200 rounded-xl p-4 space-y-3">
-        <p className="text-sm text-gray-800">
+      <div className="bg-surface border border-loss rounded-xl p-4 space-y-3">
+        <p className="text-sm text-ink-2">
           Segur que vols esborrar la fase <strong>{fase.name}</strong>?
           S&apos;esborraran totes les rondes i aparellaments associats sense resultats.
         </p>
-        {deleteError && <p className="text-sm text-red-600">{deleteError}</p>}
+        {deleteError && <p className="text-sm text-loss">{deleteError}</p>}
         <div className="flex gap-2">
           <Button variant="danger" size="sm" loading={deleting} onClick={handleDelete}>Esborrar</Button>
           <Button variant="ghost" size="sm" onClick={() => { setMode('view'); setDeleteError(''); }}>Cancel·lar</Button>
@@ -182,25 +182,25 @@ function FaseCard({
   }
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+    <div className="bg-surface border border-border rounded-xl overflow-hidden">
       <div className="p-4 flex items-start gap-3">
-        <div className="flex-shrink-0 w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center font-bold text-gray-600 text-sm">
+        <div className="flex-shrink-0 w-9 h-9 rounded-full bg-surface-2 flex items-center justify-center font-bold text-ink-2 text-sm">
           {fase.order}
         </div>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="font-semibold text-gray-900">{fase.name}</h3>
+            <h3 className="font-semibold text-ink">{fase.name}</h3>
             <Badge color={badge.color}>{badge.label}</Badge>
             {fase.isComplete && <Badge color="gray">Completada</Badge>}
           </div>
-          <p className="text-sm text-gray-500 mt-1">
+          <p className="text-sm text-ink-3 mt-1">
             Rondes {fase.startRound}–{fase.endRound}
             {' · '}
             {fase.endRound - fase.startRound + 1} ronda{fase.endRound - fase.startRound + 1 !== 1 ? 'es' : ''}
           </p>
-          {configInfo && <p className="text-xs text-gray-400 mt-1">{configInfo}</p>}
+          {configInfo && <p className="text-xs text-ink-3 mt-1">{configInfo}</p>}
           {fase.tiebreakers.length > 0 && (
-            <p className="text-xs text-gray-400 mt-1 leading-relaxed">
+            <p className="text-xs text-ink-3 mt-1 leading-relaxed">
               Desempats: {fase.tiebreakers.map(t =>
                 DESEMPATS.find(d => d.value === t)?.label ?? t
               ).join(' → ')}
@@ -209,10 +209,10 @@ function FaseCard({
         </div>
       </div>
       {isDirector && (
-        <div className="border-t border-gray-100 px-3 py-2 flex gap-1">
+        <div className="border-t border-border px-3 py-2 flex gap-1">
           <Button size="sm" variant="ghost" onClick={() => setMode('edit')}>Editar</Button>
           <Button size="sm" variant="ghost" onClick={() => setMode('delete')}
-            className="text-red-500 hover:bg-red-50">Esborrar</Button>
+            className="text-loss hover:bg-loss-tint">Esborrar</Button>
         </div>
       )}
     </div>
@@ -378,8 +378,8 @@ function EditarFaseForm({
           />
         </div>
         <div>
-          <p className="text-sm font-medium text-gray-700 mb-1">Mètode</p>
-          <p className="text-sm text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">{methodLabel}</p>
+          <p className="text-sm font-medium text-ink-2 mb-1">Mètode</p>
+          <p className="text-sm text-ink-3 bg-surface-2 border border-border rounded-lg px-3 py-2">{methodLabel}</p>
         </div>
         <div className="grid grid-cols-2 gap-2">
           <Input
@@ -443,31 +443,31 @@ function EditarFaseForm({
 
       {fase.method !== 'manual' && (
         <div>
-          <p className="text-sm font-medium text-gray-700 mb-2">
+          <p className="text-sm font-medium text-ink-2 mb-2">
             Ordre de desempats
-            <span className="font-normal text-gray-400 ml-2">Selecciona i ordena</span>
+            <span className="font-normal text-ink-3 ml-2">Selecciona i ordena</span>
           </p>
           <div className="space-y-1">
             {DESEMPATS.map(d => {
               const idx = desempats.indexOf(d.value);
               const actiu = idx >= 0;
               return (
-                <div key={d.value} className={`flex items-center gap-2 rounded-lg px-3 py-2 ${actiu ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50 border border-transparent'}`}>
+                <div key={d.value} className={`flex items-center gap-2 rounded-lg px-3 py-2 ${actiu ? 'bg-accent-tint border border-accent' : 'bg-surface-2 border border-transparent'}`}>
                   <input
                     type="checkbox"
                     checked={actiu}
                     onChange={() => toggleDesempat(d.value)}
-                    className="accent-blue-600"
+                    className="accent-current text-accent"
                   />
-                  <span className={`text-sm flex-1 ${actiu ? 'text-blue-800 font-medium' : 'text-gray-500'}`}>
+                  <span className={`text-sm flex-1 ${actiu ? 'text-accent-ink font-medium' : 'text-ink-3'}`}>
                     {actiu ? `${idx + 1}. ` : ''}{d.label}
                   </span>
                   {actiu && (
                     <div className="flex gap-0.5">
                       <button type="button" onClick={() => moveDesempat(d.value, -1)}
-                        className="p-0.5 text-blue-500 hover:text-blue-700 disabled:opacity-30" disabled={idx === 0}>▲</button>
+                        className="p-0.5 text-accent-ink hover:text-accent-ink disabled:opacity-30" disabled={idx === 0}>▲</button>
                       <button type="button" onClick={() => moveDesempat(d.value, 1)}
-                        className="p-0.5 text-blue-500 hover:text-blue-700 disabled:opacity-30" disabled={idx === desempats.length - 1}>▼</button>
+                        className="p-0.5 text-accent-ink hover:text-accent-ink disabled:opacity-30" disabled={idx === desempats.length - 1}>▼</button>
                     </div>
                   )}
                 </div>
@@ -477,7 +477,7 @@ function EditarFaseForm({
         </div>
       )}
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-loss">{error}</p>}
 
       <div className="flex gap-2">
         <Button type="submit" loading={loading}>Guardar canvis</Button>
@@ -679,31 +679,31 @@ function NovaFaseForm({
 
       {metode !== 'manual' && (
         <div>
-          <p className="text-sm font-medium text-gray-700 mb-2">
+          <p className="text-sm font-medium text-ink-2 mb-2">
             Ordre de desempats
-            <span className="font-normal text-gray-400 ml-2">Selecciona i ordena</span>
+            <span className="font-normal text-ink-3 ml-2">Selecciona i ordena</span>
           </p>
           <div className="space-y-1">
             {DESEMPATS.map(d => {
               const idx = desempats.indexOf(d.value);
               const actiu = idx >= 0;
               return (
-                <div key={d.value} className={`flex items-center gap-2 rounded-lg px-3 py-2 ${actiu ? 'bg-blue-50 border border-blue-200' : 'bg-gray-50 border border-transparent'}`}>
+                <div key={d.value} className={`flex items-center gap-2 rounded-lg px-3 py-2 ${actiu ? 'bg-accent-tint border border-accent' : 'bg-surface-2 border border-transparent'}`}>
                   <input
                     type="checkbox"
                     checked={actiu}
                     onChange={() => toggleDesempat(d.value)}
-                    className="accent-blue-600"
+                    className="accent-current text-accent"
                   />
-                  <span className={`text-sm flex-1 ${actiu ? 'text-blue-800 font-medium' : 'text-gray-500'}`}>
+                  <span className={`text-sm flex-1 ${actiu ? 'text-accent-ink font-medium' : 'text-ink-3'}`}>
                     {actiu ? `${idx + 1}. ` : ''}{d.label}
                   </span>
                   {actiu && (
                     <div className="flex gap-0.5">
                       <button type="button" onClick={() => moveDesempat(d.value, -1)}
-                        className="p-0.5 text-blue-500 hover:text-blue-700 disabled:opacity-30" disabled={idx === 0}>▲</button>
+                        className="p-0.5 text-accent-ink hover:text-accent-ink disabled:opacity-30" disabled={idx === 0}>▲</button>
                       <button type="button" onClick={() => moveDesempat(d.value, 1)}
-                        className="p-0.5 text-blue-500 hover:text-blue-700 disabled:opacity-30" disabled={idx === desempats.length - 1}>▼</button>
+                        className="p-0.5 text-accent-ink hover:text-accent-ink disabled:opacity-30" disabled={idx === desempats.length - 1}>▼</button>
                     </div>
                   )}
                 </div>
@@ -713,7 +713,7 @@ function NovaFaseForm({
         </div>
       )}
 
-      {error && <p className="text-sm text-red-600">{error}</p>}
+      {error && <p className="text-sm text-loss">{error}</p>}
 
       <div className="flex gap-2">
         <Button type="submit" loading={loading}>Crear fase</Button>
@@ -764,37 +764,37 @@ function ConfigSwiss({
   }
 
   return (
-    <div className="bg-blue-50 rounded-lg p-4 space-y-3">
-      <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Configuració Suís</p>
-      <label className="flex items-center gap-2 text-sm text-gray-700">
-        <input type="checkbox" checked={avoidRematches} onChange={e => setAvoidRematches(e.target.checked)} className="accent-blue-600" />
+    <div className="bg-accent-tint rounded-lg p-4 space-y-3">
+      <p className="text-xs font-semibold text-accent-ink uppercase tracking-wide">Configuració Suís</p>
+      <label className="flex items-center gap-2 text-sm text-ink-2">
+        <input type="checkbox" checked={avoidRematches} onChange={e => setAvoidRematches(e.target.checked)} className="accent-current text-accent" />
         Evitar revanxes
       </label>
 
       <div>
-        <p className="text-sm font-medium text-gray-700 mb-1">Ordre de seeding</p>
+        <p className="text-sm font-medium text-ink-2 mb-1">Ordre de seeding</p>
         <div className="space-y-1">
           {ALL_SEEDING_CRITERIA.map(c => {
             const active = seedingCriteria.includes(c);
             const pos = seedingCriteria.indexOf(c);
             return (
-              <div key={c} className={`flex items-center gap-2 rounded px-2 py-1 text-sm ${active ? 'bg-blue-100 text-blue-800' : 'text-gray-500'}`}>
+              <div key={c} className={`flex items-center gap-2 rounded px-2 py-1 text-sm ${active ? 'bg-accent-tint text-accent-ink' : 'text-ink-3'}`}>
                 <input
                   type="checkbox"
                   checked={active}
                   onChange={() => toggleCriterion(c)}
-                  className="accent-blue-600 flex-shrink-0"
+                  className="accent-current text-accent flex-shrink-0"
                 />
                 {active && (
-                  <span className="w-4 text-xs font-mono text-blue-500 flex-shrink-0">{pos + 1}.</span>
+                  <span className="w-4 text-xs font-mono text-accent-ink flex-shrink-0">{pos + 1}.</span>
                 )}
                 <span className={active ? '' : 'ml-4'}>{SEEDING_CRITERION_LABELS[c]}</span>
                 {active && (
                   <div className="ml-auto flex gap-0.5">
                     <button type="button" onClick={() => moveCriterion(c, -1)} disabled={pos === 0}
-                      className="px-1 text-blue-400 hover:text-blue-700 disabled:opacity-30 text-xs">▲</button>
+                      className="px-1 text-accent-ink hover:text-accent-ink disabled:opacity-30 text-xs">▲</button>
                     <button type="button" onClick={() => moveCriterion(c, 1)} disabled={pos === seedingCriteria.length - 1}
-                      className="px-1 text-blue-400 hover:text-blue-700 disabled:opacity-30 text-xs">▼</button>
+                      className="px-1 text-accent-ink hover:text-accent-ink disabled:opacity-30 text-xs">▼</button>
                   </div>
                 )}
               </div>
@@ -805,14 +805,14 @@ function ConfigSwiss({
 
       {fases.length > 0 && (
         <div>
-          <p className="text-sm font-medium text-gray-700 mb-1">Heretar classificació de:</p>
+          <p className="text-sm font-medium text-ink-2 mb-1">Heretar classificació de:</p>
           {fases.map(f => (
-            <label key={f.id} className="flex items-center gap-2 text-sm text-gray-700">
+            <label key={f.id} className="flex items-center gap-2 text-sm text-ink-2">
               <input
                 type="checkbox"
                 checked={carry.includes(f.id)}
                 onChange={e => setCarry(e.target.checked ? [...carry, f.id] : carry.filter(x => x !== f.id))}
-                className="accent-blue-600"
+                className="accent-current text-accent"
               />
               Fase {f.order}: {f.name} (rondes {f.startRound}–{f.endRound})
             </label>
@@ -836,9 +836,9 @@ function ConfigSwissFide({
   grups: Grup[];
 }) {
   return (
-    <div className="bg-blue-50 rounded-lg p-4 space-y-3">
-      <p className="text-xs font-semibold text-blue-700 uppercase tracking-wide">Configuració Suís FIDE</p>
-      <p className="text-xs text-blue-600">
+    <div className="bg-accent-tint rounded-lg p-4 space-y-3">
+      <p className="text-xs font-semibold text-accent-ink uppercase tracking-wide">Configuració Suís FIDE</p>
+      <p className="text-xs text-accent-ink">
         Usa l&apos;algorisme holandès FIDE amb matching global òptim (blossom). Gestiona automàticament revanxes, floats i bye.
       </p>
       <Select
@@ -852,7 +852,7 @@ function ConfigSwissFide({
         </option>
       </Select>
       {grups.length === 0 && scope === 'intra_group' && (
-        <p className="text-xs text-amber-700 bg-amber-50 rounded p-2">
+        <p className="text-xs text-accent-ink bg-accent-tint rounded p-2">
           Cal crear grups primer per usar el mode per grups.
         </p>
       )}
@@ -864,19 +864,19 @@ function ConfigSwissFide({
         onChange={e => setExpectedRounds(e.target.value)}
         placeholder="ex. 7"
       />
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-ink-3">
         Indica el total de rondes per optimitzar l&apos;assignació del bye a les darreres rondes.
       </p>
       {fases.length > 0 && (
         <div>
-          <p className="text-sm font-medium text-gray-700 mb-1">Heretar classificació de:</p>
+          <p className="text-sm font-medium text-ink-2 mb-1">Heretar classificació de:</p>
           {fases.map(f => (
-            <label key={f.id} className="flex items-center gap-2 text-sm text-gray-700">
+            <label key={f.id} className="flex items-center gap-2 text-sm text-ink-2">
               <input
                 type="checkbox"
                 checked={carry.includes(f.id)}
                 onChange={e => setCarry(e.target.checked ? [...carry, f.id] : carry.filter(x => x !== f.id))}
-                className="accent-blue-600"
+                className="accent-current text-accent"
               />
               Fase {f.order}: {f.name} (rondes {f.startRound}–{f.endRound})
             </label>
@@ -897,8 +897,8 @@ function ConfigRoundRobin({
   grups: Grup[];
 }) {
   return (
-    <div className="bg-green-50 rounded-lg p-4 space-y-3">
-      <p className="text-xs font-semibold text-green-700 uppercase tracking-wide">Configuració Round Robin</p>
+    <div className="bg-win-tint rounded-lg p-4 space-y-3">
+      <p className="text-xs font-semibold text-win uppercase tracking-wide">Configuració Round Robin</p>
       <Select
         label="Àmbit"
         value={scope}
@@ -913,12 +913,12 @@ function ConfigRoundRobin({
         </option>
       </Select>
       {grups.length === 0 && scope !== 'all' && (
-        <p className="text-xs text-amber-700 bg-amber-50 rounded p-2">
+        <p className="text-xs text-accent-ink bg-accent-tint rounded p-2">
           Cal crear grups primer per usar els modes intra/inter-grupal.
         </p>
       )}
-      <label className="flex items-center gap-2 text-sm text-gray-700">
-        <input type="checkbox" checked={doble} onChange={e => setDoble(e.target.checked)} className="accent-green-600" />
+      <label className="flex items-center gap-2 text-sm text-ink-2">
+        <input type="checkbox" checked={doble} onChange={e => setDoble(e.target.checked)} className="accent-current text-win" />
         Doble volta (cada parella juga dos cops)
       </label>
     </div>
@@ -935,8 +935,8 @@ function ConfigKotH({
   fases: Fase[];
 }) {
   return (
-    <div className="bg-purple-50 rounded-lg p-4 space-y-3">
-      <p className="text-xs font-semibold text-purple-700 uppercase tracking-wide">Configuració Rei del turó</p>
+    <div className="bg-accent-tint rounded-lg p-4 space-y-3">
+      <p className="text-xs font-semibold text-accent-ink uppercase tracking-wide">Configuració Rei del turó</p>
       <Input
         label="Limitar als N millors (deixar buit per a tots)"
         type="number"
@@ -947,14 +947,14 @@ function ConfigKotH({
       />
       {fases.length > 0 && (
         <div>
-          <p className="text-sm font-medium text-gray-700 mb-1">Heretar classificació de:</p>
+          <p className="text-sm font-medium text-ink-2 mb-1">Heretar classificació de:</p>
           {fases.map(f => (
-            <label key={f.id} className="flex items-center gap-2 text-sm text-gray-700">
+            <label key={f.id} className="flex items-center gap-2 text-sm text-ink-2">
               <input
                 type="checkbox"
                 checked={carry.includes(f.id)}
                 onChange={e => setCarry(e.target.checked ? [...carry, f.id] : carry.filter(x => x !== f.id))}
-                className="accent-purple-600"
+                className="accent-current text-accent"
               />
               Fase {f.order}: {f.name}
             </label>

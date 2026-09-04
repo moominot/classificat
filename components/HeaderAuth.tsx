@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
-export default function HeaderAuth({ isDirector }: { isDirector: boolean }) {
+export default function HeaderAuth({ isDirector, directorName }: { isDirector: boolean; directorName?: string }) {
   const router = useRouter();
 
   async function handleLogout() {
@@ -13,18 +13,20 @@ export default function HeaderAuth({ isDirector }: { isDirector: boolean }) {
 
   if (!isDirector) {
     return (
-      <Link href="/login" className="ml-auto text-xs text-gray-400 hover:text-blue-600 transition-colors">
+      <Link href="/login" className="text-xs text-ink-3 hover:text-accent-ink transition-colors">
         Director
       </Link>
     );
   }
 
   return (
-    <div className="ml-auto flex items-center gap-3">
-      <span className="text-xs bg-blue-50 text-blue-700 font-semibold px-2 py-1 rounded-full">Director</span>
+    <div className="flex items-center gap-3">
+      <span className="text-xs bg-accent-tint text-accent-ink font-semibold px-2.5 py-1 rounded-full">
+        {directorName ?? 'Director'}
+      </span>
       <button
         onClick={handleLogout}
-        className="text-xs text-gray-400 hover:text-red-500 transition-colors"
+        className="text-xs text-ink-3 hover:text-loss transition-colors cursor-pointer"
       >
         Surt
       </button>

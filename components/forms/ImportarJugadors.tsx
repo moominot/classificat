@@ -149,13 +149,13 @@ export default function ImportarJugadors({ tournamentId, grups }: { tournamentId
 
   return (
     <div className="space-y-4">
-      <div className="rounded-lg bg-blue-50 border border-blue-200 p-3 text-sm text-blue-800">
+      <div className="rounded-lg bg-accent-tint border border-accent p-3 text-sm text-accent-ink">
         <p className="font-medium mb-1">Format CSV esperat:</p>
-        <code className="block text-xs font-mono mt-1 text-blue-900">nom,barruf,grup,club,telèfon</code>
-        <code className="block text-xs font-mono text-blue-900">Anna Garcia,1500,A,Club BCN,612345678</code>
-        <code className="block text-xs font-mono text-blue-900">Pere Mas,,B,,</code>
-        <code className="block text-xs font-mono text-blue-900">Maria Llull,1200,,,</code>
-        <p className="mt-2 text-xs text-blue-600">
+        <code className="block text-xs font-mono mt-1 text-accent-ink">nom,barruf,grup,club,telèfon</code>
+        <code className="block text-xs font-mono text-accent-ink">Anna Garcia,1500,A,Club BCN,612345678</code>
+        <code className="block text-xs font-mono text-accent-ink">Pere Mas,,B,,</code>
+        <code className="block text-xs font-mono text-accent-ink">Maria Llull,1200,,,</code>
+        <p className="mt-2 text-xs text-accent-ink">
           Totes les columnes excepte <em>nom</em> són opcionals. La capçalera és opcional.
           Els grups nous es creen automàticament.
           {grups.length > 0 && (
@@ -172,7 +172,7 @@ export default function ImportarJugadors({ tournamentId, grups }: { tournamentId
         {text && (
           <button
             onClick={() => { setText(''); setFiles([]); setResultat(null); }}
-            className="text-xs text-gray-400 hover:text-gray-600"
+            className="text-xs text-ink-3 hover:text-ink-2"
           >
             Esborrar
           </button>
@@ -184,31 +184,31 @@ export default function ImportarJugadors({ tournamentId, grups }: { tournamentId
         onChange={e => handleText(e.target.value)}
         placeholder={"nom,barruf,grup,club,telèfon\nAnna Garcia,1500,A,Club BCN,612345678\nPere Mas,,B,,\nMaria Llull,1200,,,"}
         rows={6}
-        className="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
+        className="w-full rounded-lg border border-border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-accent"
       />
 
       {files.length > 0 && !resultat && (
-        <div className="rounded-lg border border-gray-200 overflow-hidden text-sm">
-          <div className="px-3 py-2 bg-gray-50 border-b border-gray-200 text-xs font-medium text-gray-500 flex items-center gap-2">
+        <div className="rounded-lg border border-border overflow-hidden text-sm">
+          <div className="px-3 py-2 bg-surface-2 border-b border-border text-xs font-medium text-ink-3 flex items-center gap-2">
             <span>{files.length} jugador{files.length !== 1 ? 's' : ''} detectat{files.length !== 1 ? 's' : ''}</span>
             {nouGrups.length > 0 && (
-              <span className="text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-0.5">
+              <span className="text-accent-ink bg-accent-tint border border-accent rounded px-2 py-0.5">
                 Grups nous: {nouGrups.join(', ')}
               </span>
             )}
           </div>
-          <ul className="divide-y divide-gray-100 max-h-56 overflow-y-auto">
+          <ul className="divide-y divide-border max-h-56 overflow-y-auto">
             {files.map((f, i) => (
-              <li key={i} className="flex gap-3 px-3 py-2 text-xs text-gray-600 flex-wrap">
-                <span className="font-medium text-gray-900 flex-1 min-w-0">{f.nom}</span>
-                {f.elo != null && <span className="text-gray-400">BARRUF {f.elo}</span>}
+              <li key={i} className="flex gap-3 px-3 py-2 text-xs text-ink-2 flex-wrap">
+                <span className="font-medium text-ink flex-1 min-w-0">{f.nom}</span>
+                {f.elo != null && <span className="text-ink-3">BARRUF {f.elo}</span>}
                 {f.grupNom && (
-                  <span className={nouGrups.includes(f.grupNom) ? 'text-amber-700 font-medium' : 'text-gray-400'}>
+                  <span className={nouGrups.includes(f.grupNom) ? 'text-accent-ink font-medium' : 'text-ink-3'}>
                     Grup {f.grupNom}{nouGrups.includes(f.grupNom) ? ' (nou)' : ''}
                   </span>
                 )}
-                {f.club && <span className="text-gray-400">{f.club}</span>}
-                {f.phone && <span className="text-gray-400">{f.phone}</span>}
+                {f.club && <span className="text-ink-3">{f.club}</span>}
+                {f.phone && <span className="text-ink-3">{f.phone}</span>}
               </li>
             ))}
           </ul>
@@ -223,29 +223,29 @@ export default function ImportarJugadors({ tournamentId, grups }: { tournamentId
       {resultat && (
         <div className="space-y-2">
           {resultat.grupsCreats.length > 0 && (
-            <div className="rounded-lg bg-amber-50 border border-amber-200 p-3">
-              <p className="text-sm font-medium text-amber-800 mb-1">
+            <div className="rounded-lg bg-accent-tint border border-accent p-3">
+              <p className="text-sm font-medium text-accent-ink mb-1">
                 {resultat.grupsCreats.length} grup{resultat.grupsCreats.length !== 1 ? 's' : ''} creat{resultat.grupsCreats.length !== 1 ? 's' : ''}:
               </p>
-              <ul className="text-sm text-amber-700 space-y-0.5">
+              <ul className="text-sm text-accent-ink space-y-0.5">
                 {resultat.grupsCreats.map(n => <li key={n}>+ {n}</li>)}
               </ul>
             </div>
           )}
           {resultat.ok.length > 0 && (
-            <div className="rounded-lg bg-green-50 border border-green-200 p-3">
-              <p className="text-sm font-medium text-green-800 mb-1">
+            <div className="rounded-lg bg-win-tint border border-win p-3">
+              <p className="text-sm font-medium text-win mb-1">
                 {resultat.ok.length} jugador{resultat.ok.length !== 1 ? 's' : ''} importat{resultat.ok.length !== 1 ? 's' : ''}:
               </p>
-              <ul className="text-sm text-green-700 space-y-0.5">
+              <ul className="text-sm text-win space-y-0.5">
                 {resultat.ok.map(n => <li key={n}>✓ {n}</li>)}
               </ul>
             </div>
           )}
           {resultat.errors.length > 0 && (
-            <div className="rounded-lg bg-red-50 border border-red-200 p-3">
-              <p className="text-sm font-medium text-red-800 mb-1">Errors:</p>
-              <ul className="text-sm text-red-700 space-y-0.5">
+            <div className="rounded-lg bg-loss-tint border border-loss p-3">
+              <p className="text-sm font-medium text-loss mb-1">Errors:</p>
+              <ul className="text-sm text-loss space-y-0.5">
                 {resultat.errors.map((e, i) => <li key={i}>✗ {e}</li>)}
               </ul>
             </div>

@@ -93,12 +93,12 @@ export default async function RondaPage({
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2 mb-1">
-            <Link href={`/campionat/${id}/rondes`} className="text-sm text-gray-400 hover:text-gray-600">
+            <Link href={`/campionat/${id}/rondes`} className="text-sm text-ink-3 hover:text-ink-2">
               ← Rondes
             </Link>
           </div>
-          <h2 className="text-xl font-bold text-gray-900">Ronda {ronda.number}</h2>
-          <p className="text-sm text-gray-500 mt-0.5">
+          <h2 className="text-xl font-bold text-ink">Ronda {ronda.number}</h2>
+          <p className="text-sm text-ink-3 mt-0.5">
             {fase?.name} · {jugades}/{totals} partides jugades
           </p>
         </div>
@@ -154,7 +154,7 @@ export default async function RondaPage({
               const byes  = aps.filter(ap => ap.player2Id === null);
               return (
                 <div key={grupId ?? '__sense_grup'}>
-                  <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide px-1 mb-2">
+                  <h3 className="text-xs font-semibold text-ink-3 uppercase tracking-wide px-1 mb-2">
                     Grup {grupName}
                   </h3>
                   <div className="space-y-2">
@@ -169,7 +169,7 @@ export default async function RondaPage({
                     ))}
                   </div>
                   {byes.length > 0 && (
-                    <p className="text-xs text-gray-400 px-1 mt-2">
+                    <p className="text-xs text-ink-3 px-1 mt-2">
                       Bye: {byes.map(ap => ap.player1Name).join(', ')}
                     </p>
                   )}
@@ -194,7 +194,7 @@ export default async function RondaPage({
 
       {/* Byes (vista plana, sense agrupació) */}
       {!agrupat && aparellaments_enriquits.filter(p => p.player2Id === null).length > 0 && (
-        <div className="text-xs text-gray-400 px-1">
+        <div className="text-xs text-ink-3 px-1">
           Byes: {aparellaments_enriquits
             .filter(p => p.player2Id === null)
             .map(p => p.player1Name)
@@ -204,7 +204,7 @@ export default async function RondaPage({
 
       {/* Absències */}
       {absencies_actuals.length > 0 && (
-        <div className="text-xs text-gray-400 px-1">
+        <div className="text-xs text-ink-3 px-1">
           Absents: {absencies_actuals
             .map(a => playerMap.get(a.playerId) ?? '?')
             .join(', ')}

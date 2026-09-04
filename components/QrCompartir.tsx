@@ -24,7 +24,7 @@ export default function QrCompartir({ tournamentId }: { tournamentId: string }) 
       <button
         onClick={() => setObert(o => !o)}
         title="Compartir campionat"
-        className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-blue-600 transition-colors px-2 py-1 rounded-lg hover:bg-blue-50"
+        className="flex items-center gap-1.5 text-xs text-ink-3 hover:text-accent-ink transition-colors px-2 py-1 rounded-lg hover:bg-accent-tint"
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
           <path strokeLinecap="round" strokeLinejoin="round"
@@ -34,8 +34,8 @@ export default function QrCompartir({ tournamentId }: { tournamentId: string }) 
       </button>
 
       {obert && url && (
-        <div className="absolute right-0 top-full mt-2 z-20 bg-white border border-gray-200 rounded-xl shadow-lg p-4 w-64 space-y-3">
-          <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Enllaç per als jugadors</p>
+        <div className="absolute right-0 top-full mt-2 z-20 bg-surface border border-border rounded-xl shadow-lg p-4 w-64 space-y-3">
+          <p className="text-xs font-semibold text-ink-3 uppercase tracking-wide">Enllaç per als jugadors</p>
 
           <div className="flex justify-center">
             <QRCodeSVG value={url} size={180} />
@@ -45,11 +45,11 @@ export default function QrCompartir({ tournamentId }: { tournamentId: string }) 
             <input
               readOnly
               value={url}
-              className="flex-1 min-w-0 text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-2 py-1.5 truncate"
+              className="flex-1 min-w-0 text-xs text-ink-2 bg-surface-2 border border-border rounded-lg px-2 py-1.5 truncate"
             />
             <button
               onClick={copiarEnllac}
-              className="shrink-0 text-xs font-semibold px-2 py-1.5 rounded-lg bg-blue-600 text-white hover:bg-blue-700 transition-colors"
+              className="shrink-0 text-xs font-semibold px-2 py-1.5 rounded-lg bg-accent text-white hover:bg-accent-ink transition-colors"
             >
               {copiat ? '✓' : 'Copia'}
             </button>

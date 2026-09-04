@@ -5,6 +5,7 @@ import { getIronSession } from 'iron-session';
 import { sessionOptions } from '@/lib/session';
 import type { SessionData } from '@/lib/session';
 import HeaderAuth from '@/components/HeaderAuth';
+import Link from 'next/link';
 
 export const metadata: Metadata = {
   title: 'Classificat — Gestió de campionats de Scrabble',
@@ -12,23 +13,41 @@ export const metadata: Metadata = {
 };
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
-  const session = await getIronSession<SessionData>(await cookies(), sessionOptions);
+  const cookieStore = await cookies();
+  const session = await getIronSession<SessionData>(cookieStore, sessionOptions);
+  const theme = cookieStore.get('theme')?.value;
 
   return (
-    <html lang="ca">
-      <body className="min-h-screen bg-gray-50 text-gray-900 antialiased">
-        <header className="bg-white border-b border-gray-200 sticky top-0 z-10">
+    <html lang="ca" data-theme={theme === 'light' || theme === 'dark' ? theme : undefined}>
+      <body className="min-h-screen bg-bg text-ink antialiased">
+        <header className="bg-surface border-b border-border sticky top-0 z-10">
           <div className="max-w-5xl mx-auto px-4 h-14 flex items-center gap-3">
-            {session.isDirector ? (
-              <a href="/" className="font-bold text-lg tracking-tight text-blue-700 hover:text-blue-900">
-                Classificat
-              </a>
-            ) : (
-              <span className="font-bold text-lg tracking-tight text-blue-700">Classificat</span>
-            )}
-            <span className="text-gray-300">|</span>
-            <span className="text-sm text-gray-500">Gestió de campionats de Scrabble</span>
-            <HeaderAuth isDirector={session.isDirector ?? false} />
+            <div className="flex items-center gap-2.5">
+              {session.isDirector ? (
+                <a href="/" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
+                  <Logo />
+                  <span className="font-display font-bold text-lg text-ink">Classificat</span>
+                </a>
+              ) : (
+                <>
+                  <Logo />
+                  <span className="font-display font-bold text-lg text-ink">Classificat</span>
+                </>
+              )}
+            </div>
+            <span className="w-px h-4 bg-border hidden sm:block" />
+            <span className="text-sm text-ink-3 hidden sm:block">Gestió de campionats de Scrabble</span>
+            <div className="ml-auto flex items-center gap-3">
+              <Link href="/preferencies" className="text-xs text-ink-3 hover:text-accent-ink transition-colors" title="Preferències">
+                Preferències
+              </Link>
+              {session.isDirector && (
+                <Link href="/directors" className="text-xs text-ink-3 hover:text-accent-ink transition-colors">
+                  Usuaris
+                </Link>
+              )}
+              <HeaderAuth isDirector={session.isDirector ?? false} directorName={session.directorName} />
+            </div>
           </div>
         </header>
         <main className="max-w-5xl mx-auto px-4 py-6">
@@ -36,5 +55,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         </main>
       </body>
     </html>
+  );
+}
+
+function Logo() {
+  return (
+    <span className="relative w-7 h-7 rounded-lg bg-accent-tint border border-border flex items-center justify-center flex-shrink-0">
+      <span className="font-display font-bold text-sm text-ink">C</span>
+      <span className="absolute bottom-0.5 right-1 text-[6px] font-bold text-accent-ink">3</span>
+    </span>
   );
 }

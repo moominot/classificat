@@ -6,17 +6,17 @@ interface BadgeProps {
 }
 
 const colorClasses: Record<Color, string> = {
-  blue:   'bg-blue-100 text-blue-700',
-  green:  'bg-green-100 text-green-700',
-  red:    'bg-red-100 text-red-700',
-  yellow: 'bg-yellow-100 text-yellow-700',
-  gray:   'bg-gray-100 text-gray-600',
-  purple: 'bg-purple-100 text-purple-700',
+  blue:   'bg-accent-tint text-accent-ink',
+  green:  'bg-win-tint text-win',
+  red:    'bg-loss-tint text-loss',
+  yellow: 'bg-accent-tint text-accent-ink',
+  gray:   'bg-surface-2 text-ink-3',
+  purple: 'bg-accent-tint text-accent-ink',
 };
 
 export default function Badge({ color = 'gray', children }: BadgeProps) {
   return (
-    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${colorClasses[color]}`}>
+    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${colorClasses[color]}`}>
       {children}
     </span>
   );

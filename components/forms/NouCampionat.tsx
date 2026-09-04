@@ -43,7 +43,7 @@ export default function NouCampionat() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white border border-gray-200 rounded-xl p-4 flex gap-3 items-end shadow-sm">
+    <form onSubmit={handleSubmit} className="bg-surface border border-border rounded-xl p-4 flex gap-3 items-end shadow-sm">
       <div className="flex-1">
         <Input
           label="Nom del campionat"

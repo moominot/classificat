@@ -33,7 +33,7 @@ export default async function RondesPage({ params }: { params: Promise<{ id: str
   return (
     <div className="space-y-5">
       <div className="flex items-center justify-between">
-        <p className="text-sm text-gray-500">
+        <p className="text-sm text-ink-3">
           {totes_rondes.length} ronda{totes_rondes.length !== 1 ? 'es' : ''} creades
         </p>
         {totes_fases.length > 0 && (
@@ -42,13 +42,13 @@ export default async function RondesPage({ params }: { params: Promise<{ id: str
       </div>
 
       {totes_fases.length === 0 && (
-        <div className="rounded-xl bg-amber-50 border border-amber-200 p-4 text-sm text-amber-800">
+        <div className="rounded-xl bg-accent-tint border border-accent p-4 text-sm text-accent-ink">
           Cal crear almenys una <Link href={`/campionat/${id}/fases`} className="underline font-medium">fase</Link> abans de poder crear rondes.
         </div>
       )}
 
       {rondes_amb_stats.length === 0 && totes_fases.length > 0 && (
-        <div className="text-center py-16 text-gray-400 text-sm">
+        <div className="text-center py-16 text-ink-3 text-sm">
           Cap ronda creada. Crea la primera ronda per poder generar aparellaments.
         </div>
       )}
@@ -62,11 +62,11 @@ export default async function RondesPage({ params }: { params: Promise<{ id: str
             return (
               <div key={fase.id}>
                 <div className="flex items-center gap-2 mb-2 px-1">
-                  <span className="text-xs font-semibold text-gray-400 uppercase tracking-wide">
+                  <span className="text-xs font-semibold text-ink-3 uppercase tracking-wide">
                     {fase.name}
                   </span>
-                  <span className="text-xs text-gray-300">·</span>
-                  <span className="text-xs text-gray-400">
+                  <span className="text-xs text-ink-3">·</span>
+                  <span className="text-xs text-ink-3">
                     Rondes {fase.startRound}–{fase.endRound}
                   </span>
                 </div>
@@ -75,16 +75,16 @@ export default async function RondesPage({ params }: { params: Promise<{ id: str
                     <Link
                       key={r.id}
                       href={`/campionat/${id}/rondes/${r.id}`}
-                      className="flex items-center gap-4 bg-white border border-gray-200 rounded-xl px-4 py-3 hover:border-blue-300 hover:shadow-sm transition-all group"
+                      className="flex items-center gap-4 bg-surface border border-border rounded-xl px-4 py-3 hover:border-accent hover:shadow-sm transition-all group"
                     >
-                      <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-sm font-bold text-gray-600 flex-shrink-0">
+                      <div className="w-8 h-8 rounded-full bg-surface-2 flex items-center justify-center text-sm font-bold text-ink-2 flex-shrink-0">
                         {r.number}
                       </div>
                       <div className="flex-1">
-                        <span className="font-medium text-sm text-gray-900 group-hover:text-blue-700">
+                        <span className="font-medium text-sm text-ink group-hover:text-accent-ink">
                           Ronda {r.number}
                         </span>
-                        <div className="text-xs text-gray-400 mt-0.5">
+                        <div className="text-xs text-ink-3 mt-0.5">
                           {r.totals === 0 ? (
                             'Sense aparellaments generats'
                           ) : (
@@ -102,7 +102,7 @@ export default async function RondesPage({ params }: { params: Promise<{ id: str
                         ) : (
                           <Badge color="yellow">En curs</Badge>
                         )}
-                        <svg className="w-4 h-4 text-gray-300 group-hover:text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <svg className="w-4 h-4 text-ink-3 group-hover:text-accent-ink" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
                       </div>

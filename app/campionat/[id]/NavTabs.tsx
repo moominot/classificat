@@ -16,8 +16,8 @@ export default function NavTabs({ id, name }: { id: string; name: string }) {
 
   return (
     <div>
-      <h1 className="text-xl font-bold text-gray-900 mb-3">{name}</h1>
-      <nav className="flex gap-1 border-b border-gray-200 overflow-x-auto">
+      <h1 className="font-display text-xl font-bold text-ink mb-3">{name}</h1>
+      <nav className="flex gap-6 border-b border-border overflow-x-auto">
         {tabs.map((tab) => {
           const href = `/campionat/${id}/${tab.key}`;
           const active = pathname.startsWith(href);
@@ -26,10 +26,10 @@ export default function NavTabs({ id, name }: { id: string; name: string }) {
               key={tab.key}
               href={href}
               className={`
-                px-4 py-2.5 text-sm font-medium whitespace-nowrap border-b-2 transition-colors
+                py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors
                 ${active
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-800 hover:border-gray-300'
+                  ? 'border-accent text-ink font-semibold'
+                  : 'border-transparent text-ink-3 hover:text-ink-2'
                 }
               `}
             >

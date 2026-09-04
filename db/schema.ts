@@ -2,6 +2,19 @@ import { sqliteTable, text, integer, index, uniqueIndex, primaryKey } from 'driz
 import { sql } from 'drizzle-orm';
 import type { PhaseConfig, Tiebreaker, GameOutcome } from '@/lib/pairing/types';
 
+// ─── Directors ────────────────────────────────────────────────────────────────
+
+export const directors = sqliteTable('directors', {
+  id:           text('id').primaryKey(),
+  username:     text('username').notNull(),
+  passwordHash: text('password_hash').notNull(),
+  name:         text('name').notNull(),
+  isActive:     integer('is_active', { mode: 'boolean' }).notNull().default(true),
+  createdAt:    integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (t) => [
+  uniqueIndex('directors_username_uniq').on(t.username),
+]);
+
 // ─── Campionats ───────────────────────────────────────────────────────────────
 
 export const tournaments = sqliteTable('tournaments', {
@@ -121,6 +134,8 @@ export const roundAbsences = sqliteTable('round_absences', {
 
 // ─── Tipus exportats per a ús a l'aplicació ───────────────────────────────────
 
+export type Director = typeof directors.$inferSelect;
+export type NewDirector = typeof directors.$inferInsert;
 export type Tournament = typeof tournaments.$inferSelect;
 export type NewTournament = typeof tournaments.$inferInsert;
 export type Group = typeof groups.$inferSelect;

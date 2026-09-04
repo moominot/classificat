@@ -4,16 +4,18 @@ import { getIronSession } from 'iron-session';
 import { sessionOptions } from '@/lib/session';
 import type { SessionData } from '@/lib/session';
 
-const PUBLIC_API_WRITES = new Set(['/api/auth/login', '/api/auth/logout']);
+const PUBLIC_API_WRITES = new Set(['/api/auth/login', '/api/auth/logout', '/api/preferences/theme']);
 
 const RESULT_SUBMISSION = /^\/api\/tournaments\/[^/]+\/rounds\/[^/]+\/result$/;
+
+const DIRECTOR_ONLY_PAGES = new Set(['/', '/directors']);
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
   const method = request.method;
 
-  // Pàgina principal: només directors
-  if (pathname === '/') {
+  // Pàgines només per a directors
+  if (DIRECTOR_ONLY_PAGES.has(pathname)) {
     const res = NextResponse.next();
     const session = await getIronSession<SessionData>(request, res, sessionOptions);
     if (!session.isDirector) {
@@ -41,5 +43,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/', '/api/:path*'],
+  matcher: ['/', '/directors', '/api/:path*'],
 };

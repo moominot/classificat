@@ -59,7 +59,7 @@ export default function NouaRonda({
   }
 
   return (
-    <div className="flex items-end gap-2 bg-white border border-gray-200 rounded-xl p-3 shadow-sm">
+    <div className="flex items-end gap-2 bg-surface border border-border rounded-xl p-3 shadow-sm">
       {fases.length > 1 && (
         <Select
           label="Fase"
@@ -75,7 +75,7 @@ export default function NouaRonda({
         </Select>
       )}
       <div className="flex flex-col gap-1">
-        {error && <p className="text-xs text-red-600">{error}</p>}
+        {error && <p className="text-xs text-loss">{error}</p>}
         <div className="flex gap-2">
           <Button onClick={crearRonda} loading={loading}>
             Crear ronda {propera}

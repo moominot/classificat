@@ -58,28 +58,28 @@ export default async function JugadorDetallPage({
   return (
     <div className="space-y-5">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm text-gray-500">
-        <Link href={`/campionat/${id}/jugadors`} className="hover:text-blue-600">Jugadors</Link>
+      <div className="flex items-center gap-2 text-sm text-ink-3">
+        <Link href={`/campionat/${id}/jugadors`} className="hover:text-accent-ink">Jugadors</Link>
         <span>/</span>
-        <span className="text-gray-900">{jugador.name}</span>
+        <span className="text-ink">{jugador.name}</span>
       </div>
 
       {/* Capçalera */}
       <div className="flex items-center gap-4">
-        <div className="w-14 h-14 rounded-full bg-blue-100 flex items-center justify-center text-blue-700 text-2xl font-bold flex-shrink-0">
+        <div className="w-14 h-14 rounded-full bg-accent-tint flex items-center justify-center text-accent-ink text-2xl font-bold flex-shrink-0">
           {jugador.name[0]?.toUpperCase()}
         </div>
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <h2 className="text-2xl font-bold text-gray-900">{jugador.name}</h2>
+            <h2 className="text-2xl font-bold text-ink">{jugador.name}</h2>
             {!jugador.isActive && <Badge color="gray">Inactiu</Badge>}
           </div>
-          <div className="flex flex-wrap gap-3 text-sm text-gray-500 mt-1">
+          <div className="flex flex-wrap gap-3 text-sm text-ink-3 mt-1">
             {myStanding && myStanding.gamesPlayed > 0 && (
               <span>Posició {myStanding.rank} · {myStanding.points} punt{myStanding.points !== 1 ? 's' : ''}</span>
             )}
             {jugador.rating != null && (
-              <span className="font-medium text-blue-700">BARRUF {jugador.rating}</span>
+              <span className="font-medium text-accent-ink">BARRUF {jugador.rating}</span>
             )}
             {jugador.club && <span>{jugador.club}</span>}
             {jugador.phone && <span>{jugador.phone}</span>}
@@ -114,16 +114,16 @@ export default async function JugadorDetallPage({
           <CardHeader><CardTitle>Desempats</CardTitle></CardHeader>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
             <div>
-              <p className="text-xs text-gray-400 mb-0.5">Buchholz</p>
-              <p className="font-semibold text-gray-900">{myStanding.tiebreakers.buchholz.toFixed(1)}</p>
+              <p className="text-xs text-ink-3 mb-0.5">Buchholz</p>
+              <p className="font-semibold text-ink">{myStanding.tiebreakers.buchholz.toFixed(1)}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-400 mb-0.5">Median Buchholz</p>
-              <p className="font-semibold text-gray-900">{myStanding.tiebreakers.medianBuchholz.toFixed(1)}</p>
+              <p className="text-xs text-ink-3 mb-0.5">Median Buchholz</p>
+              <p className="font-semibold text-ink">{myStanding.tiebreakers.medianBuchholz.toFixed(1)}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-400 mb-0.5">Berger</p>
-              <p className="font-semibold text-gray-900">{myStanding.tiebreakers.berger.toFixed(1)}</p>
+              <p className="text-xs text-ink-3 mb-0.5">Berger</p>
+              <p className="font-semibold text-ink">{myStanding.tiebreakers.berger.toFixed(1)}</p>
             </div>
           </div>
         </Card>
@@ -135,19 +135,19 @@ export default async function JugadorDetallPage({
           <CardHeader><CardTitle>Millors registres</CardTitle></CardHeader>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             {millorPartida && (
-              <div className="bg-green-50 rounded-lg p-3">
-                <p className="text-xs text-green-600 font-semibold uppercase tracking-wide mb-1">Millor partida</p>
-                <p className="text-2xl font-bold text-green-800">{millorPartida.myScore}</p>
-                <p className="text-xs text-green-600 mt-0.5">
+              <div className="bg-win-tint rounded-lg p-3">
+                <p className="text-xs text-win font-semibold uppercase tracking-wide mb-1">Millor partida</p>
+                <p className="text-2xl font-bold text-win">{millorPartida.myScore}</p>
+                <p className="text-xs text-win mt-0.5">
                   vs {playerMap.get(millorPartida.opponentId ?? '')?.name ?? '?'} · Ronda {millorPartida.roundNumber}
                 </p>
               </div>
             )}
             {millorJugada && (
-              <div className="bg-blue-50 rounded-lg p-3">
-                <p className="text-xs text-blue-600 font-semibold uppercase tracking-wide mb-1">Millor jugada</p>
-                <p className="text-2xl font-bold text-blue-800">{millorJugada.myBestWord}</p>
-                <p className="text-xs text-blue-600 mt-0.5">
+              <div className="bg-accent-tint rounded-lg p-3">
+                <p className="text-xs text-accent-ink font-semibold uppercase tracking-wide mb-1">Millor jugada</p>
+                <p className="text-2xl font-bold text-accent-ink">{millorJugada.myBestWord}</p>
+                <p className="text-xs text-accent-ink mt-0.5">
                   {millorJugada.myBestWordScore} punts · Ronda {millorJugada.roundNumber}
                 </p>
               </div>
@@ -158,17 +158,17 @@ export default async function JugadorDetallPage({
 
       {/* Historial de partides */}
       <Card padding={false}>
-        <div className="px-4 py-3 border-b border-gray-100">
-          <h3 className="font-semibold text-sm text-gray-900">
+        <div className="px-4 py-3 border-b border-border">
+          <h3 className="font-semibold text-sm text-ink">
             Historial de partides
-            <span className="text-gray-400 font-normal ml-2">({partides.length})</span>
+            <span className="text-ink-3 font-normal ml-2">({partides.length})</span>
           </h3>
         </div>
 
         {partides.length === 0 ? (
-          <p className="text-sm text-gray-400 text-center py-10">Cap partida jugada encara.</p>
+          <p className="text-sm text-ink-3 text-center py-10">Cap partida jugada encara.</p>
         ) : (
-          <ul className="divide-y divide-gray-50">
+          <ul className="divide-y divide-border">
             {partides.map((p) => {
               const adversari = p.opponentId ? playerMap.get(p.opponentId) : null;
               const outcomeColor =
@@ -184,30 +184,30 @@ export default async function JugadorDetallPage({
 
               return (
                 <li key={p.pairingId}>
-                  <div className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 transition-colors group">
+                  <div className="flex items-center gap-3 px-4 py-3 hover:bg-surface-2 transition-colors group">
                     {/* Ronda */}
-                    <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-xs font-bold text-gray-500 flex-shrink-0">
+                    <div className="w-8 h-8 rounded-full bg-surface-2 flex items-center justify-center text-xs font-bold text-ink-3 flex-shrink-0">
                       {p.roundNumber}
                     </div>
 
                     {/* Adversari */}
                     <div className="flex-1 min-w-0">
                       {p.isBye ? (
-                        <span className="text-sm text-gray-400 italic">Bye</span>
+                        <span className="text-sm text-ink-3 italic">Bye</span>
                       ) : (
                         <div className="flex items-center gap-2">
                           {adversari ? (
                             <Link
                               href={`/campionat/${id}/jugadors/${adversari.id}`}
-                              className="text-sm font-medium text-gray-700 hover:text-blue-600 transition-colors"
+                              className="text-sm font-medium text-ink-2 hover:text-accent-ink transition-colors"
                             >
                               {adversari.name}
                             </Link>
                           ) : (
-                            <span className="text-sm font-medium text-gray-500">?</span>
+                            <span className="text-sm font-medium text-ink-3">?</span>
                           )}
                           {p.myBestWord && (
-                            <span className="text-xs text-gray-400 hidden sm:inline">
+                            <span className="text-xs text-ink-3 hidden sm:inline">
                               Millor: {p.myBestWord} ({p.myBestWordScore}pts)
                             </span>
                           )}
@@ -218,12 +218,12 @@ export default async function JugadorDetallPage({
                     {/* Resultat */}
                     <div className="flex items-center gap-3 flex-shrink-0">
                       {!p.isBye && p.myScore !== null && (
-                        <span className="tabular-nums text-sm text-gray-700 font-medium">
+                        <span className="tabular-nums text-sm text-ink-2 font-medium">
                           {p.myScore} – {p.oppScore}
                         </span>
                       )}
                       {p.myScrabbles !== null && p.myScrabbles > 0 && (
-                        <span className="text-xs text-blue-500 hidden sm:inline">
+                        <span className="text-xs text-accent-ink hidden sm:inline">
                           {p.myScrabbles}B
                         </span>
                       )}
@@ -237,7 +237,7 @@ export default async function JugadorDetallPage({
                       aria-label="Veure partida"
                       className="flex-shrink-0"
                     >
-                      <svg className="w-4 h-4 text-gray-200 group-hover:text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <svg className="w-4 h-4 text-ink-3 group-hover:text-ink-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                       </svg>
                     </Link>
@@ -262,15 +262,15 @@ function StatCard({
   color?: 'gray' | 'green' | 'red' | 'blue';
 }) {
   const colorClass = {
-    gray: 'text-gray-900',
-    green: 'text-green-600',
-    red: 'text-red-600',
-    blue: 'text-blue-600',
+    gray: 'text-ink',
+    green: 'text-win',
+    red: 'text-loss',
+    blue: 'text-accent-ink',
   }[color];
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-3 text-center">
-      <p className="text-xs text-gray-400 mb-1">{label}</p>
+    <div className="bg-surface border border-border rounded-xl p-3 text-center">
+      <p className="text-xs text-ink-3 mb-1">{label}</p>
       <p className={`text-xl font-bold ${colorClass}`}>{value}</p>
     </div>
   );

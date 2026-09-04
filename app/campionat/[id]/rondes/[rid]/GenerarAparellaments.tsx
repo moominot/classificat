@@ -110,14 +110,14 @@ export default function GenerarAparellaments({
           {/* Selecció de participants */}
           <div>
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-sm font-semibold text-gray-700">Participants ronda {roundNumber}</h3>
-              <span className="text-xs text-gray-400">
+              <h3 className="text-sm font-semibold text-ink-2">Participants ronda {roundNumber}</h3>
+              <span className="text-xs text-ink-3">
                 {playing.length} jugadors · {Math.floor(playing.length / 2)} partides{byes ? ' + 1 bye' : ''}
               </span>
             </div>
 
             {players.length === 0 ? (
-              <p className="text-sm text-gray-400">No hi ha jugadors actius al campionat.</p>
+              <p className="text-sm text-ink-3">No hi ha jugadors actius al campionat.</p>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5">
                 {players.map(p => {
@@ -127,15 +127,15 @@ export default function GenerarAparellaments({
                       key={p.id}
                       className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border cursor-pointer transition-colors text-sm select-none ${
                         absent
-                          ? 'bg-red-50 border-red-200 text-red-500 line-through'
-                          : 'bg-green-50 border-green-200 text-green-800'
+                          ? 'bg-loss-tint border-loss text-loss line-through'
+                          : 'bg-win-tint border-win text-win'
                       }`}
                     >
                       <input
                         type="checkbox"
                         checked={!absent}
                         onChange={() => toggleAbsent(p.id)}
-                        className="rounded accent-green-600 flex-shrink-0"
+                        className="rounded accent-current text-win flex-shrink-0"
                       />
                       <span className="truncate">{p.name}</span>
                     </label>
@@ -145,24 +145,24 @@ export default function GenerarAparellaments({
             )}
 
             {previousAbsentIds.length > 0 && absentIds.size === 0 && (
-              <p className="text-xs text-gray-400 mt-2">
+              <p className="text-xs text-ink-3 mt-2">
                 Tots els jugadors participen (la ronda anterior tenia absents pre-marcats, però has desmarcat tots).
               </p>
             )}
             {previousAbsentIds.length > 0 && absentIds.size > 0 && [...absentIds].every(id => previousAbsentIds.includes(id)) && (
-              <p className="text-xs text-amber-600 mt-2">
+              <p className="text-xs text-accent-ink mt-2">
                 Absents pre-marcats de la ronda anterior.
               </p>
             )}
           </div>
 
           {error && (
-            <div className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700">
+            <div className="rounded-lg bg-loss-tint border border-loss px-4 py-3 text-sm text-loss">
               {error}
             </div>
           )}
           {warnings.length > 0 && (
-            <div className="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm text-amber-800 space-y-1">
+            <div className="rounded-lg bg-accent-tint border border-accent px-4 py-3 text-sm text-accent-ink space-y-1">
               {warnings.map((w, i) => <p key={i}>⚠ {w.message}</p>)}
             </div>
           )}
@@ -184,11 +184,11 @@ export default function GenerarAparellaments({
       {modal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/40" onClick={() => setModal(null)} />
-          <div className="relative bg-white rounded-xl shadow-xl w-full max-w-sm flex flex-col max-h-[80vh]">
+          <div className="relative bg-surface rounded-xl shadow-xl w-full max-w-sm flex flex-col max-h-[80vh]">
             {/* Capçalera */}
-            <div className="px-5 pt-5 pb-3 border-b border-gray-100 flex-shrink-0">
-              <h2 className="text-base font-semibold text-gray-900">Ordre de seeding</h2>
-              <p className="text-xs text-gray-500 mt-0.5">
+            <div className="px-5 pt-5 pb-3 border-b border-border flex-shrink-0">
+              <h2 className="text-base font-semibold text-ink">Ordre de seeding</h2>
+              <p className="text-xs text-ink-3 mt-0.5">
                 {modal.isFirstRound
                   ? 'Primera ronda — ordenat per BARRUF descendent'
                   : 'Ordenat per classificació actual'}
@@ -196,14 +196,14 @@ export default function GenerarAparellaments({
             </div>
 
             {/* Llista */}
-            <ol className="overflow-y-auto flex-1 divide-y divide-gray-100 px-1 py-1">
+            <ol className="overflow-y-auto flex-1 divide-y divide-border px-1 py-1">
               {modal.seedingOrder.map(s => (
                 <li key={s.playerId} className="flex items-center gap-3 px-3 py-2 text-sm">
-                  <span className="w-6 text-right text-xs text-gray-400 font-mono flex-shrink-0">
+                  <span className="w-6 text-right text-xs text-ink-3 font-mono flex-shrink-0">
                     {s.seed}
                   </span>
-                  <span className="flex-1 font-medium text-gray-900 truncate">{s.name}</span>
-                  <div className="flex gap-2 text-xs text-gray-400 flex-shrink-0">
+                  <span className="flex-1 font-medium text-ink truncate">{s.name}</span>
+                  <div className="flex gap-2 text-xs text-ink-3 flex-shrink-0">
                     {s.rating != null && <span>BARRUF {s.rating}</span>}
                     {!modal.isFirstRound && <span>{s.points} pts</span>}
                   </div>
@@ -212,7 +212,7 @@ export default function GenerarAparellaments({
             </ol>
 
             {/* Peu */}
-            <div className="px-5 py-4 border-t border-gray-100 flex justify-end gap-2 flex-shrink-0">
+            <div className="px-5 py-4 border-t border-border flex justify-end gap-2 flex-shrink-0">
               <Button variant="ghost" onClick={() => setModal(null)} disabled={loadingGenerar}>
                 Cancel·lar
               </Button>

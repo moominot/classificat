@@ -2,6 +2,8 @@ import type { SessionOptions } from 'iron-session';
 
 export interface SessionData {
   isDirector?: boolean;
+  directorId?: string;
+  directorName?: string;
 }
 
 export const sessionOptions: SessionOptions = {

@@ -63,7 +63,7 @@ export default async function ClassificacioPage({
 
   if (totes_fases.length === 0 || tots_jugadors.length === 0) {
     return (
-      <div className="text-center py-20 text-gray-400">
+      <div className="text-center py-20 text-ink-3">
         <p className="text-sm">Cal tenir jugadors i fases configurades per veure la classificació.</p>
       </div>
     );
@@ -190,15 +190,15 @@ export default async function ClassificacioPage({
   return (
     <div className="space-y-4">
       {/* Pestanyes */}
-      <div className="flex gap-1 border-b border-gray-200 overflow-x-auto">
+      <div className="flex gap-1 border-b border-border overflow-x-auto">
         {PESTANYES.map(({ id: tid, label }) => (
           <Link
             key={tid}
             href={`/campionat/${id}/classificacio?t=${tid}`}
             className={`px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
               pestanya === tid
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                ? 'border-accent text-ink font-semibold'
+                : 'border-transparent text-ink-3 hover:text-ink-2 hover:border-border'
             }`}
           >
             {label}
@@ -218,7 +218,7 @@ export default async function ClassificacioPage({
 
         return (
           <>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-ink-3">
               {rondesJugades} ronda{rondesJugades !== 1 ? 'es' : ''} computades
               {' · '}
               {standings.filter(s => s.gamesPlayed > 0).length} jugadors amb partides
@@ -227,51 +227,51 @@ export default async function ClassificacioPage({
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
-                    <tr className="border-b border-gray-100">
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-10">#</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Jugador</th>
-                      <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Pts</th>
-                      <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">V</th>
-                      <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">D</th>
-                      <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">PJ</th>
+                    <tr className="border-b border-border">
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide w-10">#</th>
+                      <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Jugador</th>
+                      <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Pts</th>
+                      <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">V</th>
+                      <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">D</th>
+                      <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide hidden sm:table-cell">PJ</th>
                       {tbCols.map(({ key, def }, i) => (
-                        <th key={key} className={`text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide ${responsiveClass(i)}`}>
+                        <th key={key} className={`text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide ${responsiveClass(i)}`}>
                           {def.label}
                         </th>
                       ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-50">
+                  <tbody className="divide-y divide-border">
                     {standings.map((s) => {
                       const jugador = playerMap.get(s.playerId);
                       const isPodi = s.rank <= 3 && s.gamesPlayed > 0;
                       return (
-                        <tr key={s.playerId} className={`${isPodi ? 'bg-amber-50' : 'hover:bg-gray-50'} transition-colors`}>
+                        <tr key={s.playerId} className={`${isPodi ? 'bg-accent-tint' : 'hover:bg-surface-2'} transition-colors`}>
                           <td className="px-4 py-3">
                             <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                              s.rank === 1 ? 'bg-amber-400 text-amber-900' :
-                              s.rank === 2 ? 'bg-gray-300 text-gray-700' :
-                              s.rank === 3 ? 'bg-amber-600 text-white' :
-                              'bg-gray-100 text-gray-500'
+                              s.rank === 1 ? 'bg-accent text-surface' :
+                              s.rank === 2 ? 'bg-surface-2 text-ink-2' :
+                              s.rank === 3 ? 'bg-accent-ink text-surface' :
+                              'bg-surface-2 text-ink-3'
                             }`}>
                               {s.rank}
                             </div>
                           </td>
                           <td className="px-4 py-3">
-                            <Link href={`/campionat/${id}/jugadors/${s.playerId}`} className="font-medium text-gray-900 hover:text-blue-600 transition-colors">
+                            <Link href={`/campionat/${id}/jugadors/${s.playerId}`} className="font-medium text-ink hover:text-accent-ink transition-colors">
                               {jugador?.name ?? '?'}
                             </Link>
-                            {!jugador?.isActive && <span className="text-xs text-gray-400 ml-2">Inactiu</span>}
+                            {!jugador?.isActive && <span className="text-xs text-ink-3 ml-2">Inactiu</span>}
                           </td>
-                          <td className="px-3 py-3 text-center font-bold text-gray-900">{s.points}</td>
-                          <td className="px-3 py-3 text-center text-green-600 font-medium">{s.wins}</td>
-                          <td className="px-3 py-3 text-center text-red-500 font-medium">{s.losses}</td>
-                          <td className="px-3 py-3 text-center text-gray-500 hidden sm:table-cell">{s.gamesPlayed}</td>
+                          <td className="px-3 py-3 text-center font-bold text-ink">{s.points}</td>
+                          <td className="px-3 py-3 text-center text-win font-medium">{s.wins}</td>
+                          <td className="px-3 py-3 text-center text-loss font-medium">{s.losses}</td>
+                          <td className="px-3 py-3 text-center text-ink-3 hidden sm:table-cell">{s.gamesPlayed}</td>
                           {tbCols.map(({ key, def }, i) => (
                             <td key={key} className={`px-3 py-3 text-center ${responsiveClass(i)} ${
                               def.className === 'spread'
-                                ? s.spread > 0 ? 'text-green-600 font-medium' : s.spread < 0 ? 'text-red-500 font-medium' : 'text-gray-400'
-                                : 'text-gray-500'
+                                ? s.spread > 0 ? 'text-win font-medium' : s.spread < 0 ? 'text-loss font-medium' : 'text-ink-3'
+                                : 'text-ink-3'
                             }`}>
                               {def.cell(s)}
                             </td>
@@ -283,7 +283,7 @@ export default async function ClassificacioPage({
                 </table>
               </div>
             </Card>
-            <p className="text-xs text-gray-400 text-right">
+            <p className="text-xs text-ink-3 text-right">
               Desempats: {tiebreakers.map(t => TIEBREAKER_LABEL[t]).join(' → ')}
             </p>
           </>
@@ -296,37 +296,37 @@ export default async function ClassificacioPage({
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-10">#</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Jugador</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Total</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">Mitjana</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">Màx. partida</th>
+                <tr className="border-b border-border">
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide w-10">#</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Jugador</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Total</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide hidden sm:table-cell">Mitjana</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide hidden sm:table-cell">Màx. partida</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-border">
                 {rankingScrabbles.length === 0 ? (
-                  <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400 text-sm">Sense dades de scrabbles registrades</td></tr>
+                  <tr><td colSpan={5} className="px-4 py-8 text-center text-ink-3 text-sm">Sense dades de scrabbles registrades</td></tr>
                 ) : rankingScrabbles.map((x, i) => (
-                  <tr key={x.jugador.id} className={`${i < 3 ? 'bg-amber-50' : 'hover:bg-gray-50'} transition-colors`}>
+                  <tr key={x.jugador.id} className={`${i < 3 ? 'bg-accent-tint' : 'hover:bg-surface-2'} transition-colors`}>
                     <td className="px-4 py-3">
                       <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                        i === 0 ? 'bg-amber-400 text-amber-900' :
-                        i === 1 ? 'bg-gray-300 text-gray-700' :
-                        i === 2 ? 'bg-amber-600 text-white' :
-                        'bg-gray-100 text-gray-500'
+                        i === 0 ? 'bg-accent text-surface' :
+                        i === 1 ? 'bg-surface-2 text-ink-2' :
+                        i === 2 ? 'bg-accent-ink text-surface' :
+                        'bg-surface-2 text-ink-3'
                       }`}>{i + 1}</div>
                     </td>
                     <td className="px-4 py-3">
-                      <Link href={`/campionat/${id}/jugadors/${x.jugador.id}`} className="font-medium text-gray-900 hover:text-blue-600 transition-colors">
+                      <Link href={`/campionat/${id}/jugadors/${x.jugador.id}`} className="font-medium text-ink hover:text-accent-ink transition-colors">
                         {x.jugador.name}
                       </Link>
                     </td>
-                    <td className="px-3 py-3 text-center font-bold text-gray-900">{x.total}</td>
-                    <td className="px-3 py-3 text-center text-gray-500 hidden sm:table-cell">
+                    <td className="px-3 py-3 text-center font-bold text-ink">{x.total}</td>
+                    <td className="px-3 py-3 text-center text-ink-3 hidden sm:table-cell">
                       {(x.total / x.partides).toFixed(2)}
                     </td>
-                    <td className="px-3 py-3 text-center text-gray-500 hidden sm:table-cell">{x.maxPartida}</td>
+                    <td className="px-3 py-3 text-center text-ink-3 hidden sm:table-cell">{x.maxPartida}</td>
                   </tr>
                 ))}
               </tbody>
@@ -341,37 +341,37 @@ export default async function ClassificacioPage({
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-10">#</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Jugador</th>
-                  <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Paraula</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Punts</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">Ronda</th>
-                  <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden md:table-cell">Rival</th>
+                <tr className="border-b border-border">
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide w-10">#</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Jugador</th>
+                  <th className="text-left px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Paraula</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Punts</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide hidden sm:table-cell">Ronda</th>
+                  <th className="text-left px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide hidden md:table-cell">Rival</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-border">
                 {rankingJugada.length === 0 ? (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400 text-sm">Sense dades de millors jugades registrades</td></tr>
+                  <tr><td colSpan={6} className="px-4 py-8 text-center text-ink-3 text-sm">Sense dades de millors jugades registrades</td></tr>
                 ) : rankingJugada.map((x, i) => (
-                  <tr key={x.jugador.id} className={`${i < 3 ? 'bg-amber-50' : 'hover:bg-gray-50'} transition-colors`}>
+                  <tr key={x.jugador.id} className={`${i < 3 ? 'bg-accent-tint' : 'hover:bg-surface-2'} transition-colors`}>
                     <td className="px-4 py-3">
                       <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                        i === 0 ? 'bg-amber-400 text-amber-900' :
-                        i === 1 ? 'bg-gray-300 text-gray-700' :
-                        i === 2 ? 'bg-amber-600 text-white' :
-                        'bg-gray-100 text-gray-500'
+                        i === 0 ? 'bg-accent text-surface' :
+                        i === 1 ? 'bg-surface-2 text-ink-2' :
+                        i === 2 ? 'bg-accent-ink text-surface' :
+                        'bg-surface-2 text-ink-3'
                       }`}>{i + 1}</div>
                     </td>
                     <td className="px-4 py-3">
-                      <Link href={`/campionat/${id}/jugadors/${x.jugador.id}`} className="font-medium text-gray-900 hover:text-blue-600 transition-colors">
+                      <Link href={`/campionat/${id}/jugadors/${x.jugador.id}`} className="font-medium text-ink hover:text-accent-ink transition-colors">
                         {x.jugador.name}
                       </Link>
                     </td>
-                    <td className="px-3 py-3 font-mono font-semibold text-gray-800 uppercase">{x.paraula}</td>
-                    <td className="px-3 py-3 text-center font-bold text-blue-600">{x.punts}</td>
-                    <td className="px-3 py-3 text-center text-gray-500 hidden sm:table-cell">{x.ronda}</td>
-                    <td className="px-3 py-3 text-gray-500 hidden md:table-cell">
+                    <td className="px-3 py-3 font-mono font-semibold text-ink-2 uppercase">{x.paraula}</td>
+                    <td className="px-3 py-3 text-center font-bold text-accent-ink">{x.punts}</td>
+                    <td className="px-3 py-3 text-center text-ink-3 hidden sm:table-cell">{x.ronda}</td>
+                    <td className="px-3 py-3 text-ink-3 hidden md:table-cell">
                       {playerMap.get(x.rival)?.name ?? (x.rival === 'bye' ? 'Bye' : '?')}
                     </td>
                   </tr>
@@ -388,36 +388,36 @@ export default async function ClassificacioPage({
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-10">#</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">Ronda</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Jugadors</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Total</th>
+                <tr className="border-b border-border">
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide w-10">#</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide hidden sm:table-cell">Ronda</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Jugadors</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Total</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-border">
                 {partidesConjuntes.length === 0 ? (
-                  <tr><td colSpan={4} className="px-4 py-8 text-center text-gray-400 text-sm">Sense partides registrades</td></tr>
+                  <tr><td colSpan={4} className="px-4 py-8 text-center text-ink-3 text-sm">Sense partides registrades</td></tr>
                 ) : partidesConjuntes.map((x, i) => (
-                  <tr key={`${x.jugador1.id}-${x.ronda}`} className={`${i < 3 ? 'bg-amber-50' : 'hover:bg-gray-50'} transition-colors`}>
+                  <tr key={`${x.jugador1.id}-${x.ronda}`} className={`${i < 3 ? 'bg-accent-tint' : 'hover:bg-surface-2'} transition-colors`}>
                     <td className="px-4 py-3">
                       <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                        i === 0 ? 'bg-amber-400 text-amber-900' :
-                        i === 1 ? 'bg-gray-300 text-gray-700' :
-                        i === 2 ? 'bg-amber-600 text-white' :
-                        'bg-gray-100 text-gray-500'
+                        i === 0 ? 'bg-accent text-surface' :
+                        i === 1 ? 'bg-surface-2 text-ink-2' :
+                        i === 2 ? 'bg-accent-ink text-surface' :
+                        'bg-surface-2 text-ink-3'
                       }`}>{i + 1}</div>
                     </td>
-                    <td className="px-3 py-3 text-center text-gray-500 hidden sm:table-cell">{x.ronda}</td>
+                    <td className="px-3 py-3 text-center text-ink-3 hidden sm:table-cell">{x.ronda}</td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap items-baseline gap-x-1 gap-y-0.5">
-                        <span className="font-medium text-gray-900 truncate max-w-[120px]">{x.jugador1.name}</span>
-                        <span className="text-gray-300 text-xs">·</span>
-                        <span className="font-medium text-gray-900 truncate max-w-[120px]">{x.jugador2.name}</span>
-                        <span className="text-xs text-gray-400 whitespace-nowrap">({x.p1Score}+{x.p2Score})</span>
+                        <span className="font-medium text-ink truncate max-w-[120px]">{x.jugador1.name}</span>
+                        <span className="text-ink-3 text-xs">·</span>
+                        <span className="font-medium text-ink truncate max-w-[120px]">{x.jugador2.name}</span>
+                        <span className="text-xs text-ink-3 whitespace-nowrap">({x.p1Score}+{x.p2Score})</span>
                       </div>
                     </td>
-                    <td className="px-3 py-3 text-center font-bold text-blue-600">{x.total}</td>
+                    <td className="px-3 py-3 text-center font-bold text-accent-ink">{x.total}</td>
                   </tr>
                 ))}
               </tbody>
@@ -429,7 +429,7 @@ export default async function ClassificacioPage({
       {/* ── Desempats (debug) ── */}
       {pestanya === 'desempats' && (
         <div className="space-y-4">
-          <p className="text-xs text-gray-400">
+          <p className="text-xs text-ink-3">
             Pts oponent = punts de torneig finals de l'oponent (victòria=1, empat=0.5, derrota=0, BYE fictici=0.5).
             Les files ombrejades s'exclouen del Buchholz medià.
           </p>
@@ -461,56 +461,56 @@ export default async function ClassificacioPage({
 
             return (
               <Card key={s.playerId} padding={false}>
-                <div className="px-4 py-2 border-b border-gray-100 flex items-center justify-between gap-2 flex-wrap">
+                <div className="px-4 py-2 border-b border-border flex items-center justify-between gap-2 flex-wrap">
                   <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-gray-400 w-5 text-center">{s.rank}</span>
-                    <span className="font-semibold text-gray-900">{jugador.name}</span>
-                    <span className="text-xs text-gray-400">{s.points} pts</span>
+                    <span className="text-xs font-bold text-ink-3 w-5 text-center">{s.rank}</span>
+                    <span className="font-semibold text-ink">{jugador.name}</span>
+                    <span className="text-xs text-ink-3">{s.points} pts</span>
                   </div>
                   <div className="flex gap-3 text-xs tabular-nums">
-                    <span className="text-gray-500">Buch <strong className="text-gray-800">{buchholz.toFixed(1)}</strong></span>
-                    <span className="text-gray-500">Med <strong className="text-gray-800">{median.toFixed(1)}</strong></span>
-                    <span className="text-gray-500">Berg <strong className="text-gray-800">{berger.toFixed(1)}</strong></span>
+                    <span className="text-ink-3">Buch <strong className="text-ink-2">{buchholz.toFixed(1)}</strong></span>
+                    <span className="text-ink-3">Med <strong className="text-ink-2">{median.toFixed(1)}</strong></span>
+                    <span className="text-ink-3">Berg <strong className="text-ink-2">{berger.toFixed(1)}</strong></span>
                   </div>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-xs">
                     <thead>
-                      <tr className="bg-gray-50 border-b border-gray-100">
-                        <th className="text-left px-3 py-1.5 font-medium text-gray-400">R</th>
-                        <th className="text-left px-3 py-1.5 font-medium text-gray-400">Oponent</th>
-                        <th className="text-center px-2 py-1.5 font-medium text-gray-400">Res</th>
-                        <th className="text-center px-2 py-1.5 font-medium text-gray-400">Pts op.</th>
-                        <th className="text-center px-2 py-1.5 font-medium text-gray-400">→ Buchholz</th>
-                        <th className="text-center px-2 py-1.5 font-medium text-gray-400">→ Berger</th>
+                      <tr className="bg-surface-2 border-b border-border">
+                        <th className="text-left px-3 py-1.5 font-medium text-ink-3">R</th>
+                        <th className="text-left px-3 py-1.5 font-medium text-ink-3">Oponent</th>
+                        <th className="text-center px-2 py-1.5 font-medium text-ink-3">Res</th>
+                        <th className="text-center px-2 py-1.5 font-medium text-ink-3">Pts op.</th>
+                        <th className="text-center px-2 py-1.5 font-medium text-ink-3">→ Buchholz</th>
+                        <th className="text-center px-2 py-1.5 font-medium text-ink-3">→ Berger</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-50">
+                    <tbody className="divide-y divide-border">
                       {detalls.map((d, i) => {
                         const exclos = i === exclMinIdx || i === exclMaxIdx;
                         const bergerContrib = d.outcome === 'win' ? d.oponentPts : d.outcome === 'draw' ? d.oponentPts * 0.5 : 0;
                         return (
-                          <tr key={i} className={exclos ? 'bg-gray-50 opacity-40' : ''}>
-                            <td className="px-3 py-1.5 text-gray-400">{d.ronda}</td>
-                            <td className="px-3 py-1.5 font-medium text-gray-800">
+                          <tr key={i} className={exclos ? 'bg-surface-2 opacity-40' : ''}>
+                            <td className="px-3 py-1.5 text-ink-3">{d.ronda}</td>
+                            <td className="px-3 py-1.5 font-medium text-ink-2">
                               {d.oponentNom}
-                              {i === exclMinIdx && <span className="text-gray-300 ml-1">(−mín)</span>}
-                              {i === exclMaxIdx && <span className="text-gray-300 ml-1">(−màx)</span>}
+                              {i === exclMinIdx && <span className="text-ink-3 ml-1">(−mín)</span>}
+                              {i === exclMaxIdx && <span className="text-ink-3 ml-1">(−màx)</span>}
                             </td>
                             <td className="px-2 py-1.5 text-center">
                               <span className={`font-bold ${
-                                d.outcome === 'win' ? 'text-green-600' :
-                                d.outcome === 'loss' ? 'text-red-500' :
-                                d.outcome === 'draw' ? 'text-blue-500' : 'text-gray-300'
+                                d.outcome === 'win' ? 'text-win' :
+                                d.outcome === 'loss' ? 'text-loss' :
+                                d.outcome === 'draw' ? 'text-accent-ink' : 'text-ink-3'
                               }`}>
                                 {d.outcome === 'win' ? 'V' : d.outcome === 'loss' ? 'D' : d.outcome === 'draw' ? 'E' : 'BYE'}
                               </span>
                             </td>
-                            <td className="px-2 py-1.5 text-center tabular-nums text-gray-700">{d.oponentPts.toFixed(1)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums text-gray-500">
-                              {exclos ? <span className="line-through text-gray-300">{d.oponentPts.toFixed(1)}</span> : `+${d.oponentPts.toFixed(1)}`}
+                            <td className="px-2 py-1.5 text-center tabular-nums text-ink-2">{d.oponentPts.toFixed(1)}</td>
+                            <td className="px-2 py-1.5 text-center tabular-nums text-ink-3">
+                              {exclos ? <span className="line-through text-ink-3">{d.oponentPts.toFixed(1)}</span> : `+${d.oponentPts.toFixed(1)}`}
                             </td>
-                            <td className="px-2 py-1.5 text-center tabular-nums text-gray-500">
+                            <td className="px-2 py-1.5 text-center tabular-nums text-ink-3">
                               {bergerContrib > 0 ? `+${bergerContrib.toFixed(1)}` : '—'}
                             </td>
                           </tr>
@@ -518,11 +518,11 @@ export default async function ClassificacioPage({
                       })}
                     </tbody>
                     <tfoot>
-                      <tr className="border-t border-gray-200 bg-gray-50 font-semibold">
-                        <td colSpan={3} className="px-3 py-1.5 text-gray-500">Total</td>
-                        <td className="px-2 py-1.5 text-center text-gray-700 tabular-nums">{buchholz.toFixed(1)}</td>
-                        <td className="px-2 py-1.5 text-center text-gray-800 tabular-nums">{median.toFixed(1)}</td>
-                        <td className="px-2 py-1.5 text-center text-gray-800 tabular-nums">{berger.toFixed(1)}</td>
+                      <tr className="border-t border-border bg-surface-2 font-semibold">
+                        <td colSpan={3} className="px-3 py-1.5 text-ink-3">Total</td>
+                        <td className="px-2 py-1.5 text-center text-ink-2 tabular-nums">{buchholz.toFixed(1)}</td>
+                        <td className="px-2 py-1.5 text-center text-ink-2 tabular-nums">{median.toFixed(1)}</td>
+                        <td className="px-2 py-1.5 text-center text-ink-2 tabular-nums">{berger.toFixed(1)}</td>
                       </tr>
                     </tfoot>
                   </table>
@@ -539,35 +539,35 @@ export default async function ClassificacioPage({
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="border-b border-gray-100">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide w-10">#</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Jugador</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide">Punts</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden sm:table-cell">Ronda</th>
-                  <th className="text-left px-3 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wide hidden md:table-cell">Rival</th>
+                <tr className="border-b border-border">
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide w-10">#</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Jugador</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Punts</th>
+                  <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide hidden sm:table-cell">Ronda</th>
+                  <th className="text-left px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide hidden md:table-cell">Rival</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-border">
                 {rankingIndividual.length === 0 ? (
-                  <tr><td colSpan={5} className="px-4 py-8 text-center text-gray-400 text-sm">Sense partides registrades</td></tr>
+                  <tr><td colSpan={5} className="px-4 py-8 text-center text-ink-3 text-sm">Sense partides registrades</td></tr>
                 ) : rankingIndividual.map((x, i) => (
-                  <tr key={x.jugador.id} className={`${i < 3 ? 'bg-amber-50' : 'hover:bg-gray-50'} transition-colors`}>
+                  <tr key={x.jugador.id} className={`${i < 3 ? 'bg-accent-tint' : 'hover:bg-surface-2'} transition-colors`}>
                     <td className="px-4 py-3">
                       <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                        i === 0 ? 'bg-amber-400 text-amber-900' :
-                        i === 1 ? 'bg-gray-300 text-gray-700' :
-                        i === 2 ? 'bg-amber-600 text-white' :
-                        'bg-gray-100 text-gray-500'
+                        i === 0 ? 'bg-accent text-surface' :
+                        i === 1 ? 'bg-surface-2 text-ink-2' :
+                        i === 2 ? 'bg-accent-ink text-surface' :
+                        'bg-surface-2 text-ink-3'
                       }`}>{i + 1}</div>
                     </td>
                     <td className="px-4 py-3">
-                      <Link href={`/campionat/${id}/jugadors/${x.jugador.id}`} className="font-medium text-gray-900 hover:text-blue-600 transition-colors">
+                      <Link href={`/campionat/${id}/jugadors/${x.jugador.id}`} className="font-medium text-ink hover:text-accent-ink transition-colors">
                         {x.jugador.name}
                       </Link>
                     </td>
-                    <td className="px-3 py-3 text-center font-bold text-blue-600">{x.punts}</td>
-                    <td className="px-3 py-3 text-center text-gray-500 hidden sm:table-cell">{x.ronda}</td>
-                    <td className="px-3 py-3 text-gray-500 hidden md:table-cell">
+                    <td className="px-3 py-3 text-center font-bold text-accent-ink">{x.punts}</td>
+                    <td className="px-3 py-3 text-center text-ink-3 hidden sm:table-cell">{x.ronda}</td>
+                    <td className="px-3 py-3 text-ink-3 hidden md:table-cell">
                       {playerMap.get(x.rival)?.name ?? (x.rival === 'bye' ? 'Bye' : '?')}
                     </td>
                   </tr>

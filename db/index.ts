@@ -3,6 +3,8 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import * as schema from './schema';
 import path from 'path';
 import fs from 'fs';
+import { v4 as uuid } from 'uuid';
+import { hashPassword } from '../lib/auth';
 
 // Determina la ruta de la base de dades
 const DATA_DIR = process.env.DATA_DIR ?? path.join(process.cwd(), '.data');
@@ -27,6 +29,15 @@ sqlite.pragma('busy_timeout = 5000');
 
 // Crea les taules si no existeixen (migració automàtica bàsica)
 sqlite.exec(`
+  CREATE TABLE IF NOT EXISTS directors (
+    id TEXT PRIMARY KEY,
+    username TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    name TEXT NOT NULL,
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL DEFAULT (unixepoch())
+  );
+
   CREATE TABLE IF NOT EXISTS tournaments (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -203,6 +214,16 @@ const repairRoundsIfNeeded = sqlite.transaction(() => {
 repairRoundsIfNeeded();
 
 sqlite.pragma('foreign_keys = ON');
+
+// Sembra el director inicial a partir de DIRECTOR_PASSWORD (compatibilitat amb
+// desplegaments existents que encara usaven una única contrasenya compartida).
+// Només s'executa si la taula és buida, per no xafar comptes ja creats.
+const directorCount = sqlite.prepare('SELECT count(*) c FROM directors').get() as { c: number };
+if (directorCount.c === 0 && process.env.DIRECTOR_PASSWORD) {
+  sqlite.prepare(
+    'INSERT INTO directors (id, username, password_hash, name, is_active) VALUES (?, ?, ?, ?, 1)'
+  ).run(uuid(), 'director', hashPassword(process.env.DIRECTOR_PASSWORD), 'Director');
+}
 
 export const db = drizzle(sqlite, { schema });
 export type DB = typeof db;

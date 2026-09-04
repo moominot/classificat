@@ -43,19 +43,19 @@ export default async function PartidaDetallPage({
   return (
     <div className="space-y-4">
       {/* Breadcrumb */}
-      <div className="flex items-center gap-2 text-sm text-gray-500 flex-wrap">
-        <Link href={`/campionat/${id}/rondes`} className="hover:text-blue-600">Rondes</Link>
+      <div className="flex items-center gap-2 text-sm text-ink-3 flex-wrap">
+        <Link href={`/campionat/${id}/rondes`} className="hover:text-accent-ink">Rondes</Link>
         <span>/</span>
-        <Link href={`/campionat/${id}/rondes/${round.id}`} className="hover:text-blue-600">
+        <Link href={`/campionat/${id}/rondes/${round.id}`} className="hover:text-accent-ink">
           Ronda {round.number}
         </Link>
         <span>/</span>
-        <span className="text-gray-900 truncate">{p1?.name} vs {p2?.name ?? 'Bye'}</span>
+        <span className="text-ink truncate">{p1?.name} vs {p2?.name ?? 'Bye'}</span>
       </div>
 
       {/* Capçalera */}
       <div className="text-center space-y-1">
-        <p className="text-xs text-gray-400 uppercase tracking-wide font-semibold">
+        <p className="text-xs text-ink-3 uppercase tracking-wide font-semibold">
           {phase?.name} · Ronda {round.number}
           {pairing.tableNumber > 0 && ` · Taula ${pairing.tableNumber}`}
         </p>
@@ -70,35 +70,35 @@ export default async function PartidaDetallPage({
           <div className="text-center space-y-1 min-w-0">
             <Link
               href={`/campionat/${id}/jugadors/${p1?.id}`}
-              className="font-semibold text-gray-900 hover:text-blue-600 transition-colors block truncate"
+              className="font-semibold text-ink hover:text-accent-ink transition-colors block truncate"
             >
               {p1?.name ?? '?'}
             </Link>
             {teResultat && (
-              <p className={`text-4xl font-black tabular-nums ${p1Guanya ? 'text-blue-600' : 'text-gray-400'}`}>
+              <p className={`text-4xl font-black tabular-nums ${p1Guanya ? 'text-accent-ink' : 'text-ink-3'}`}>
                 {pairing.p1Score}
               </p>
             )}
             {teResultat && p1Guanya && <Badge color="green">Victòria</Badge>}
           </div>
 
-          <div className="text-gray-300 font-light text-2xl flex-shrink-0">
+          <div className="text-ink-3 font-light text-2xl flex-shrink-0">
             {isBye ? '—' : teResultat ? '–' : 'vs'}
           </div>
 
           <div className="text-center space-y-1 min-w-0">
             {isBye ? (
-              <span className="text-gray-400 italic text-sm">Bye</span>
+              <span className="text-ink-3 italic text-sm">Bye</span>
             ) : (
               <>
                 <Link
                   href={`/campionat/${id}/jugadors/${p2?.id}`}
-                  className="font-semibold text-gray-900 hover:text-blue-600 transition-colors block truncate"
+                  className="font-semibold text-ink hover:text-accent-ink transition-colors block truncate"
                 >
                   {p2?.name ?? '?'}
                 </Link>
                 {teResultat && (
-                  <p className={`text-4xl font-black tabular-nums ${p2Guanya ? 'text-blue-600' : 'text-gray-400'}`}>
+                  <p className={`text-4xl font-black tabular-nums ${p2Guanya ? 'text-accent-ink' : 'text-ink-3'}`}>
                     {pairing.p2Score}
                   </p>
                 )}
@@ -108,7 +108,7 @@ export default async function PartidaDetallPage({
           </div>
         </div>
         {teResultat && (
-          <p className="text-center text-xs text-gray-400 mt-2 pt-2 border-t border-gray-100">
+          <p className="text-center text-xs text-ink-3 mt-2 pt-2 border-t border-border">
             Suma total: {(pairing.p1Score ?? 0) + (pairing.p2Score ?? 0)} punts
           </p>
         )}
@@ -120,17 +120,17 @@ export default async function PartidaDetallPage({
           <div className="grid grid-cols-[auto_1fr_1fr] gap-x-4 gap-y-3 text-sm items-start">
             {/* Capçaleres */}
             <div />
-            <p className="font-semibold text-gray-700 truncate">{p1?.name}</p>
-            <p className="font-semibold text-gray-700 truncate text-right">{p2?.name}</p>
+            <p className="font-semibold text-ink-2 truncate">{p1?.name}</p>
+            <p className="font-semibold text-ink-2 truncate text-right">{p2?.name}</p>
 
             {/* Bingos */}
             {(pairing.p1Scrabbles !== null || pairing.p2Scrabbles !== null) && (
               <>
-                <p className="text-gray-400 leading-none pt-1">Bingos</p>
-                <p className="text-2xl font-bold text-blue-600 leading-none">
+                <p className="text-ink-3 leading-none pt-1">Bingos</p>
+                <p className="text-2xl font-bold text-accent-ink leading-none">
                   {pairing.p1Scrabbles ?? 0}
                 </p>
-                <p className="text-2xl font-bold text-blue-600 leading-none text-right">
+                <p className="text-2xl font-bold text-accent-ink leading-none text-right">
                   {pairing.p2Scrabbles ?? 0}
                 </p>
               </>
@@ -139,34 +139,34 @@ export default async function PartidaDetallPage({
             {/* Millor jugada */}
             {(pairing.p1BestWord || pairing.p2BestWord) && (
               <>
-                <p className="text-gray-400 pt-1">Millor jugada</p>
+                <p className="text-ink-3 pt-1">Millor jugada</p>
                 <div className="min-w-0">
                   {pairing.p1BestWord ? (
                     <>
-                      <p className="font-bold text-gray-800 uppercase break-all leading-snug">
+                      <p className="font-bold text-ink-2 uppercase break-all leading-snug">
                         {pairing.p1BestWord}
                       </p>
                       {pairing.p1BestWordScore != null && (
-                        <p className="text-xs text-green-600 font-semibold mt-0.5">
+                        <p className="text-xs text-win font-semibold mt-0.5">
                           {pairing.p1BestWordScore} pts
                         </p>
                       )}
                     </>
-                  ) : <p className="text-gray-300">—</p>}
+                  ) : <p className="text-ink-3">—</p>}
                 </div>
                 <div className="min-w-0 text-right">
                   {pairing.p2BestWord ? (
                     <>
-                      <p className="font-bold text-gray-800 uppercase break-all leading-snug">
+                      <p className="font-bold text-ink-2 uppercase break-all leading-snug">
                         {pairing.p2BestWord}
                       </p>
                       {pairing.p2BestWordScore != null && (
-                        <p className="text-xs text-green-600 font-semibold mt-0.5">
+                        <p className="text-xs text-win font-semibold mt-0.5">
                           {pairing.p2BestWordScore} pts
                         </p>
                       )}
                     </>
-                  ) : <p className="text-gray-300">—</p>}
+                  ) : <p className="text-ink-3">—</p>}
                 </div>
               </>
             )}
@@ -178,7 +178,7 @@ export default async function PartidaDetallPage({
               href={pairing.sheetImageUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-3 pt-3 border-t border-gray-100 flex items-center gap-2 text-xs text-gray-400 hover:text-blue-600 transition-colors"
+              className="mt-3 pt-3 border-t border-border flex items-center gap-2 text-xs text-ink-3 hover:text-accent-ink transition-colors"
             >
               <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -194,8 +194,8 @@ export default async function PartidaDetallPage({
       {(pairing.location || pairing.comments) && (
         <Card>
           {pairing.location && (
-            <div className="flex items-center gap-2 text-sm text-gray-600">
-              <svg className="w-4 h-4 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <div className="flex items-center gap-2 text-sm text-ink-2">
+              <svg className="w-4 h-4 text-ink-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
                   d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -205,7 +205,7 @@ export default async function PartidaDetallPage({
             </div>
           )}
           {pairing.comments && (
-            <blockquote className="mt-2 pl-3 border-l-2 border-gray-200 text-sm text-gray-600 italic">
+            <blockquote className="mt-2 pl-3 border-l-2 border-border text-sm text-ink-2 italic">
               {pairing.comments}
             </blockquote>
           )}

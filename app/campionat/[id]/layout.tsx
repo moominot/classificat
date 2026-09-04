@@ -28,14 +28,14 @@ export default async function CampionatLayout({
     <DirectorProvider isDirector={isDirector}>
       <div className="space-y-5">
         {/* Capçalera del campionat */}
-        <div className="flex items-center gap-2 text-sm text-gray-500">
+        <div className="flex items-center gap-2 text-sm text-ink-3">
           {isDirector ? (
-            <a href="/" className="hover:text-blue-600">Campionats</a>
+            <a href="/" className="hover:text-accent-ink">Campionats</a>
           ) : (
             <span>Campionats</span>
           )}
           <span>/</span>
-          <span className="text-gray-900 font-medium">{tournament.name}</span>
+          <span className="text-ink font-medium">{tournament.name}</span>
           {isDirector && (
             <div className="ml-auto">
               <QrCompartir tournamentId={id} />

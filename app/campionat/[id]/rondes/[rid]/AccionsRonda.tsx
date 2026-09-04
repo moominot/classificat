@@ -92,14 +92,14 @@ export default function AccionsRonda({
               size="sm"
               variant="ghost"
               onClick={() => setConfirmEsborrar(true)}
-              className="text-red-500 hover:text-red-700 hover:bg-red-50"
+              className="text-loss hover:text-loss hover:bg-loss-tint"
               title="Elimina tots els aparellaments per regenerar-los"
             >
               Esborrar aparellaments
             </Button>
           ) : (
-            <div className="flex items-center gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-1.5">
-              <span className="text-xs text-red-700">Segur? S&apos;esborrarà tot.</span>
+            <div className="flex items-center gap-2 bg-loss-tint border border-loss rounded-lg px-3 py-1.5">
+              <span className="text-xs text-loss">Segur? S&apos;esborrarà tot.</span>
               <Button
                 size="sm"
                 variant="danger"

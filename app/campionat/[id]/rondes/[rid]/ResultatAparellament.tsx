@@ -30,7 +30,7 @@ export default function ResultatAparellament({
     <div className="flex items-center gap-2 px-4 py-3">
       {/* Número de taula */}
       <span className={`text-xs font-bold flex-shrink-0 w-4 text-center tabular-nums ${
-        esBye ? 'text-gray-300' : 'text-blue-500'
+        esBye ? 'text-ink-3' : 'text-accent-ink'
       }`}>
         {esBye ? '—' : ap.tableNumber}
       </span>
@@ -38,26 +38,26 @@ export default function ResultatAparellament({
       {/* Noms + resultat */}
       <div className="flex-1 flex items-baseline gap-2 min-w-0">
         <span className={`text-sm font-medium truncate flex-1 min-w-0 ${
-          p1Guanya ? 'text-blue-700 font-semibold' : 'text-gray-900'
+          p1Guanya ? 'text-accent-ink font-semibold' : 'text-ink'
         }`}>
           {ap.player1Name}
         </span>
 
         <span className="flex-shrink-0 text-center">
           {esBye ? (
-            <span className="text-xs text-gray-400 italic">BYE</span>
+            <span className="text-xs text-ink-3 italic">BYE</span>
           ) : jugat ? (
-            <span className="text-sm font-bold tabular-nums text-gray-700">
+            <span className="text-sm font-bold tabular-nums text-ink-2">
               {ap.p1Score}–{ap.p2Score}
             </span>
           ) : (
-            <span className="text-xs text-gray-300">vs</span>
+            <span className="text-xs text-ink-3">vs</span>
           )}
         </span>
 
         {!esBye && (
           <span className={`text-sm font-medium truncate flex-1 min-w-0 text-right ${
-            p2Guanya ? 'text-blue-700 font-semibold' : 'text-gray-900'
+            p2Guanya ? 'text-accent-ink font-semibold' : 'text-ink'
           }`}>
             {ap.player2Name}
           </span>
@@ -68,9 +68,9 @@ export default function ResultatAparellament({
       {!esBye && (
         <div className="flex items-center gap-1.5 flex-shrink-0">
           <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
-            jugat ? 'bg-green-400' : 'bg-amber-300'
+            jugat ? 'bg-win' : 'bg-accent'
           }`} />
-          <svg className="w-3.5 h-3.5 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+          <svg className="w-3.5 h-3.5 text-ink-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
           </svg>
         </div>
@@ -79,13 +79,13 @@ export default function ResultatAparellament({
   );
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+    <div className="bg-surface border border-border rounded-xl overflow-hidden">
       {esBye ? (
         <div className="opacity-50">{inner}</div>
       ) : (
         <Link
           href={`/campionat/${tournamentId}/partida/${ap.id}`}
-          className="block hover:bg-gray-50 active:bg-gray-100 transition-colors"
+          className="block hover:bg-surface-2 active:bg-surface-2 transition-colors"
         >
           {inner}
         </Link>
