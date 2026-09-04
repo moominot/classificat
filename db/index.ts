@@ -126,25 +126,29 @@ const phasesTableSql = sqlite
   .get() as { sql: string } | undefined;
 if (phasesTableSql && !phasesTableSql.sql.includes('swiss_fide')) {
   sqlite.pragma('foreign_keys = OFF');
-  sqlite.exec(`
-    ALTER TABLE phases RENAME TO phases_old;
-    CREATE TABLE phases (
-      id TEXT PRIMARY KEY,
-      tournament_id TEXT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
-      "order" INTEGER NOT NULL,
-      name TEXT NOT NULL,
-      method TEXT NOT NULL CHECK(method IN ('swiss','swiss_fide','round_robin','king_of_the_hill','manual')),
-      start_round INTEGER NOT NULL,
-      end_round INTEGER NOT NULL,
-      tiebreakers TEXT NOT NULL DEFAULT '[]',
-      config TEXT NOT NULL,
-      is_complete INTEGER NOT NULL DEFAULT 0,
-      UNIQUE(tournament_id, "order")
-    );
-    INSERT INTO phases SELECT * FROM phases_old;
-    DROP TABLE phases_old;
-    CREATE INDEX IF NOT EXISTS phases_tournament_idx ON phases(tournament_id);
-  `);
+  const migratePhases = sqlite.transaction(() => {
+    sqlite.exec(`
+      DROP TABLE IF EXISTS phases_old;
+      ALTER TABLE phases RENAME TO phases_old;
+      CREATE TABLE phases (
+        id TEXT PRIMARY KEY,
+        tournament_id TEXT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+        "order" INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        method TEXT NOT NULL CHECK(method IN ('swiss','swiss_fide','round_robin','king_of_the_hill','manual')),
+        start_round INTEGER NOT NULL,
+        end_round INTEGER NOT NULL,
+        tiebreakers TEXT NOT NULL DEFAULT '[]',
+        config TEXT NOT NULL,
+        is_complete INTEGER NOT NULL DEFAULT 0,
+        UNIQUE(tournament_id, "order")
+      );
+      INSERT INTO phases SELECT * FROM phases_old;
+      DROP TABLE phases_old;
+      CREATE INDEX IF NOT EXISTS phases_tournament_idx ON phases(tournament_id);
+    `);
+  });
+  migratePhases();
   sqlite.pragma('foreign_keys = ON');
 }
 
