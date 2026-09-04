@@ -127,12 +127,24 @@ if (!playerCols.has('club'))  sqlite.exec('ALTER TABLE players ADD COLUMN club T
 // Migració: el mètode 'swiss_fide' es va afegir després de crear la taula phases,
 // i SQLite no permet alterar un CHECK existent, cal reconstruir la taula.
 //
+// IMPORTANT: mai renombrem la taula ORIGINAL (amb dades i amb dependents que
+// hi apunten per FK). Des de SQLite 3.25, "ALTER TABLE x RENAME TO y" reescriu
+// automàticament les clàusules REFERENCES de les taules que apunten a x
+// perquè apuntin a y — si renombréssim "phases" a "phases_old" i després
+// l'esborréssim, la taula "rounds" es quedaria apuntant per FK a un
+// "phases_old" inexistent (exactament el bug que això corregeix: qualsevol
+// consulta sobre "rounds" petava amb "no such table: main.phases_old").
+// Patró segur: crear la taula nova amb un nom temporal, copiar-hi les dades,
+// esborrar la taula vella (un DROP no reescriu res, només ho fa el RENAME) i
+// només llavors renombrar la nova cap al nom definitiu.
+//
 // La comprovació i l'execució van juntes DINS la transacció (no abans), perquè
 // aquest mòdul es carrega per duplicat (bundle de rutes d'API vs. bundle SSR)
 // i cada instància obre la seva pròpia connexió. Si totes dues hi entren
 // gairebé alhora, la segona ha d'esperar el lock (busy_timeout) i, en re-
 // comprovar un cop dins la transacció, veure que ja no cal fer res.
 sqlite.pragma('foreign_keys = OFF');
+
 const migratePhasesIfNeeded = sqlite.transaction(() => {
   const phasesTableSql = sqlite
     .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='phases'")
@@ -140,9 +152,8 @@ const migratePhasesIfNeeded = sqlite.transaction(() => {
   if (!phasesTableSql || phasesTableSql.sql.includes('swiss_fide')) return;
 
   sqlite.exec(`
-    DROP TABLE IF EXISTS phases_old;
-    ALTER TABLE phases RENAME TO phases_old;
-    CREATE TABLE phases (
+    DROP TABLE IF EXISTS phases_new;
+    CREATE TABLE phases_new (
       id TEXT PRIMARY KEY,
       tournament_id TEXT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
       "order" INTEGER NOT NULL,
@@ -155,12 +166,42 @@ const migratePhasesIfNeeded = sqlite.transaction(() => {
       is_complete INTEGER NOT NULL DEFAULT 0,
       UNIQUE(tournament_id, "order")
     );
-    INSERT INTO phases SELECT * FROM phases_old;
-    DROP TABLE phases_old;
+    INSERT INTO phases_new SELECT * FROM phases;
+    DROP TABLE phases;
+    ALTER TABLE phases_new RENAME TO phases;
     CREATE INDEX IF NOT EXISTS phases_tournament_idx ON phases(tournament_id);
   `);
 });
 migratePhasesIfNeeded();
+
+// Reparació: si un desplegament ja va patir el bug descrit a dalt (la taula
+// "phases" ja té 'swiss_fide' però "rounds" encara referencia "phases_old"),
+// reconstruïm "rounds" amb el mateix patró segur per corregir-li la FK.
+const repairRoundsIfNeeded = sqlite.transaction(() => {
+  const roundsTableSql = sqlite
+    .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='rounds'")
+    .get() as { sql: string } | undefined;
+  if (!roundsTableSql || !roundsTableSql.sql.includes('phases_old')) return;
+
+  sqlite.exec(`
+    DROP TABLE IF EXISTS rounds_new;
+    CREATE TABLE rounds_new (
+      id TEXT PRIMARY KEY,
+      tournament_id TEXT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+      phase_id TEXT NOT NULL REFERENCES phases(id) ON DELETE CASCADE,
+      number INTEGER NOT NULL,
+      is_complete INTEGER NOT NULL DEFAULT 0,
+      created_at INTEGER NOT NULL DEFAULT (unixepoch()),
+      UNIQUE(tournament_id, number)
+    );
+    INSERT INTO rounds_new SELECT * FROM rounds;
+    DROP TABLE rounds;
+    ALTER TABLE rounds_new RENAME TO rounds;
+    CREATE INDEX IF NOT EXISTS rounds_phase_idx ON rounds(phase_id);
+  `);
+});
+repairRoundsIfNeeded();
+
 sqlite.pragma('foreign_keys = ON');
 
 export const db = drizzle(sqlite, { schema });
