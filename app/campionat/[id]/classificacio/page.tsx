@@ -248,7 +248,7 @@ export default async function ClassificacioPage({
                       return (
                         <tr key={s.playerId} className={`${isPodi ? 'bg-accent-tint' : 'hover:bg-surface-2'} transition-colors`}>
                           <td className="px-4 py-3">
-                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
+                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-display font-bold tabular-nums ${
                               s.rank === 1 ? 'bg-accent text-surface' :
                               s.rank === 2 ? 'bg-surface-2 text-ink-2' :
                               s.rank === 3 ? 'bg-accent-ink text-surface' :
@@ -258,17 +258,22 @@ export default async function ClassificacioPage({
                             </div>
                           </td>
                           <td className="px-4 py-3">
-                            <Link href={`/campionat/${id}/jugadors/${s.playerId}`} className="font-medium text-ink hover:text-accent-ink transition-colors">
-                              {jugador?.name ?? '?'}
+                            <Link href={`/campionat/${id}/jugadors/${s.playerId}`} className="flex items-center gap-2.5 group min-w-0">
+                              <span className="w-7 h-7 rounded-full bg-surface-2 flex items-center justify-center text-xs font-display font-semibold text-ink-2 flex-shrink-0">
+                                {(jugador?.name ?? '?')[0]?.toUpperCase()}
+                              </span>
+                              <span className="font-medium text-ink group-hover:text-accent-ink transition-colors truncate">
+                                {jugador?.name ?? '?'}
+                              </span>
+                              {!jugador?.isActive && <span className="text-xs text-ink-3 flex-shrink-0">Inactiu</span>}
                             </Link>
-                            {!jugador?.isActive && <span className="text-xs text-ink-3 ml-2">Inactiu</span>}
                           </td>
-                          <td className="px-3 py-3 text-center font-bold text-ink">{s.points}</td>
-                          <td className="px-3 py-3 text-center text-win font-medium">{s.wins}</td>
-                          <td className="px-3 py-3 text-center text-loss font-medium">{s.losses}</td>
-                          <td className="px-3 py-3 text-center text-ink-3 hidden sm:table-cell">{s.gamesPlayed}</td>
+                          <td className="px-3 py-3 text-center font-display font-bold text-ink tabular-nums">{s.points}</td>
+                          <td className="px-3 py-3 text-center text-win font-medium tabular-nums">{s.wins}</td>
+                          <td className="px-3 py-3 text-center text-loss font-medium tabular-nums">{s.losses}</td>
+                          <td className="px-3 py-3 text-center text-ink-3 hidden sm:table-cell tabular-nums">{s.gamesPlayed}</td>
                           {tbCols.map(({ key, def }, i) => (
-                            <td key={key} className={`px-3 py-3 text-center ${responsiveClass(i)} ${
+                            <td key={key} className={`px-3 py-3 text-center tabular-nums ${responsiveClass(i)} ${
                               def.className === 'spread'
                                 ? s.spread > 0 ? 'text-win font-medium' : s.spread < 0 ? 'text-loss font-medium' : 'text-ink-3'
                                 : 'text-ink-3'

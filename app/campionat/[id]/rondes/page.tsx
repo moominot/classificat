@@ -77,14 +77,14 @@ export default async function RondesPage({ params }: { params: Promise<{ id: str
                       href={`/campionat/${id}/rondes/${r.id}`}
                       className="flex items-center gap-4 bg-surface border border-border rounded-xl px-4 py-3 hover:border-accent hover:shadow-sm transition-all group"
                     >
-                      <div className="w-8 h-8 rounded-full bg-surface-2 flex items-center justify-center text-sm font-bold text-ink-2 flex-shrink-0">
+                      <div className="w-9 h-9 rounded-lg bg-surface-2 flex items-center justify-center text-sm font-display font-bold text-ink-2 flex-shrink-0 tabular-nums">
                         {r.number}
                       </div>
                       <div className="flex-1">
-                        <span className="font-medium text-sm text-ink group-hover:text-accent-ink">
+                        <span className="font-display font-semibold text-sm text-ink group-hover:text-accent-ink">
                           Ronda {r.number}
                         </span>
-                        <div className="text-xs text-ink-3 mt-0.5">
+                        <div className="text-xs text-ink-3 mt-0.5 tabular-nums">
                           {r.totals === 0 ? (
                             'Sense aparellaments generats'
                           ) : (

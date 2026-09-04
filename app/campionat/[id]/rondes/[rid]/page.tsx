@@ -26,6 +26,15 @@ export default async function RondaPage({
 
   if (!ronda) notFound();
 
+  const totes_rondes = await db
+    .select()
+    .from(rounds)
+    .where(eq(rounds.tournamentId, id))
+    .orderBy(asc(rounds.number));
+  const idxActual = totes_rondes.findIndex(r => r.id === rid);
+  const rondaAnterior = idxActual > 0 ? totes_rondes[idxActual - 1] : null;
+  const rondaSeguent = idxActual >= 0 && idxActual < totes_rondes.length - 1 ? totes_rondes[idxActual + 1] : null;
+
   const [fase] = await db.select().from(phases).where(eq(phases.id, ronda.phaseId));
   const tots_aparellaments = await db
     .select()
@@ -89,30 +98,61 @@ export default async function RondaPage({
 
   return (
     <div className="space-y-5">
+      {/* Breadcrumb + navegador entre rondes */}
+      <div className="flex items-center justify-between gap-3 flex-wrap">
+        <Link href={`/campionat/${id}/rondes`} className="text-sm text-ink-3 hover:text-accent-ink">
+          ← Rondes
+        </Link>
+        <div className="flex items-center gap-1">
+          {rondaAnterior ? (
+            <Link
+              href={`/campionat/${id}/rondes/${rondaAnterior.id}`}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-sm text-ink-2 hover:bg-surface-2 transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+              Ronda {rondaAnterior.number}
+            </Link>
+          ) : <span />}
+          {rondaSeguent ? (
+            <Link
+              href={`/campionat/${id}/rondes/${rondaSeguent.id}`}
+              className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-sm text-ink-2 hover:bg-surface-2 transition-colors"
+            >
+              Ronda {rondaSeguent.number}
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+            </Link>
+          ) : null}
+        </div>
+      </div>
+
       {/* Capçalera */}
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="flex items-center gap-2 mb-1">
-            <Link href={`/campionat/${id}/rondes`} className="text-sm text-ink-3 hover:text-ink-2">
-              ← Rondes
-            </Link>
+          <div className="flex items-center gap-3">
+            <h2 className="font-display text-xl font-bold text-ink">Ronda {ronda.number}</h2>
+            {ronda.isComplete ? (
+              <Badge color="green">Tancada</Badge>
+            ) : totals === 0 ? (
+              <Badge color="yellow">Sense aparellaments</Badge>
+            ) : jugades === totals ? (
+              <Badge color="blue">Totes jugades</Badge>
+            ) : (
+              <Badge color="yellow">En curs</Badge>
+            )}
           </div>
-          <h2 className="text-xl font-bold text-ink">Ronda {ronda.number}</h2>
-          <p className="text-sm text-ink-3 mt-0.5">
-            {fase?.name} · {jugades}/{totals} partides jugades
-          </p>
+          <p className="text-sm text-ink-3 mt-0.5">{fase?.name}</p>
         </div>
-        <div className="flex items-center gap-2">
-          {ronda.isComplete ? (
-            <Badge color="green">Tancada</Badge>
-          ) : totals === 0 ? (
-            <Badge color="yellow">Sense aparellaments</Badge>
-          ) : jugades === totals ? (
-            <Badge color="blue">Totes jugades</Badge>
-          ) : (
-            <Badge color="yellow">En curs</Badge>
-          )}
-        </div>
+        {totals > 0 && (
+          <div className="text-right w-40 flex-shrink-0">
+            <p className="text-xs text-ink-3 mb-1.5 tabular-nums">{jugades} / {totals} jugades</p>
+            <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden">
+              <div
+                className="h-full bg-accent rounded-full transition-all"
+                style={{ width: `${totals > 0 ? Math.round((jugades / totals) * 100) : 0}%` }}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Accions de gestió */}

@@ -1,5 +1,5 @@
 import { db } from '@/db';
-import { players, phases } from '@/db/schema';
+import { players, phases, groups } from '@/db/schema';
 import { eq, asc } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
@@ -18,13 +18,16 @@ export default async function JugadorDetallPage({
 }) {
   const { id, pid } = await params;
 
-  const [jugador, tots_jugadors, totes_fases] = await Promise.all([
+  const [jugador, tots_jugadors, totes_fases, tots_grups] = await Promise.all([
     db.select().from(players).where(eq(players.id, pid)).then(r => r[0]),
     db.select().from(players).where(eq(players.tournamentId, id)),
     db.select().from(phases).where(eq(phases.tournamentId, id)).orderBy(asc(phases.order)),
+    db.select().from(groups).where(eq(groups.tournamentId, id)),
   ]);
 
   if (!jugador || jugador.tournamentId !== id) notFound();
+
+  const grupNom = tots_grups.find(g => g.id === jugador.groupId)?.name;
 
   const [engineRounds, partides] = await Promise.all([
     loadEngineRounds(id),
@@ -66,20 +69,19 @@ export default async function JugadorDetallPage({
 
       {/* Capçalera */}
       <div className="flex items-center gap-4">
-        <div className="w-14 h-14 rounded-full bg-accent-tint flex items-center justify-center text-accent-ink text-2xl font-bold flex-shrink-0">
+        <div className="w-16 h-16 rounded-full bg-accent-tint flex items-center justify-center text-accent-ink text-2xl font-display font-bold flex-shrink-0">
           {jugador.name[0]?.toUpperCase()}
         </div>
         <div>
           <div className="flex items-center gap-2 flex-wrap">
-            <h2 className="text-2xl font-bold text-ink">{jugador.name}</h2>
+            <h2 className="font-display text-2xl font-bold text-ink">{jugador.name}</h2>
+            {grupNom && <Badge color="gray">Grup {grupNom}</Badge>}
+            {jugador.rating != null && <Badge color="blue">BARRUF {jugador.rating}</Badge>}
             {!jugador.isActive && <Badge color="gray">Inactiu</Badge>}
           </div>
-          <div className="flex flex-wrap gap-3 text-sm text-ink-3 mt-1">
+          <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-sm text-ink-3 mt-1.5">
             {myStanding && myStanding.gamesPlayed > 0 && (
-              <span>Posició {myStanding.rank} · {myStanding.points} punt{myStanding.points !== 1 ? 's' : ''}</span>
-            )}
-            {jugador.rating != null && (
-              <span className="font-medium text-accent-ink">BARRUF {jugador.rating}</span>
+              <span className="tabular-nums">Posició {myStanding.rank} · {myStanding.points} punt{myStanding.points !== 1 ? 's' : ''}</span>
             )}
             {jugador.club && <span>{jugador.club}</span>}
             {jugador.phone && <span>{jugador.phone}</span>}
@@ -115,15 +117,15 @@ export default async function JugadorDetallPage({
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 text-sm">
             <div>
               <p className="text-xs text-ink-3 mb-0.5">Buchholz</p>
-              <p className="font-semibold text-ink">{myStanding.tiebreakers.buchholz.toFixed(1)}</p>
+              <p className="font-display font-semibold text-ink tabular-nums">{myStanding.tiebreakers.buchholz.toFixed(1)}</p>
             </div>
             <div>
               <p className="text-xs text-ink-3 mb-0.5">Median Buchholz</p>
-              <p className="font-semibold text-ink">{myStanding.tiebreakers.medianBuchholz.toFixed(1)}</p>
+              <p className="font-display font-semibold text-ink tabular-nums">{myStanding.tiebreakers.medianBuchholz.toFixed(1)}</p>
             </div>
             <div>
               <p className="text-xs text-ink-3 mb-0.5">Berger</p>
-              <p className="font-semibold text-ink">{myStanding.tiebreakers.berger.toFixed(1)}</p>
+              <p className="font-display font-semibold text-ink tabular-nums">{myStanding.tiebreakers.berger.toFixed(1)}</p>
             </div>
           </div>
         </Card>
@@ -137,7 +139,7 @@ export default async function JugadorDetallPage({
             {millorPartida && (
               <div className="bg-win-tint rounded-lg p-3">
                 <p className="text-xs text-win font-semibold uppercase tracking-wide mb-1">Millor partida</p>
-                <p className="text-2xl font-bold text-win">{millorPartida.myScore}</p>
+                <p className="font-display text-2xl font-bold text-win tabular-nums">{millorPartida.myScore}</p>
                 <p className="text-xs text-win mt-0.5">
                   vs {playerMap.get(millorPartida.opponentId ?? '')?.name ?? '?'} · Ronda {millorPartida.roundNumber}
                 </p>
@@ -146,7 +148,7 @@ export default async function JugadorDetallPage({
             {millorJugada && (
               <div className="bg-accent-tint rounded-lg p-3">
                 <p className="text-xs text-accent-ink font-semibold uppercase tracking-wide mb-1">Millor jugada</p>
-                <p className="text-2xl font-bold text-accent-ink">{millorJugada.myBestWord}</p>
+                <p className="font-display text-2xl font-bold text-accent-ink uppercase">{millorJugada.myBestWord}</p>
                 <p className="text-xs text-accent-ink mt-0.5">
                   {millorJugada.myBestWordScore} punts · Ronda {millorJugada.roundNumber}
                 </p>
@@ -186,7 +188,7 @@ export default async function JugadorDetallPage({
                 <li key={p.pairingId}>
                   <div className="flex items-center gap-3 px-4 py-3 hover:bg-surface-2 transition-colors group">
                     {/* Ronda */}
-                    <div className="w-8 h-8 rounded-full bg-surface-2 flex items-center justify-center text-xs font-bold text-ink-3 flex-shrink-0">
+                    <div className="w-8 h-8 rounded-lg bg-surface-2 flex items-center justify-center text-xs font-display font-bold text-ink-2 flex-shrink-0 tabular-nums">
                       {p.roundNumber}
                     </div>
 
@@ -218,7 +220,7 @@ export default async function JugadorDetallPage({
                     {/* Resultat */}
                     <div className="flex items-center gap-3 flex-shrink-0">
                       {!p.isBye && p.myScore !== null && (
-                        <span className="tabular-nums text-sm text-ink-2 font-medium">
+                        <span className="tabular-nums text-sm text-ink font-semibold">
                           {p.myScore} – {p.oppScore}
                         </span>
                       )}
@@ -270,8 +272,8 @@ function StatCard({
 
   return (
     <div className="bg-surface border border-border rounded-xl p-3 text-center">
-      <p className="text-xs text-ink-3 mb-1">{label}</p>
-      <p className={`text-xl font-bold ${colorClass}`}>{value}</p>
+      <p className="text-[11px] font-semibold text-ink-3 uppercase tracking-wide mb-1">{label}</p>
+      <p className={`font-display text-xl font-bold tabular-nums ${colorClass}`}>{value}</p>
     </div>
   );
 }
