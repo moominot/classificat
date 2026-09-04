@@ -3,7 +3,7 @@ services:
     build: .
     restart: unless-stopped
     ports:
-      - "127.0.0.1:3000:3000"  # Nginx farà el proxy; no exposar directament a internet
+      - "3000:3000"  # accessible des de tota la xarxa local; posa 127.0.0.1:3000:3000 si algun dia hi poses Nginx/TLS al davant
     volumes:
       - ./data:/data              # Base de dades SQLite (persistent)
       - ./uploads:/app/app/public/uploads  # Imatges pujades (persistent)
