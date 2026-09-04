@@ -19,6 +19,11 @@ const sqlite = new Database(DB_PATH);
 // Activa WAL per a millor rendiment en concurrència
 sqlite.pragma('journal_mode = WAL');
 sqlite.pragma('foreign_keys = ON');
+// Next.js compila aquest mòdul en bundles separats (rutes d'API vs.
+// renderitzat SSR), cadascun amb la seva pròpia connexió SQLite. Sense
+// busy_timeout, dues connexions que escriuen gairebé alhora es donen
+// SQLITE_BUSY a l'instant en lloc d'esperar-se.
+sqlite.pragma('busy_timeout = 5000');
 
 // Crea les taules si no existeixen (migració automàtica bàsica)
 sqlite.exec(`
@@ -121,36 +126,42 @@ if (!playerCols.has('club'))  sqlite.exec('ALTER TABLE players ADD COLUMN club T
 
 // Migració: el mètode 'swiss_fide' es va afegir després de crear la taula phases,
 // i SQLite no permet alterar un CHECK existent, cal reconstruir la taula.
-const phasesTableSql = sqlite
-  .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='phases'")
-  .get() as { sql: string } | undefined;
-if (phasesTableSql && !phasesTableSql.sql.includes('swiss_fide')) {
-  sqlite.pragma('foreign_keys = OFF');
-  const migratePhases = sqlite.transaction(() => {
-    sqlite.exec(`
-      DROP TABLE IF EXISTS phases_old;
-      ALTER TABLE phases RENAME TO phases_old;
-      CREATE TABLE phases (
-        id TEXT PRIMARY KEY,
-        tournament_id TEXT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
-        "order" INTEGER NOT NULL,
-        name TEXT NOT NULL,
-        method TEXT NOT NULL CHECK(method IN ('swiss','swiss_fide','round_robin','king_of_the_hill','manual')),
-        start_round INTEGER NOT NULL,
-        end_round INTEGER NOT NULL,
-        tiebreakers TEXT NOT NULL DEFAULT '[]',
-        config TEXT NOT NULL,
-        is_complete INTEGER NOT NULL DEFAULT 0,
-        UNIQUE(tournament_id, "order")
-      );
-      INSERT INTO phases SELECT * FROM phases_old;
-      DROP TABLE phases_old;
-      CREATE INDEX IF NOT EXISTS phases_tournament_idx ON phases(tournament_id);
-    `);
-  });
-  migratePhases();
-  sqlite.pragma('foreign_keys = ON');
-}
+//
+// La comprovació i l'execució van juntes DINS la transacció (no abans), perquè
+// aquest mòdul es carrega per duplicat (bundle de rutes d'API vs. bundle SSR)
+// i cada instància obre la seva pròpia connexió. Si totes dues hi entren
+// gairebé alhora, la segona ha d'esperar el lock (busy_timeout) i, en re-
+// comprovar un cop dins la transacció, veure que ja no cal fer res.
+sqlite.pragma('foreign_keys = OFF');
+const migratePhasesIfNeeded = sqlite.transaction(() => {
+  const phasesTableSql = sqlite
+    .prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='phases'")
+    .get() as { sql: string } | undefined;
+  if (!phasesTableSql || phasesTableSql.sql.includes('swiss_fide')) return;
+
+  sqlite.exec(`
+    DROP TABLE IF EXISTS phases_old;
+    ALTER TABLE phases RENAME TO phases_old;
+    CREATE TABLE phases (
+      id TEXT PRIMARY KEY,
+      tournament_id TEXT NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+      "order" INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      method TEXT NOT NULL CHECK(method IN ('swiss','swiss_fide','round_robin','king_of_the_hill','manual')),
+      start_round INTEGER NOT NULL,
+      end_round INTEGER NOT NULL,
+      tiebreakers TEXT NOT NULL DEFAULT '[]',
+      config TEXT NOT NULL,
+      is_complete INTEGER NOT NULL DEFAULT 0,
+      UNIQUE(tournament_id, "order")
+    );
+    INSERT INTO phases SELECT * FROM phases_old;
+    DROP TABLE phases_old;
+    CREATE INDEX IF NOT EXISTS phases_tournament_idx ON phases(tournament_id);
+  `);
+});
+migratePhasesIfNeeded();
+sqlite.pragma('foreign_keys = ON');
 
 export const db = drizzle(sqlite, { schema });
 export type DB = typeof db;
