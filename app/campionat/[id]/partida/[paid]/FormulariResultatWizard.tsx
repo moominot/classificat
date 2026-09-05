@@ -265,6 +265,21 @@ function PlayerCard({ player, name, children }: { player: 1 | 2 | null; name?: s
   );
 }
 
+function questionSubtitle(q: QuestionDef): string {
+  if (q.isBuiltin) {
+    switch (q.key) {
+      case 'score': return 'Introdueix la puntuació de cada jugador';
+      case 'bingos': return "Quantes vegades ha col·locat les 7 fitxes?";
+      case 'best_word': return 'La paraula amb més punts de cada jugador';
+      case 'sheet_image': return 'Es desarà al servidor i es podrà veure en repassar la partida';
+      case 'board_image': return "Opcional — l'estat final del tauler";
+    }
+  }
+  if (q.type === 'image') return 'Es desarà al servidor i es podrà veure en repassar la partida';
+  if (q.type === 'wordvalue') return q.scope === 'player' ? 'Paraula i puntuació de cada jugador' : 'Paraula i puntuació de la partida';
+  return q.scope === 'player' ? 'Introdueix el valor de cada jugador' : 'Introdueix el valor de la partida';
+}
+
 function QuestionStep({
   question, ap, values, setSlot, applyOcr, disabled,
 }: {
@@ -280,6 +295,10 @@ function QuestionStep({
 
   return (
     <div className="space-y-3">
+      <div className="text-center mb-1">
+        <div className="font-display font-bold text-xl text-ink">{question.label}</div>
+        <div className="text-sm text-ink-3 mt-0.5">{questionSubtitle(question)}</div>
+      </div>
       {players.map(player => {
         const slot = values[slotKey(question.id, player)] ?? EMPTY_SLOT;
         return (
@@ -330,32 +349,64 @@ function QuestionStep({
           </PlayerCard>
         );
       })}
-      {question.type === 'image' && (
-        <p className="text-xs text-ink-3 text-center">Es desarà al servidor i es podrà veure en repassar la partida.</p>
-      )}
+    </div>
+  );
+}
+
+function answerSummary(q: QuestionDef, slot: Slot | undefined): string {
+  const s = slot ?? EMPTY_SLOT;
+  if (q.type === 'image') return s.imageUrl ? 'Adjuntada' : 'Sense adjuntar';
+  if (q.type === 'wordvalue') return s.text ? `${s.text} (${s.number || 0})` : '—';
+  return (q.answerType === 'number' ? s.number : s.text) || '—';
+}
+
+function ConfirmRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 text-sm">
+      <span className="text-ink-3 flex-shrink-0">{label}</span>
+      <span className="text-ink font-medium text-right truncate">{value}</span>
     </div>
   );
 }
 
 function ConfirmStep({ questions, ap, values }: { questions: QuestionDef[]; ap: Aparellament; values: Values }) {
+  const scoreQ = questions.find(q => q.key === 'score');
+  const playerQuestions = questions.filter(q => q.scope === 'player' && q.id !== scoreQ?.id);
+  const matchQuestions = questions.filter(q => q.scope === 'match');
+
   return (
-    <div className="space-y-2">
-      {questions.map(q => {
-        const players = playersFor(q);
+    <div className="space-y-3">
+      {([1, 2] as const).map(player => {
+        const name = player === 1 ? ap.player1Name : ap.player2Name;
+        const scoreSlot = scoreQ ? values[slotKey(scoreQ.id, player)] : undefined;
         return (
-          <div key={q.id} className="flex items-center justify-between border-b border-border py-2 last:border-b-0 text-sm gap-3">
-            <span className="text-ink-3 flex-shrink-0">{q.label}</span>
-            <span className="text-ink font-medium text-right truncate">
-              {players.map(player => {
-                const slot = values[slotKey(q.id, player)] ?? EMPTY_SLOT;
-                if (q.type === 'image') return slot.imageUrl ? 'Adjuntada' : 'Sense adjuntar';
-                if (q.type === 'wordvalue') return slot.text ? `${slot.text} (${slot.number || 0})` : '—';
-                return (q.answerType === 'number' ? slot.number : slot.text) || '—';
-              }).join(' – ')}
-            </span>
+          <div key={player} className="rounded-2xl border border-border p-3.5">
+            <div className="flex items-center justify-between gap-3 mb-1.5">
+              <span className="text-sm font-semibold text-ink truncate">{name}</span>
+              {scoreQ && (
+                <span className="font-display font-bold text-xl tabular-nums text-ink flex-shrink-0">
+                  {scoreSlot?.number || '—'}
+                </span>
+              )}
+            </div>
+            {playerQuestions.length > 0 && (
+              <div className="space-y-1">
+                {playerQuestions.map(q => (
+                  <ConfirmRow key={q.id} label={q.label} value={answerSummary(q, values[slotKey(q.id, player)])} />
+                ))}
+              </div>
+            )}
           </div>
         );
       })}
+
+      {matchQuestions.length > 0 && (
+        <div className="rounded-2xl border border-border p-3.5 space-y-1">
+          {matchQuestions.map(q => (
+            <ConfirmRow key={q.id} label={q.label} value={answerSummary(q, values[slotKey(q.id, null)])} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
