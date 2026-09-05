@@ -21,28 +21,28 @@ export default async function RootLayout({ children }: { children: React.ReactNo
     <html lang="ca" data-theme={theme === 'light' || theme === 'dark' ? theme : undefined}>
       <body className="min-h-screen bg-bg text-ink antialiased">
         <header className="bg-surface border-b border-border sticky top-0 z-10">
-          <div className="max-w-5xl mx-auto px-4 h-14 flex items-center gap-3">
-            <div className="flex items-center gap-2.5">
+          <div className="max-w-5xl mx-auto px-3 sm:px-4 h-14 flex items-center gap-2 sm:gap-3">
+            <div className="flex items-center gap-2 sm:gap-2.5 flex-shrink-0 min-w-0">
               {session.isDirector ? (
-                <a href="/" className="flex items-center gap-2.5 hover:opacity-80 transition-opacity">
+                <a href="/" className="flex items-center gap-2 sm:gap-2.5 hover:opacity-80 transition-opacity min-w-0">
                   <Logo />
-                  <span className="font-display font-bold text-lg text-ink">Classificat</span>
+                  <span className="font-display font-bold text-base sm:text-lg text-ink truncate">Classificat</span>
                 </a>
               ) : (
                 <>
                   <Logo />
-                  <span className="font-display font-bold text-lg text-ink">Classificat</span>
+                  <span className="font-display font-bold text-base sm:text-lg text-ink truncate">Classificat</span>
                 </>
               )}
             </div>
             <span className="w-px h-4 bg-border hidden sm:block" />
             <span className="text-sm text-ink-3 hidden sm:block">Gestió de campionats de Scrabble</span>
-            <div className="ml-auto flex items-center gap-3">
-              <Link href="/preferencies" className="text-xs text-ink-3 hover:text-accent-ink transition-colors" title="Preferències">
+            <div className="ml-auto flex items-center gap-2 sm:gap-3 flex-shrink-0">
+              <Link href="/preferencies" className="text-xs text-ink-3 hover:text-accent-ink transition-colors whitespace-nowrap" title="Preferències">
                 Preferències
               </Link>
               {session.isDirector && (
-                <Link href="/directors" className="text-xs text-ink-3 hover:text-accent-ink transition-colors">
+                <Link href="/directors" className="text-xs text-ink-3 hover:text-accent-ink transition-colors whitespace-nowrap">
                   Usuaris
                 </Link>
               )}
@@ -50,7 +50,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
             </div>
           </div>
         </header>
-        <main className="max-w-5xl mx-auto px-4 py-6">
+        <main className="max-w-5xl mx-auto px-3 sm:px-4 py-5 sm:py-6">
           {children}
         </main>
       </body>

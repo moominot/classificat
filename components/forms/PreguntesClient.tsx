@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useIsDirector } from '@/components/DirectorContext';
 import Button from '@/components/ui/Button';
@@ -72,9 +72,14 @@ export default function PreguntesClient({
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   const editingQuestion = editingId ? questions.find(q => q.id === editingId) ?? null : null;
   const isBuiltinEditing = !!editingQuestion?.isBuiltin;
+
+  useEffect(() => {
+    if (panelOpen) panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [panelOpen, editingId]);
 
   function openAdd() {
     setEditingId(null);
@@ -177,18 +182,21 @@ export default function PreguntesClient({
           <h1 className="font-display text-xl font-bold text-ink">Formulari de resultats</h1>
           <p className="text-sm text-ink-3 mt-1">Preguntes que es demanen en registrar el resultat d&apos;una partida.</p>
         </div>
-        <Card padding={false}>
-          <ul className="divide-y divide-border">
-            {questions.map(q => (
-              <li key={q.id} className="flex items-center gap-3 px-4 py-3">
-                <span className={`text-[10.5px] font-bold px-2.5 py-1 rounded-full flex-shrink-0 ${TYPE_BADGE[q.type].className}`}>
+        <div className="space-y-2">
+          {questions.map(q => (
+            <div key={q.id} className="bg-surface border border-border rounded-xl p-3.5">
+              <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
+                <span className={`text-[10.5px] font-bold px-2.5 py-1 rounded-full whitespace-nowrap ${TYPE_BADGE[q.type].className}`}>
                   {TYPE_BADGE[q.type].label}
                 </span>
-                <span className="text-sm font-medium text-ink">{q.label}</span>
-              </li>
-            ))}
-          </ul>
-        </Card>
+                <span className="text-[10.5px] font-semibold px-2.5 py-1 rounded-full bg-surface-2 text-ink-3 whitespace-nowrap">
+                  {q.scope === 'match' ? 'Per partida' : 'Per jugador (×2)'}
+                </span>
+              </div>
+              <div className="text-sm font-medium text-ink">{q.label}</div>
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
@@ -216,61 +224,56 @@ export default function PreguntesClient({
           {questions.length === 0 ? (
             <EmptyState title="Encara no hi ha preguntes" description="Afegeix la primera pregunta del formulari." />
           ) : (
-            <Card padding={false}>
-              <ul className="divide-y divide-border">
-                {questions.map(q => (
-                  <li key={q.id} className="flex items-center gap-3 px-4 py-3">
-                    <span className={`text-[10.5px] font-bold px-2.5 py-1 rounded-full flex-shrink-0 whitespace-nowrap ${TYPE_BADGE[q.type].className}`}>
-                      {TYPE_BADGE[q.type].label}
-                    </span>
-                    <span className="text-[10.5px] font-semibold px-2.5 py-1 rounded-full bg-surface-2 text-ink-3 flex-shrink-0 whitespace-nowrap">
-                      {q.scope === 'match' ? 'Per partida' : 'Per jugador (×2)'}
-                    </span>
-                    <div className="flex-1 min-w-0">
-                      <div className="text-sm font-semibold text-ink truncate">{q.label}</div>
-                      <div className="text-xs text-ink-3 mt-0.5">{subLabel(q)}</div>
-                    </div>
-                    {q.showInRanking && (
-                      <span title="Té pestanya de rànquing a Classificació" className="text-[10.5px] font-semibold text-accent-ink flex-shrink-0 whitespace-nowrap">
-                        Rànquing
+            <div className="space-y-2">
+              {questions.map(q => (
+                <div key={q.id} className="bg-surface border border-border rounded-xl overflow-hidden">
+                  <div className="p-3.5">
+                    <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
+                      <span className={`text-[10.5px] font-bold px-2.5 py-1 rounded-full whitespace-nowrap ${TYPE_BADGE[q.type].className}`}>
+                        {TYPE_BADGE[q.type].label}
                       </span>
-                    )}
-                    <button
-                      onClick={() => openEdit(q)}
-                      aria-label="Edita"
-                      className="text-ink-3 hover:bg-surface-2 rounded-lg p-1.5 flex-shrink-0 cursor-pointer"
-                    >
-                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                      </svg>
-                    </button>
+                      <span className="text-[10.5px] font-semibold px-2.5 py-1 rounded-full bg-surface-2 text-ink-3 whitespace-nowrap">
+                        {q.scope === 'match' ? 'Per partida' : 'Per jugador (×2)'}
+                      </span>
+                      {q.showInRanking && (
+                        <span title="Té pestanya de rànquing a Classificació" className="text-[10.5px] font-semibold text-accent-ink whitespace-nowrap">
+                          ↑ Rànquing
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm font-semibold text-ink">{q.label}</div>
+                    <div className="text-xs text-ink-3 mt-0.5">{subLabel(q)}</div>
+                  </div>
+                  <div className="border-t border-border px-2 py-1.5 flex gap-1">
+                    <Button size="sm" variant="ghost" onClick={() => openEdit(q)}>Edita</Button>
                     {q.isBuiltin ? (
-                      <span title="Pregunta bàsica: no es pot esborrar" className="text-ink-3 p-1.5 flex-shrink-0">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <span title="Pregunta bàsica: no es pot esborrar" className="inline-flex items-center gap-1.5 text-xs text-ink-3 px-3 py-1.5">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                           <rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V7a4 4 0 118 0v4" />
                         </svg>
+                        Bàsica
                       </span>
                     ) : (
-                      <button
-                        onClick={() => handleDelete(q)}
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        className="text-loss hover:bg-loss-tint"
                         disabled={deletingId === q.id}
-                        aria-label="Esborra"
-                        className="text-ink-3 hover:bg-surface-2 rounded-lg p-1.5 flex-shrink-0 cursor-pointer disabled:opacity-40"
+                        onClick={() => handleDelete(q)}
                       >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                          <path d="M3 6h18" /><path d="M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2m3 0l-1 14a2 2 0 01-2 2H7a2 2 0 01-2-2L4 6h16z" />
-                        </svg>
-                      </button>
+                        Esborra
+                      </Button>
                     )}
-                  </li>
-                ))}
-              </ul>
-            </Card>
+                  </div>
+                </div>
+              ))}
+            </div>
           )}
         </div>
 
         {panelOpen && (
-          <Card className="w-full lg:w-[360px] flex-shrink-0 space-y-3.5">
+          <div ref={panelRef} className="w-full lg:w-[360px] flex-shrink-0 scroll-mt-4">
+          <Card className="space-y-3.5">
             <div className="flex items-center justify-between">
               <span className="font-display font-bold text-sm">
                 {editingId ? 'Edita la pregunta' : 'Nova pregunta'}
@@ -394,6 +397,7 @@ export default function PreguntesClient({
               {editingId ? 'Desa els canvis' : 'Afegeix la pregunta'}
             </Button>
           </Card>
+          </div>
         )}
       </div>
     </div>

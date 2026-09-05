@@ -363,8 +363,8 @@ function answerSummary(q: QuestionDef, slot: Slot | undefined): string {
 function ConfirmRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-center justify-between gap-3 text-sm">
-      <span className="text-ink-3 flex-shrink-0">{label}</span>
-      <span className="text-ink font-medium text-right truncate">{value}</span>
+      <span className="text-ink-3 min-w-0 truncate">{label}</span>
+      <span className="text-ink font-medium text-right flex-shrink-0 max-w-[55%] truncate">{value}</span>
     </div>
   );
 }
