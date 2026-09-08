@@ -1,10 +1,12 @@
-import { db } from '@/db';
-import { pairings, players, rounds, phases, questionDefinitions, pairingAnswers } from '@/db/schema';
-import { eq, asc } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
+import { db } from '@/db';
+import { matchAnswers, matches, phases, questionDefinitions, rounds } from '@/db/schema';
 import Badge from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
+import { canManageTournament, canReportResult, getCurrentAccount, getViewer } from '@/lib/authz';
+import { loadEntrants, loadRoundMatches } from '@/lib/db-helpers';
 import FormulariResultatWizard from './FormulariResultatWizard';
 
 export const dynamic = 'force-dynamic';
@@ -16,223 +18,180 @@ export default async function PartidaDetallPage({
 }) {
   const { id, paid } = await params;
 
-  const [pairing] = await db.select().from(pairings).where(eq(pairings.id, paid));
-  if (!pairing) notFound();
+  const [match] = await db.select().from(matches).where(eq(matches.id, paid));
+  if (!match) notFound();
 
-  const [round] = await db.select().from(rounds).where(eq(rounds.id, pairing.roundId));
+  const [round] = await db.select().from(rounds).where(eq(rounds.id, match.roundId));
   if (!round || round.tournamentId !== id) notFound();
+
+  const account = await getCurrentAccount();
+  const canManage = account ? await canManageTournament(account, id) : false;
+  if (!canManage && round.status === 'draft') notFound();
 
   const [phase] = await db.select().from(phases).where(eq(phases.id, round.phaseId));
 
-  const [questions, answers] = await Promise.all([
-    db.select().from(questionDefinitions).where(eq(questionDefinitions.tournamentId, id)).orderBy(asc(questionDefinitions.order)),
-    db.select().from(pairingAnswers).where(eq(pairingAnswers.pairingId, paid)),
-  ]);
-  const customQuestions = questions.filter(q => !q.isBuiltin);
-  const answerMap = new Map(answers.map(a => [`${a.questionId}:${a.player ?? 'm'}`, a]));
-
-  const [p1, p2] = await Promise.all([
-    db.select().from(players).where(eq(players.id, pairing.player1Id)).then(r => r[0]),
-    pairing.player2Id
-      ? db.select().from(players).where(eq(players.id, pairing.player2Id)).then(r => r[0])
-      : Promise.resolve(null),
+  const [questions, answers, partides, inscrits] = await Promise.all([
+    db
+      .select()
+      .from(questionDefinitions)
+      .where(eq(questionDefinitions.tournamentId, id))
+      .orderBy(asc(questionDefinitions.order)),
+    db.select().from(matchAnswers).where(eq(matchAnswers.matchId, paid)),
+    loadRoundMatches(match.roundId),
+    loadEntrants(id),
   ]);
 
-  const teResultat = pairing.outcome1 !== null && pairing.player2Id !== null;
-  const isBye = pairing.player2Id === null;
-  const p1Guanya = pairing.outcome1 === 'win';
-  const p2Guanya = pairing.outcome2 === 'win';
-  const empat = pairing.outcome1 === 'draw';
+  const partida = partides.find((p) => p.id === paid);
+  if (!partida) notFound();
 
-  const teStats = pairing.p1Scrabbles !== null || pairing.p2Scrabbles !== null
-    || !!pairing.p1BestWord || !!pairing.p2BestWord;
+  const nomPerEntry = new Map(inscrits.map((e) => [e.id, e.displayName]));
+  const participants = partida.participants.map((participant) => ({
+    ...participant,
+    displayName: nomPerEntry.get(participant.entryId) ?? '?',
+  }));
+
+  const esBye = participants.length === 1;
+  const teResultat = !esBye && participants.every((p) => p.rank !== null);
+  const empat = teResultat && participants.filter((p) => p.rank === 1).length > 1;
+
+  // Les respostes es guarden per participació; aquí es tradueixen a
+  // inscripcions per poder-les mostrar al costat de cada jugador.
+  const entryPerParticipant = new Map(participants.map((p) => [p.id, p.entryId]));
+  const respostes = answers.map((answer) => ({
+    questionId: answer.questionId,
+    entryId: answer.participantId ? entryPerParticipant.get(answer.participantId) ?? null : null,
+    textValue: answer.textValue,
+    numberValue: answer.numberValue,
+    imageUrl: answer.imageUrl,
+  }));
+
+  const viewer = await getViewer(id);
+  const potEditar = canReportResult(viewer, {
+    participantEntryIds: participants.map((p) => p.entryId),
+    roundIsOpen: round.status === 'open',
+    managesTournament: canManage,
+  });
+
+  const answerFor = (questionId: string, entryId: string | null) =>
+    respostes.find((r) => r.questionId === questionId && r.entryId === entryId);
+
+  const answerText = (questionId: string, entryId: string | null, type: string) => {
+    const answer = answerFor(questionId, entryId);
+    if (!answer) return null;
+    if (type === 'image') return answer.imageUrl;
+    if (type === 'wordvalue') {
+      return answer.textValue ? `${answer.textValue} (${answer.numberValue ?? 0})` : null;
+    }
+    return answer.textValue ?? answer.numberValue?.toString() ?? null;
+  };
+
+  const visibles = questions.filter((q) => q.key !== 'score');
+  const teRespostes = visibles.some((q) =>
+    (q.scope === 'participant' ? participants.map((p) => p.entryId) : [null]).some(
+      (entryId) => answerText(q.id, entryId, q.type) !== null
+    )
+  );
 
   return (
     <div className="space-y-4">
-      {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-ink-3 flex-wrap">
-        <Link href={`/campionat/${id}/rondes`} className="hover:text-accent-ink">Rondes</Link>
+        <Link href={`/campionat/${id}/rondes`} className="hover:text-accent-ink">
+          Rondes
+        </Link>
         <span>/</span>
         <Link href={`/campionat/${id}/rondes/${round.id}`} className="hover:text-accent-ink">
           Ronda {round.number}
         </Link>
-        <span>/</span>
-        <span className="text-ink truncate">{p1?.name} vs {p2?.name ?? 'Bye'}</span>
       </div>
 
-      {/* Capçalera */}
       <div className="text-center space-y-1">
         <p className="text-xs text-ink-3 uppercase tracking-wide font-semibold">
           {phase?.name} · Ronda {round.number}
-          {pairing.tableNumber > 0 && ` · Taula ${pairing.tableNumber}`}
+          {partida.tableNumber > 0 && ` · Taula ${partida.tableNumber}`}
         </p>
-        {isBye && <Badge color="gray">Bye</Badge>}
+        {esBye && <Badge color="gray">Bye</Badge>}
         {teResultat && !empat && <Badge color="green">Resultat registrat</Badge>}
         {empat && <Badge color="blue">Empat</Badge>}
       </div>
 
-      {/* Marcador */}
+      {/* Marcador: una fila per participant, valgui per a dos o per a sis. */}
       <Card>
-        <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 py-1">
-          <div className="text-center space-y-1 min-w-0">
-            <Link
-              href={`/campionat/${id}/jugadors/${p1?.id}`}
-              className="font-semibold text-ink hover:text-accent-ink transition-colors block truncate"
-            >
-              {p1?.name ?? '?'}
-            </Link>
-            {teResultat && (
-              <p className={`text-4xl font-black tabular-nums ${p1Guanya ? 'text-accent-ink' : 'text-ink-3'}`}>
-                {pairing.p1Score}
-              </p>
-            )}
-            {teResultat && p1Guanya && <Badge color="green">Victòria</Badge>}
-          </div>
-
-          <div className="text-ink-3 font-light text-2xl flex-shrink-0">
-            {isBye ? '—' : teResultat ? '–' : 'vs'}
-          </div>
-
-          <div className="text-center space-y-1 min-w-0">
-            {isBye ? (
-              <span className="text-ink-3 italic text-sm">Bye</span>
-            ) : (
-              <>
-                <Link
-                  href={`/campionat/${id}/jugadors/${p2?.id}`}
-                  className="font-semibold text-ink hover:text-accent-ink transition-colors block truncate"
-                >
-                  {p2?.name ?? '?'}
-                </Link>
+        <div className="divide-y divide-border">
+          {participants.map((participant) => (
+            <div key={participant.entryId} className="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
+              <div className="min-w-0 flex items-center gap-2">
                 {teResultat && (
-                  <p className={`text-4xl font-black tabular-nums ${p2Guanya ? 'text-accent-ink' : 'text-ink-3'}`}>
-                    {pairing.p2Score}
-                  </p>
+                  <span className="w-6 h-6 rounded-lg bg-surface-2 text-ink-2 flex items-center justify-center text-xs font-display font-bold flex-shrink-0 tabular-nums">
+                    {participant.rank}
+                  </span>
                 )}
-                {teResultat && p2Guanya && <Badge color="green">Victòria</Badge>}
-              </>
-            )}
-          </div>
+                <Link
+                  href={`/campionat/${id}/jugadors/${participant.entryId}`}
+                  className={`truncate hover:text-accent-ink transition-colors ${
+                    participant.rank === 1 ? 'font-semibold text-ink' : 'text-ink-2'
+                  }`}
+                >
+                  {participant.displayName}
+                </Link>
+              </div>
+              {teResultat && (
+                <span
+                  className={`text-3xl font-black tabular-nums flex-shrink-0 ${
+                    participant.rank === 1 ? 'text-accent-ink' : 'text-ink-3'
+                  }`}
+                >
+                  {participant.score}
+                </span>
+              )}
+            </div>
+          ))}
         </div>
         {teResultat && (
           <p className="text-center text-xs text-ink-3 mt-2 pt-2 border-t border-border">
-            Suma total: {(pairing.p1Score ?? 0) + (pairing.p2Score ?? 0)} punts
+            Suma total: {participants.reduce((sum, p) => sum + (p.score ?? 0), 0)} punts
           </p>
         )}
       </Card>
 
-      {/* Estadístiques: taula de comparació mobile-friendly */}
-      {teResultat && teStats && (
+      {/* Respostes de les preguntes, siguin del perfil de joc o afegides */}
+      {teRespostes && (
         <Card>
-          <div className="grid grid-cols-[auto_1fr_1fr] gap-x-4 gap-y-3 text-sm items-start">
-            {/* Capçaleres */}
-            <div />
-            <p className="font-semibold text-ink-2 truncate">{p1?.name}</p>
-            <p className="font-semibold text-ink-2 truncate text-right">{p2?.name}</p>
+          <div className="space-y-3 text-sm">
+            {visibles.map((question) => {
+              const targets = question.scope === 'participant' ? participants : [null];
+              const files = targets
+                .map((target) => {
+                  const entryId = target ? target.entryId : null;
+                  const value = answerText(question.id, entryId, question.type);
+                  if (!value) return null;
+                  return { label: target?.displayName, value };
+                })
+                .filter((x): x is { label: string | undefined; value: string } => x !== null);
 
-            {/* Bingos */}
-            {(pairing.p1Scrabbles !== null || pairing.p2Scrabbles !== null) && (
-              <>
-                <p className="text-ink-3 leading-none pt-1">Bingos</p>
-                <p className="text-2xl font-bold text-accent-ink leading-none">
-                  {pairing.p1Scrabbles ?? 0}
-                </p>
-                <p className="text-2xl font-bold text-accent-ink leading-none text-right">
-                  {pairing.p2Scrabbles ?? 0}
-                </p>
-              </>
-            )}
+              if (files.length === 0) return null;
 
-            {/* Millor jugada */}
-            {(pairing.p1BestWord || pairing.p2BestWord) && (
-              <>
-                <p className="text-ink-3 pt-1">Millor jugada</p>
-                <div className="min-w-0">
-                  {pairing.p1BestWord ? (
-                    <>
-                      <p className="font-bold text-ink-2 uppercase break-all leading-snug">
-                        {pairing.p1BestWord}
-                      </p>
-                      {pairing.p1BestWordScore != null && (
-                        <p className="text-xs text-win font-semibold mt-0.5">
-                          {pairing.p1BestWordScore} pts
-                        </p>
-                      )}
-                    </>
-                  ) : <p className="text-ink-3">—</p>}
-                </div>
-                <div className="min-w-0 text-right">
-                  {pairing.p2BestWord ? (
-                    <>
-                      <p className="font-bold text-ink-2 uppercase break-all leading-snug">
-                        {pairing.p2BestWord}
-                      </p>
-                      {pairing.p2BestWordScore != null && (
-                        <p className="text-xs text-win font-semibold mt-0.5">
-                          {pairing.p2BestWordScore} pts
-                        </p>
-                      )}
-                    </>
-                  ) : <p className="text-ink-3">—</p>}
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Fotos */}
-          {(pairing.sheetImageUrl || pairing.boardImageUrl) && (
-            <div className="mt-3 pt-3 border-t border-border flex flex-wrap gap-2">
-              {pairing.sheetImageUrl && (
-                <a href={pairing.sheetImageUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-xs text-ink-3 hover:text-accent-ink transition-colors">
-                  <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  Veure full de puntuació
-                </a>
-              )}
-              {pairing.boardImageUrl && (
-                <a href={pairing.boardImageUrl} target="_blank" rel="noopener noreferrer" className="flex items-center gap-2 text-xs text-ink-3 hover:text-accent-ink transition-colors">
-                  <svg className="w-4 h-4 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                      d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
-                  </svg>
-                  Veure foto del tauler
-                </a>
-              )}
-            </div>
-          )}
-        </Card>
-      )}
-
-      {/* Preguntes personalitzades del director */}
-      {customQuestions.length > 0 && customQuestions.some(q => answerMap.has(`${q.id}:1`) || answerMap.has(`${q.id}:2`) || answerMap.has(`${q.id}:m`)) && (
-        <Card>
-          <div className="space-y-2 text-sm">
-            {customQuestions.map(q => {
-              const players = q.scope === 'player' ? [1, 2] as const : [null];
-              const parts = players.map(player => {
-                const a = answerMap.get(`${q.id}:${player ?? 'm'}`);
-                if (!a) return null;
-                if (q.type === 'image') return a.imageUrl ? { label: player === 1 ? p1?.name : player === 2 ? p2?.name : undefined, url: a.imageUrl } : null;
-                if (q.type === 'wordvalue') return a.textValue ? `${a.textValue} (${a.numberValue ?? 0})` : null;
-                return a.textValue ?? a.numberValue?.toString() ?? null;
-              }).filter((x): x is NonNullable<typeof x> => x !== null);
-              if (parts.length === 0) return null;
               return (
-                <div key={q.id} className="flex items-center justify-between gap-3 border-b border-border pb-2 last:border-b-0 last:pb-0">
-                  <span className="text-ink-3">{q.label}</span>
-                  {q.type === 'image' ? (
-                    <div className="flex gap-2">
-                      {(parts as { label?: string; url: string }[]).map((p, i) => (
-                        <a key={i} href={p.url} target="_blank" rel="noopener noreferrer" className="text-xs text-accent-ink hover:underline">
-                          {p.label ?? 'Foto'}
-                        </a>
-                      ))}
-                    </div>
-                  ) : (
-                    <span className="text-ink font-medium text-right">{(parts as string[]).join(' – ')}</span>
-                  )}
+                <div key={question.id} className="border-b border-border pb-2.5 last:border-b-0 last:pb-0">
+                  <p className="text-ink-3 text-xs mb-1">{question.label}</p>
+                  <div className="space-y-0.5">
+                    {files.map((fila, i) => (
+                      <div key={i} className="flex items-center justify-between gap-3">
+                        {fila.label && <span className="text-ink-2 truncate">{fila.label}</span>}
+                        {question.type === 'image' ? (
+                          <a
+                            href={fila.value}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs text-accent-ink hover:underline flex-shrink-0"
+                          >
+                            Veure la foto
+                          </a>
+                        ) : (
+                          <span className="text-ink font-medium text-right">{fila.value}</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
                 </div>
               );
             })}
@@ -240,41 +199,46 @@ export default async function PartidaDetallPage({
         </Card>
       )}
 
-      {/* Localitat i comentaris */}
-      {(pairing.location || pairing.comments) && (
+      {(partida.tableNumber > 0 || match.location || match.comments) && (match.location || match.comments) && (
         <Card>
-          {pairing.location && (
+          {match.location && (
             <div className="flex items-center gap-2 text-sm text-ink-2">
               <svg className="w-4 h-4 text-ink-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                  d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z"
+                />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
               </svg>
-              <span>{pairing.location}</span>
+              <span>{match.location}</span>
             </div>
           )}
-          {pairing.comments && (
+          {match.comments && (
             <blockquote className="mt-2 pl-3 border-l-2 border-border text-sm text-ink-2 italic">
-              {pairing.comments}
+              {match.comments}
             </blockquote>
           )}
         </Card>
       )}
 
-      {/* Formulari (gestiona el seu propi Card i show/hide) */}
-      {!isBye && (
+      {!esBye && (
         <FormulariResultatWizard
-          aparellament={{
-            ...pairing,
-            player1Name: p1?.name ?? '?',
-            player2Name: p2?.name ?? '?',
+          partida={{
+            id: partida.id,
+            teResultat,
+            participants: participants.map((p) => ({
+              entryId: p.entryId,
+              displayName: p.displayName,
+              score: p.score,
+            })),
           }}
           tournamentId={id}
           roundId={round.id}
-          rondaTancada={round.isComplete}
+          potEditar={potEditar}
           questions={questions}
-          existingAnswers={answers}
+          existingAnswers={respostes}
         />
       )}
     </div>

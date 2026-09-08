@@ -1,14 +1,17 @@
-import { db } from '@/db';
-import { rounds, pairings, players, phases, roundAbsences, groups } from '@/db/schema';
-import { eq, and, asc } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
+import { db } from '@/db';
+import { groups, phases, roundAbsences, rounds } from '@/db/schema';
 import Badge from '@/components/ui/Badge';
+import { canManageTournament, getCurrentAccount } from '@/lib/authz';
+import { loadEntrants, loadRoundMatches } from '@/lib/db-helpers';
+import type { RoundRobinConfig } from '@/lib/pairing/types';
 import GenerarAparellaments from './GenerarAparellaments';
 import ResultatAparellament from './ResultatAparellament';
+import type { PartidaVista } from './ResultatAparellament';
 import CsvImportExport from './CsvImportExport';
 import AccionsRonda from './AccionsRonda';
-import type { RoundRobinConfig } from '@/lib/pairing/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -23,34 +26,34 @@ export default async function RondaPage({
     .select()
     .from(rounds)
     .where(and(eq(rounds.id, rid), eq(rounds.tournamentId, id)));
-
   if (!ronda) notFound();
+
+  const account = await getCurrentAccount();
+  const canManage = account ? await canManageTournament(account, id) : false;
+
+  // Una ronda en esborrany no existeix per al jugador (docs/pla-rols.md §8.2).
+  if (!canManage && ronda.status === 'draft') notFound();
 
   const totes_rondes = await db
     .select()
     .from(rounds)
     .where(eq(rounds.tournamentId, id))
     .orderBy(asc(rounds.number));
-  const idxActual = totes_rondes.findIndex(r => r.id === rid);
-  const rondaAnterior = idxActual > 0 ? totes_rondes[idxActual - 1] : null;
-  const rondaSeguent = idxActual >= 0 && idxActual < totes_rondes.length - 1 ? totes_rondes[idxActual + 1] : null;
+
+  const visibles = canManage ? totes_rondes : totes_rondes.filter((r) => r.status !== 'draft');
+  const idxActual = visibles.findIndex((r) => r.id === rid);
+  const rondaAnterior = idxActual > 0 ? visibles[idxActual - 1] : null;
+  const rondaSeguent =
+    idxActual >= 0 && idxActual < visibles.length - 1 ? visibles[idxActual + 1] : null;
 
   const [fase] = await db.select().from(phases).where(eq(phases.id, ronda.phaseId));
-  const tots_aparellaments = await db
-    .select()
-    .from(pairings)
-    .where(eq(pairings.roundId, rid));
 
-  // Enriqueix amb noms de jugadors
-  const tots_jugadors = await db.select().from(players).where(eq(players.tournamentId, id));
-
-  const tots_grups = await db.select().from(groups).where(eq(groups.tournamentId, id)).orderBy(asc(groups.order));
-
-  // Absències de la ronda actual i de l'anterior (per pre-omplir)
-  const absencies_actuals = await db
-    .select()
-    .from(roundAbsences)
-    .where(eq(roundAbsences.roundId, rid));
+  const [partides, inscrits, tots_grups, absencies_actuals] = await Promise.all([
+    loadRoundMatches(rid),
+    loadEntrants(id),
+    db.select().from(groups).where(eq(groups.tournamentId, id)).orderBy(asc(groups.order)),
+    db.select().from(roundAbsences).where(eq(roundAbsences.roundId, rid)),
+  ]);
 
   const [ronda_anterior] = await db
     .select()
@@ -60,45 +63,53 @@ export default async function RondaPage({
   const absencies_anteriors = ronda_anterior
     ? await db.select().from(roundAbsences).where(eq(roundAbsences.roundId, ronda_anterior.id))
     : [];
-  const playerMap = new Map(tots_jugadors.map(p => [p.id, p.name]));
-  const playerGrupMap = new Map(tots_jugadors.map(p => [p.id, p.groupId ?? null]));
-  const grupNomMap = new Map(tots_grups.map(g => [g.id, g.name]));
 
-  const aparellaments_enriquits = tots_aparellaments
-    .sort((a, b) => a.tableNumber - b.tableNumber)
-    .map(p => ({
-      ...p,
-      player1Name: playerMap.get(p.player1Id) ?? '?',
-      player2Name: p.player2Id ? (playerMap.get(p.player2Id) ?? '?') : null,
-    }));
+  const nomPerEntry = new Map(inscrits.map((e) => [e.id, e.displayName]));
+  const grupPerEntry = new Map(inscrits.map((e) => [e.id, e.groupId ?? null]));
 
-  const jugades = aparellaments_enriquits.filter(p => p.outcome1 !== null && p.outcome1 !== 'bye').length;
-  const totals = aparellaments_enriquits.filter(p => p.player2Id !== null).length;
+  const vistes: PartidaVista[] = partides.map((partida) => ({
+    id: partida.id,
+    tableNumber: partida.tableNumber,
+    participants: partida.participants.map((participant) => ({
+      entryId: participant.entryId,
+      displayName: nomPerEntry.get(participant.entryId) ?? '?',
+      score: participant.score,
+      rank: participant.rank,
+    })),
+  }));
 
-  // Agrupa aparellaments per grup si la fase és Round Robin intra-grupal
+  const jugables = vistes.filter((p) => p.participants.length > 1);
+  const byes = vistes.filter((p) => p.participants.length === 1);
+  const jugades = jugables.filter((p) => p.participants.every((x) => x.rank !== null)).length;
+  const totals = jugables.length;
+
+  // Round robin dins de cada grup: les taules s'agrupen per grup.
   const faseConfig = fase?.config as RoundRobinConfig | undefined;
-  const agrupat = fase?.method === 'round_robin'
-    && faseConfig?.scope === 'intra_group'
-    && tots_grups.length > 0;
+  const agrupat =
+    fase?.method === 'round_robin' && faseConfig?.scope === 'intra_group' && tots_grups.length > 0;
 
-  const aparellamentsByGrup = agrupat ? (() => {
-    const byGrup = new Map<string | null, typeof aparellaments_enriquits>();
-    for (const ap of aparellaments_enriquits) {
-      const gid = playerGrupMap.get(ap.player1Id) ?? null;
-      if (!byGrup.has(gid)) byGrup.set(gid, []);
-      byGrup.get(gid)!.push(ap);
-    }
-    const result = tots_grups
-      .map(g => ({ grupId: g.id, grupName: g.name, aparellaments: byGrup.get(g.id) ?? [] }))
-      .filter(x => x.aparellaments.length > 0);
-    const sense_grup = byGrup.get(null) ?? [];
-    if (sense_grup.length > 0) result.push({ grupId: null as unknown as string, grupName: 'Sense grup', aparellaments: sense_grup });
-    return result;
-  })() : null;
+  const partidesPerGrup = agrupat
+    ? (() => {
+        const byGrup = new Map<string | null, PartidaVista[]>();
+        for (const partida of vistes) {
+          const gid = grupPerEntry.get(partida.participants[0]?.entryId ?? '') ?? null;
+          byGrup.set(gid, [...(byGrup.get(gid) ?? []), partida]);
+        }
+        const result = tots_grups
+          .map((g) => ({ grupId: g.id, grupName: g.name, partides: byGrup.get(g.id) ?? [] }))
+          .filter((x) => x.partides.length > 0);
+        const sense_grup = byGrup.get(null) ?? [];
+        if (sense_grup.length > 0) {
+          result.push({ grupId: null as unknown as string, grupName: 'Sense grup', partides: sense_grup });
+        }
+        return result;
+      })()
+    : null;
+
+  const tancada = ronda.status === 'closed';
 
   return (
     <div className="space-y-5">
-      {/* Breadcrumb + navegador entre rondes */}
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <Link href={`/campionat/${id}/rondes`} className="text-sm text-ink-3 hover:text-accent-ink">
           ← Rondes
@@ -109,29 +120,36 @@ export default async function RondaPage({
               href={`/campionat/${id}/rondes/${rondaAnterior.id}`}
               className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-sm text-ink-2 hover:bg-surface-2 transition-colors"
             >
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+              </svg>
               Ronda {rondaAnterior.number}
             </Link>
-          ) : <span />}
+          ) : (
+            <span />
+          )}
           {rondaSeguent ? (
             <Link
               href={`/campionat/${id}/rondes/${rondaSeguent.id}`}
               className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-sm text-ink-2 hover:bg-surface-2 transition-colors"
             >
               Ronda {rondaSeguent.number}
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+              </svg>
             </Link>
           ) : null}
         </div>
       </div>
 
-      {/* Capçalera */}
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-3">
             <h2 className="font-display text-xl font-bold text-ink">Ronda {ronda.number}</h2>
-            {ronda.isComplete ? (
+            {tancada ? (
               <Badge color="green">Tancada</Badge>
+            ) : ronda.status === 'draft' ? (
+              <Badge color="gray">Esborrany</Badge>
             ) : totals === 0 ? (
               <Badge color="yellow">Sense aparellaments</Badge>
             ) : jugades === totals ? (
@@ -144,7 +162,9 @@ export default async function RondaPage({
         </div>
         {totals > 0 && (
           <div className="text-right w-40 flex-shrink-0">
-            <p className="text-xs text-ink-3 mb-1.5 tabular-nums">{jugades} / {totals} jugades</p>
+            <p className="text-xs text-ink-3 mb-1.5 tabular-nums">
+              {jugades} / {totals} jugades
+            </p>
             <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden">
               <div
                 className="h-full bg-accent rounded-full transition-all"
@@ -155,62 +175,61 @@ export default async function RondaPage({
         )}
       </div>
 
-      {/* Accions de gestió */}
       <div className="flex flex-wrap items-center gap-2">
         {totals > 0 && (
           <CsvImportExport
             tournamentId={id}
             roundId={rid}
             roundNumber={ronda.number}
-            rondaTancada={ronda.isComplete}
+            rondaTancada={tancada}
           />
         )}
         <AccionsRonda
           tournamentId={id}
           roundId={rid}
-          rondaTancada={ronda.isComplete}
+          estat={ronda.status}
           teAparellaments={totals > 0}
           teResultats={jugades > 0}
         />
       </div>
 
-      {/* Genera aparellaments si no n'hi ha */}
-      {totals === 0 && !ronda.isComplete && (
+      {totals === 0 && !tancada && (
         <GenerarAparellaments
           tournamentId={id}
           roundId={rid}
           roundNumber={ronda.number}
-          players={tots_jugadors.filter(p => p.isActive).map(p => ({ id: p.id, name: p.name, rating: p.rating ?? null }))}
-          previousAbsentIds={absencies_anteriors.map(a => a.playerId)}
+          players={inscrits
+            .filter((e) => e.isActive)
+            .map((e) => ({ id: e.id, name: e.displayName, rating: e.rating ?? null }))}
+          previousAbsentIds={absencies_anteriors.map((a) => a.entryId)}
         />
       )}
 
-      {/* Llista d'aparellaments */}
-      {aparellaments_enriquits.length > 0 && (
-        agrupat && aparellamentsByGrup ? (
+      {vistes.length > 0 &&
+        (agrupat && partidesPerGrup ? (
           <div className="space-y-5">
-            {aparellamentsByGrup.map(({ grupId, grupName, aparellaments: aps }) => {
-              const reals = aps.filter(ap => ap.player2Id !== null);
-              const byes  = aps.filter(ap => ap.player2Id === null);
+            {partidesPerGrup.map(({ grupId, grupName, partides: delGrup }) => {
+              const reals = delGrup.filter((p) => p.participants.length > 1);
+              const byesGrup = delGrup.filter((p) => p.participants.length === 1);
               return (
                 <div key={grupId ?? '__sense_grup'}>
                   <h3 className="text-xs font-semibold text-ink-3 uppercase tracking-wide px-1 mb-2">
                     Grup {grupName}
                   </h3>
                   <div className="space-y-2">
-                    {reals.map(ap => (
+                    {reals.map((partida) => (
                       <ResultatAparellament
-                        key={ap.id}
-                        aparellament={ap}
+                        key={partida.id}
+                        partida={partida}
                         tournamentId={id}
                         roundId={rid}
-                        rondaTancada={ronda.isComplete}
+                        rondaTancada={tancada}
                       />
                     ))}
                   </div>
-                  {byes.length > 0 && (
+                  {byesGrup.length > 0 && (
                     <p className="text-xs text-ink-3 px-1 mt-2">
-                      Bye: {byes.map(ap => ap.player1Name).join(', ')}
+                      Bye: {byesGrup.map((p) => p.participants[0]?.displayName).join(', ')}
                     </p>
                   )}
                 </div>
@@ -219,35 +238,27 @@ export default async function RondaPage({
           </div>
         ) : (
           <div className="space-y-2">
-            {aparellaments_enriquits.map(ap => (
+            {vistes.map((partida) => (
               <ResultatAparellament
-                key={ap.id}
-                aparellament={ap}
+                key={partida.id}
+                partida={partida}
                 tournamentId={id}
                 roundId={rid}
-                rondaTancada={ronda.isComplete}
+                rondaTancada={tancada}
               />
             ))}
           </div>
-        )
-      )}
+        ))}
 
-      {/* Byes (vista plana, sense agrupació) */}
-      {!agrupat && aparellaments_enriquits.filter(p => p.player2Id === null).length > 0 && (
+      {!agrupat && byes.length > 0 && (
         <div className="text-xs text-ink-3 px-1">
-          Byes: {aparellaments_enriquits
-            .filter(p => p.player2Id === null)
-            .map(p => p.player1Name)
-            .join(', ')}
+          Byes: {byes.map((p) => p.participants[0]?.displayName).join(', ')}
         </div>
       )}
 
-      {/* Absències */}
       {absencies_actuals.length > 0 && (
         <div className="text-xs text-ink-3 px-1">
-          Absents: {absencies_actuals
-            .map(a => playerMap.get(a.playerId) ?? '?')
-            .join(', ')}
+          Absents: {absencies_actuals.map((a) => nomPerEntry.get(a.entryId) ?? '?').join(', ')}
         </div>
       )}
     </div>

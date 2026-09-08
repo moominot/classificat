@@ -16,8 +16,8 @@ interface Jugador {
 
 interface SeedEntry {
   seed: number;
-  playerId: string;
-  name: string;
+  entryId: string;
+  displayName: string;
   rating: number | null;
   points: number;
   rank: number | null;
@@ -85,7 +85,7 @@ export default function GenerarAparellaments({
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ absentPlayerIds: [...absentIds] }),
+        body: JSON.stringify({ absentEntryIds: [...absentIds] }),
       }
     );
 
@@ -198,11 +198,11 @@ export default function GenerarAparellaments({
             {/* Llista */}
             <ol className="overflow-y-auto flex-1 divide-y divide-border px-1 py-1">
               {modal.seedingOrder.map(s => (
-                <li key={s.playerId} className="flex items-center gap-3 px-3 py-2 text-sm">
+                <li key={s.entryId} className="flex items-center gap-3 px-3 py-2 text-sm">
                   <span className="w-6 text-right text-xs text-ink-3 font-mono flex-shrink-0">
                     {s.seed}
                   </span>
-                  <span className="flex-1 font-medium text-ink truncate">{s.name}</span>
+                  <span className="flex-1 font-medium text-ink truncate">{s.displayName}</span>
                   <div className="flex gap-2 text-xs text-ink-3 flex-shrink-0">
                     {s.rating != null && <span>BARRUF {s.rating}</span>}
                     {!modal.isFirstRound && <span>{s.points} pts</span>}
