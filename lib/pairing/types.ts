@@ -8,7 +8,15 @@ import type {
 } from '@/db/types';
 
 export type { Outcome, PairingMethod, PhaseConfig, ScoringConfig, StandingsScopeKey, TeamAggregation };
-export type { ByeHandling, SeedingCriterion } from '@/db/types';
+export type {
+  ByeHandling,
+  KingOfTheHillConfig,
+  ManualConfig,
+  RoundRobinConfig,
+  SeedingCriterion,
+  SwissConfig,
+  SwissFideConfig,
+} from '@/db/types';
 
 export const DEFAULT_SEEDING_CRITERIA = ['points', 'elo', 'name'] as const;
 

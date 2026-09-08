@@ -1,58 +1,57 @@
 import type {
+  CsvMatchRow,
+  GeneratedMatch,
   PairingContext,
   PairingEngineResult,
-  CsvPairingRow,
+  PairingWarning,
 } from '../types';
-import { parsePairingCsv } from '../utils/csv';
+import { parseMatchCsv } from '../utils/csv';
 
 /**
- * Motor d'aparellaments manual.
+ * Aparellament manual: accepta taules ja fetes (CSV o directament).
  *
- * Accepta aparellaments ja generats externament (via CSV o JSON directe).
- * Valida que tots els jugadors existeixin i que no hi hagi duplicats.
+ * Admet qualsevol nombre de participants per taula, perquè és el mètode que
+ * fa servir qui munta les taules a mà.
  */
 export function generateManualPairings(
   ctx: PairingContext,
-  rows: CsvPairingRow[]
+  rows: CsvMatchRow[]
 ): PairingEngineResult {
-  const validPlayerIds = new Set(ctx.players.map((p) => p.id));
-  const warnings = [];
-  const pairings = [];
+  const validEntryIds = new Set(ctx.entrants.map((e) => e.id));
+  const warnings: PairingWarning[] = [];
+  const matches: GeneratedMatch[] = [];
+  const size = ctx.phase.participantsPerMatch;
 
   for (const row of rows) {
-    if (!validPlayerIds.has(row.player1Id)) {
+    const unknown = row.entryIds.filter((id) => !validEntryIds.has(id));
+    if (unknown.length > 0) {
       warnings.push({
-        type: 'cross_group_pair' as const,
-        message: `Jugador desconegut: ${row.player1Id}`,
-        affectedPlayerIds: [row.player1Id],
-      });
-      continue;
-    }
-    if (row.player2Id !== null && !validPlayerIds.has(row.player2Id)) {
-      warnings.push({
-        type: 'cross_group_pair' as const,
-        message: `Jugador desconegut: ${row.player2Id}`,
-        affectedPlayerIds: [row.player2Id],
+        type: 'cross_group_pair',
+        message: `Jugador desconegut: ${unknown[0]}`,
+        affectedEntryIds: unknown,
       });
       continue;
     }
 
-    pairings.push({
-      tableNumber: row.tableNumber,
-      player1Id: row.player1Id,
-      player2Id: row.player2Id,
-    });
+    // Una taula més curta és legítima (un bye, o el residu del repartiment),
+    // però val la pena dir-ho perquè sovint és un error de transcripció.
+    if (row.entryIds.length !== size && row.entryIds.length !== 1) {
+      warnings.push({
+        type: 'uneven_table',
+        message: `La taula ${row.tableNumber} té ${row.entryIds.length} jugadors i la fase n'espera ${size}.`,
+        affectedEntryIds: row.entryIds,
+      });
+    }
+
+    matches.push({ tableNumber: row.tableNumber, entryIds: row.entryIds });
   }
 
-  return { pairings, warnings };
+  return { matches, warnings };
 }
 
-/**
- * Parseja un CSV i retorna les files d'aparellaments o errors.
- */
 export function parseCsvForManualImport(
   csvText: string,
-  validPlayerIds: Set<string>
-): { rows: CsvPairingRow[]; errors: string[] } {
-  return parsePairingCsv(csvText, validPlayerIds);
+  validEntryIds: Set<string>
+): { rows: CsvMatchRow[]; errors: string[] } {
+  return parseMatchCsv(csvText, validEntryIds);
 }

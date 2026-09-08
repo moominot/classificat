@@ -1,8 +1,5 @@
-import type {
-  PairingContext,
-  PairingEngineResult,
-  CsvPairingRow,
-} from './types';
+import type { CsvMatchRow, PairingContext, PairingEngineResult } from './types';
+import { tableSizeError } from './validation';
 import { generateSwissPairings } from './methods/swiss';
 import { generateSwissFidePairings } from './methods/swiss-fide';
 import { generateRoundRobinPairings } from './methods/round-robin';
@@ -10,19 +7,26 @@ import { generateKingOfTheHillPairings } from './methods/king-of-the-hill';
 import { generateManualPairings } from './methods/manual';
 
 /**
- * Motor d'aparellaments principal — orquestrador modular.
- *
- * Decideix quin algorisme d'aparellament aplicar en funció del mètode
- * configurat a la fase activa i delega al mòdul corresponent.
- *
- * @param ctx      Context complet amb fase, jugadors, classificació i historial
- * @param csvRows  Files CSV per a aparellament manual (opcional)
+ * Motor d'aparellaments: decideix quin algorisme toca segons la fase i hi
+ * delega. Afegir un sistema nou continua sent afegir un fitxer a `methods/` i
+ * una branca aquí.
  */
 export function generatePairings(
   ctx: PairingContext,
-  csvRows?: CsvPairingRow[]
+  csvRows?: CsvMatchRow[]
 ): PairingEngineResult {
-  const { method } = ctx.phase;
+  const { method, participantsPerMatch } = ctx.phase;
+
+  // La interfície no hauria d'oferir mètodes d'1v1 en fases de taules més
+  // grans; si hi arriben igualment, val més aturar-se que generar
+  // aparellaments que no volen dir res.
+  const sizeError = tableSizeError(method, participantsPerMatch);
+  if (sizeError) {
+    return {
+      matches: [],
+      warnings: [{ type: 'uneven_table', message: sizeError, affectedEntryIds: [] }],
+    };
+  }
 
   switch (method) {
     case 'swiss':
@@ -40,12 +44,12 @@ export function generatePairings(
     case 'manual':
       if (!csvRows || csvRows.length === 0) {
         return {
-          pairings: [],
+          matches: [],
           warnings: [
             {
               type: 'incomplete_round_robin',
-              message: 'Aparellament manual: no s\'han proporcionat aparellaments.',
-              affectedPlayerIds: [],
+              message: "Aparellament manual: no s'han proporcionat taules.",
+              affectedEntryIds: [],
             },
           ],
         };

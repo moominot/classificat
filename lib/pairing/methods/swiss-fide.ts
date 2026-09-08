@@ -1,146 +1,155 @@
 import { pair } from '@echecs/swiss/dutch';
 import type { Game } from '@echecs/swiss/dutch';
 import type {
+  Entrant,
+  GeneratedMatch,
+  Outcome,
   PairingContext,
   PairingEngineResult,
-  GeneratedPairing,
-  Player,
-  PreviousPairing,
-  GameOutcome,
+  PreviousMatch,
   SwissFideConfig,
 } from '../types';
 
 /**
- * Adapta el context intern al format que espera @echecs/swiss i en retorna
- * el resultat en el format del nostre motor.
+ * Sistema suís holandès FIDE, delegat a `@echecs/swiss`.
  *
- * Utilitza el sistema holandès FIDE amb matching global òptim (algorisme
- * blossom d'Edmonds), que evita decisions greedy locals que poden generar
- * revanxes forçades en rondes posteriors.
+ * Fa un aparellament òptim global (blossom d'Edmonds) en lloc de decisions
+ * locals, cosa que evita revanxes forçades en rondes posteriors.
  *
- * Si scope === 'intra_group', cada grup es processa de forma independent.
+ * Només 1 contra 1, com el suís propi.
  */
 export function generateSwissFidePairings(ctx: PairingContext): PairingEngineResult {
   const config = ctx.phase.config as SwissFideConfig;
-  // La llibreria usa l'ordre d'entrada com a TPN (Tournament Player Number),
-  // per tant cal pre-ordenar: primer per rating desc, després per nom asc.
-  const activePlayers = ctx.players
-    .filter((p) => p.isActive)
+
+  // La llibreria pren l'ordre d'entrada com a número de sembrat: primer per
+  // valoració descendent, després per nom.
+  const active = ctx.entrants
+    .filter((e) => e.isActive)
     .sort((a, b) => {
-      const rA = a.rating ?? -1;
-      const rB = b.rating ?? -1;
-      if (rB !== rA) return rB - rA;
-      return a.name.localeCompare(b.name);
+      const ratingA = a.rating ?? -1;
+      const ratingB = b.rating ?? -1;
+      if (ratingB !== ratingA) return ratingB - ratingA;
+      return a.displayName.localeCompare(b.displayName);
     });
 
-  if (config.scope === 'intra_group') {
-    return pairByGroups(activePlayers, ctx, config);
-  }
-  return pairAll(activePlayers, ctx, config);
+  return config.scope === 'intra_group'
+    ? pairByGroups(active, ctx, config)
+    : pairAll(active, ctx, config);
 }
 
 function pairAll(
-  activePlayers: Player[],
+  active: Entrant[],
   ctx: PairingContext,
-  config: SwissFideConfig,
+  config: SwissFideConfig
 ): PairingEngineResult {
-  const standingMap = new Map(ctx.standings.map((s) => [s.playerId, s]));
-  const echecsPlayers = activePlayers.map((p) => ({ id: p.id, rating: p.rating ?? undefined }));
-  const games = buildGameHistory(ctx.previousPairings);
+  const standingMap = new Map(ctx.standings.map((s) => [s.entryId, s]));
+  const result = pair(
+    active.map((e) => ({ id: e.id, rating: e.rating ?? undefined })),
+    buildGameHistory(ctx.previousMatches),
+    { expectedRounds: config.expectedRounds }
+  );
 
-  const result = pair(echecsPlayers, games, { expectedRounds: config.expectedRounds });
+  const matches = sortAndNumber(
+    result.pairings.map((p) => [p.white, p.black]),
+    standingMap
+  );
+  const byes: GeneratedMatch[] = result.byes.map((b) => ({ tableNumber: -1, entryIds: [b.player] }));
 
-  const pairings = sortAndNumber(result.pairings.map((p) => ({ player1Id: p.white, player2Id: p.black })), standingMap);
-  const byes: GeneratedPairing[] = result.byes.map((b) => ({ tableNumber: -1, player1Id: b.player, player2Id: null }));
-
-  return { pairings: [...pairings, ...byes], warnings: [] };
+  return { matches: [...matches, ...byes], warnings: [] };
 }
 
 function pairByGroups(
-  activePlayers: Player[],
+  active: Entrant[],
   ctx: PairingContext,
-  config: SwissFideConfig,
+  config: SwissFideConfig
 ): PairingEngineResult {
-  const standingMap = new Map(ctx.standings.map((s) => [s.playerId, s]));
+  const standingMap = new Map(ctx.standings.map((s) => [s.entryId, s]));
 
-  // Agrupa jugadors per groupId (null = sense grup → tractat com a grup únic)
-  const groupMap = new Map<string, Player[]>();
-  for (const p of activePlayers) {
-    const key = p.groupId ?? '__ungrouped__';
-    const list = groupMap.get(key) ?? [];
-    list.push(p);
-    groupMap.set(key, list);
+  const groupMap = new Map<string, Entrant[]>();
+  for (const entrant of active) {
+    const key = entrant.groupId ?? '__ungrouped__';
+    groupMap.set(key, [...(groupMap.get(key) ?? []), entrant]);
   }
 
-  const allPairings: Omit<GeneratedPairing, 'tableNumber'>[] = [];
-  const allByes: GeneratedPairing[] = [];
+  const allPairings: Array<[string, string]> = [];
+  const allByes: GeneratedMatch[] = [];
 
-  for (const groupPlayers of groupMap.values()) {
-    const playerIds = new Set(groupPlayers.map((p) => p.id));
-    const groupPreviousPairings = ctx.previousPairings.filter(
-      (pp) => playerIds.has(pp.player1Id) && (pp.player2Id === null || playerIds.has(pp.player2Id)),
+  for (const groupEntrants of groupMap.values()) {
+    const groupIds = new Set(groupEntrants.map((e) => e.id));
+    const groupHistory = ctx.previousMatches.filter((m) =>
+      m.entryIds.every((id) => groupIds.has(id))
     );
 
-    const echecsPlayers = groupPlayers.map((p) => ({ id: p.id, rating: p.rating ?? undefined }));
-    const games = buildGameHistory(groupPreviousPairings);
+    const result = pair(
+      groupEntrants.map((e) => ({ id: e.id, rating: e.rating ?? undefined })),
+      buildGameHistory(groupHistory),
+      { expectedRounds: config.expectedRounds }
+    );
 
-    const result = pair(echecsPlayers, games, { expectedRounds: config.expectedRounds });
-
-    allPairings.push(...result.pairings.map((p) => ({ player1Id: p.white, player2Id: p.black })));
-    allByes.push(...result.byes.map((b) => ({ tableNumber: -1, player1Id: b.player, player2Id: null })));
+    allPairings.push(...result.pairings.map((p) => [p.white, p.black] as [string, string]));
+    allByes.push(...result.byes.map((b) => ({ tableNumber: -1, entryIds: [b.player] })));
   }
 
-  const numbered = sortAndNumber(allPairings, standingMap);
-  return { pairings: [...numbered, ...allByes], warnings: [] };
+  return { matches: [...sortAndNumber(allPairings, standingMap), ...allByes], warnings: [] };
 }
 
 function sortAndNumber(
-  pairings: Omit<GeneratedPairing, 'tableNumber'>[],
-  standingMap: Map<string, { points: number }>,
-): GeneratedPairing[] {
-  return pairings
+  pairs: Array<[string, string]>,
+  standingMap: Map<string, { points: number }>
+): GeneratedMatch[] {
+  return pairs
     .sort((a, b) => {
-      const scoreA = Math.max(standingMap.get(a.player1Id)?.points ?? 0, standingMap.get(a.player2Id ?? '')?.points ?? 0);
-      const scoreB = Math.max(standingMap.get(b.player1Id)?.points ?? 0, standingMap.get(b.player2Id ?? '')?.points ?? 0);
-      return scoreB - scoreA;
+      const bestA = Math.max(...a.map((id) => standingMap.get(id)?.points ?? 0));
+      const bestB = Math.max(...b.map((id) => standingMap.get(id)?.points ?? 0));
+      return bestB - bestA;
     })
-    .map((p, i) => ({ tableNumber: i + 1, ...p }));
+    .map((entryIds, i) => ({ tableNumber: i + 1, entryIds }));
 }
 
-function buildGameHistory(previousPairings: PreviousPairing[]): Game[][] {
+/**
+ * Historial en el format de la llibreria. Com que el suís FIDE és 1v1, només
+ * es tenen en compte les partides de dos participants i els byes.
+ */
+function buildGameHistory(previousMatches: PreviousMatch[]): Game[][] {
   const byRound = new Map<number, Game[]>();
 
-  for (const pp of previousPairings) {
-    const roundGames = byRound.get(pp.roundNumber) ?? [];
+  for (const match of previousMatches) {
+    const games = byRound.get(match.roundNumber) ?? [];
 
-    if (pp.player2Id === null) {
-      // Bye: oponent fictici amb el mateix jugador perquè la llibreria
-      // computi correctament els punts acumulats (1pt = pairing-bye)
-      roundGames.push({ white: pp.player1Id, black: pp.player1Id, result: 1, kind: 'pairing-bye' });
-    } else {
-      const result = outcomeToResult(pp.outcome1);
+    if (match.entryIds.length === 1) {
+      // Bye: la llibreria l'espera com una partida contra un mateix.
+      games.push({ white: match.entryIds[0], black: match.entryIds[0], result: 1, kind: 'pairing-bye' });
+    } else if (match.entryIds.length === 2) {
+      const result = resultFromRanks(match.ranks);
       if (result !== null) {
-        roundGames.push({ white: pp.player1Id, black: pp.player2Id, result });
+        games.push({ white: match.entryIds[0], black: match.entryIds[1], result });
       }
     }
 
-    byRound.set(pp.roundNumber, roundGames);
+    byRound.set(match.roundNumber, games);
   }
 
   if (byRound.size === 0) return [];
 
   const maxRound = Math.max(...byRound.keys());
-  const games: Game[][] = [];
-  for (let r = 1; r <= maxRound; r++) {
-    games.push(byRound.get(r) ?? []);
-  }
-  return games;
+  const rounds: Game[][] = [];
+  for (let r = 1; r <= maxRound; r++) rounds.push(byRound.get(r) ?? []);
+  return rounds;
 }
 
-function outcomeToResult(outcome: GameOutcome | null): 0 | 0.5 | 1 | null {
+/** Resultat del primer participant a partir de les posicions. */
+function resultFromRanks(ranks: (number | null)[]): 0 | 0.5 | 1 | null {
+  const [first, second] = ranks;
+  if (first === null || second === null || first === undefined || second === undefined) return null;
+  if (first === second) return 0.5;
+  return first < second ? 1 : 0;
+}
+
+/** Per si algun dia cal traduir un `outcome` desat en lloc de les posicions. */
+export function resultFromOutcome(outcome: Outcome | null): 0 | 0.5 | 1 | null {
   switch (outcome) {
     case 'win':
-    case 'forfeit':
+    case 'bye':
       return 1;
     case 'loss':
       return 0;

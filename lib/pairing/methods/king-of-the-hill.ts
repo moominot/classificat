@@ -1,90 +1,70 @@
 import type {
+  GeneratedMatch,
+  KingOfTheHillConfig,
   PairingContext,
   PairingEngineResult,
-  GeneratedPairing,
-  KingOfTheHillConfig,
+  PairingWarning,
 } from '../types';
 import { buildRematchSet, hasPlayed } from '../utils/rematch';
-import { buildComparator } from '../tiebreakers';
 
 /**
- * Motor d'aparellaments "Rei del turó" (King of the Hill).
+ * Rei del turó: 1r contra 2n, 3r contra 4t, etc.
  *
- * Ordena els jugadors per classificació actual i els aparella:
- *   1r vs 2n, 3r vs 4t, 5è vs 6è, etc.
+ * Si un aparellament fos revanxa, es busca el següent disponible que no ho
+ * sigui. L'últim sense parella rep bye.
  *
- * Si hi ha un nombre imparell de jugadors:
- * - El darrer rep un bye.
- *
- * Si un aparellament seria una revanxa, s'intenta canviar l'adversari
- * amb el que té el rang adjacent (p.ex. 1r vs 3r, 2n vs 4t).
+ * Només 1 contra 1: amb taules de més de dos, "el següent de la llista" deixa
+ * de definir un enfrontament.
  */
 export function generateKingOfTheHillPairings(ctx: PairingContext): PairingEngineResult {
   const config = ctx.phase.config as KingOfTheHillConfig;
-  const warnings = [];
+  const warnings: PairingWarning[] = [];
+  const rematchSet = buildRematchSet(ctx.previousMatches);
 
-  const rematchSet = buildRematchSet(ctx.previousPairings);
-  const comparator = buildComparator(ctx.phase.tiebreakers);
+  // Les classificacions ja arriben ordenades i amb `rank` assignat: aquí només
+  // cal respectar-ne l'ordre (abans es reordenava amb un comparador propi).
+  let ordered = [...ctx.standings].sort((a, b) => a.rank - b.rank).map((s) => s.entryId);
 
-  // Ordena per classificació
-  let sorted = [...ctx.standings]
-    .sort(comparator)
-    .map((s) => s.playerId);
-
-  // Restricció als N millors si s'ha configurat
   if (config.topN != null && config.topN > 0) {
-    sorted = sorted.slice(0, config.topN);
+    ordered = ordered.slice(0, config.topN);
   }
 
-  // Aparellament greedy respectant l'ordre de rang
-  const pairings: GeneratedPairing[] = [];
+  const matches: GeneratedMatch[] = [];
   const paired = new Set<string>();
   let tableNumber = 1;
 
-  for (let i = 0; i < sorted.length; i++) {
-    if (paired.has(sorted[i])) continue;
+  for (let i = 0; i < ordered.length; i++) {
+    const first = ordered[i];
+    if (paired.has(first)) continue;
 
-    const p1 = sorted[i];
-    let found = false;
-
-    // Primer intenta l'adversari natural (i+1), llavors els adjacents
-    for (let j = i + 1; j < sorted.length; j++) {
-      if (paired.has(sorted[j])) continue;
-      const p2 = sorted[j];
-
-      if (!hasPlayed(p1, p2, rematchSet)) {
-        pairings.push({ tableNumber: tableNumber++, player1Id: p1, player2Id: p2 });
-        paired.add(p1);
-        paired.add(p2);
-        found = true;
-        break;
-      }
+    const candidates = ordered.slice(i + 1).filter((id) => !paired.has(id));
+    if (candidates.length === 0) {
+      matches.push({ tableNumber: 0, entryIds: [first] });
+      paired.add(first);
+      continue;
     }
 
-    if (!found) {
-      // Revanxa inevitable: aparella amb el natural i avisa
-      for (let j = i + 1; j < sorted.length; j++) {
-        if (paired.has(sorted[j])) continue;
-        const p2 = sorted[j];
-        pairings.push({ tableNumber: tableNumber++, player1Id: p1, player2Id: p2 });
-        paired.add(p1);
-        paired.add(p2);
-        warnings.push({
-          type: 'rematch_forced' as const,
-          message: `Revanxa inevitable entre els jugadors ${p1} i ${p2}.`,
-          affectedPlayerIds: [p1, p2],
-        });
-        found = true;
-        break;
-      }
+    let second = candidates.find((id) => !hasPlayed(first, id, rematchSet));
+
+    if (second === undefined) {
+      second = candidates[0];
+      warnings.push({
+        type: 'rematch_forced',
+        message: 'Revanxa inevitable en aquest aparellament.',
+        affectedEntryIds: [first, second],
+      });
     }
 
-    if (!found) {
-      // Jugador sense parella → bye
-      pairings.push({ tableNumber: 0, player1Id: p1, player2Id: null });
-      paired.add(p1);
-    }
+    matches.push({ tableNumber: tableNumber++, entryIds: [first, second] });
+    paired.add(first);
+    paired.add(second);
   }
 
-  return { pairings, warnings };
+  // El bye va a l'última taula.
+  const lastTable = tableNumber;
+  for (const match of matches) {
+    if (match.entryIds.length === 1) match.tableNumber = lastTable;
+  }
+
+  return { matches, warnings };
 }

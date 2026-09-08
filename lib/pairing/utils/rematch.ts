@@ -1,42 +1,46 @@
-import type { PreviousPairing } from '../types';
+import type { PreviousMatch } from '../types';
 
 /**
- * Construeix la clau canònica d'un parell de jugadors (ordenada per ID).
- * Garanteix que (A,B) i (B,A) generin la mateixa clau.
+ * Historial d'enfrontaments.
+ *
+ * Amb taules de més de dos, "ja s'han enfrontat" vol dir que han coincidit a
+ * la mateixa taula: d'una partida de quatre en surten sis parelles.
  */
-function pairKey(p1Id: string, p2Id: string): string {
-  return p1Id < p2Id ? `${p1Id}:${p2Id}` : `${p2Id}:${p1Id}`;
+
+/** Clau canònica d'una parella, perquè (A,B) i (B,A) siguin la mateixa. */
+function pairKey(a: string, b: string): string {
+  return a < b ? `${a}:${b}` : `${b}:${a}`;
 }
 
-/**
- * Construeix un Set amb totes les parelles que ja s'han enfrontat.
- */
-export function buildRematchSet(previousPairings: PreviousPairing[]): Set<string> {
+/** Totes les parelles que han coincidit en alguna partida. */
+export function buildRematchSet(previousMatches: PreviousMatch[]): Set<string> {
   const set = new Set<string>();
-  for (const p of previousPairings) {
-    if (p.player2Id !== null) {
-      set.add(pairKey(p.player1Id, p.player2Id));
+  for (const match of previousMatches) {
+    for (let i = 0; i < match.entryIds.length; i++) {
+      for (let j = i + 1; j < match.entryIds.length; j++) {
+        set.add(pairKey(match.entryIds[i], match.entryIds[j]));
+      }
     }
   }
   return set;
 }
 
-/**
- * Comprova si dos jugadors ja s'han enfrontat.
- */
-export function hasPlayed(
-  p1Id: string,
-  p2Id: string,
-  rematchSet: Set<string>
-): boolean {
-  return rematchSet.has(pairKey(p1Id, p2Id));
+export function hasPlayed(a: string, b: string, rematchSet: Set<string>): boolean {
+  return rematchSet.has(pairKey(a, b));
 }
 
-/**
- * Compta quantes vegades un jugador ha rebut un bye.
- */
-export function countByes(playerId: string, previousPairings: PreviousPairing[]): number {
-  return previousPairings.filter(
-    (p) => (p.player1Id === playerId || p.player2Id === playerId) && p.player2Id === null
-  ).length;
+/** Quantes vegades una inscripció ha quedat sola a la taula (bye). */
+export function countByes(entryId: string, previousMatches: PreviousMatch[]): number {
+  return previousMatches.filter((m) => m.entryIds.length === 1 && m.entryIds[0] === entryId).length;
+}
+
+/** Quants dels participants d'una taula ja s'havien trobat abans. */
+export function countRematches(entryIds: string[], rematchSet: Set<string>): number {
+  let count = 0;
+  for (let i = 0; i < entryIds.length; i++) {
+    for (let j = i + 1; j < entryIds.length; j++) {
+      if (hasPlayed(entryIds[i], entryIds[j], rematchSet)) count++;
+    }
+  }
+  return count;
 }
