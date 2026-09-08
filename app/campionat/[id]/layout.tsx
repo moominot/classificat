@@ -1,14 +1,11 @@
-import { db } from '@/db';
-import { tournaments } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
-import { cookies } from 'next/headers';
-import { getIronSession } from 'iron-session';
-import { sessionOptions } from '@/lib/session';
-import type { SessionData } from '@/lib/session';
-import NavTabs from './NavTabs';
-import { DirectorProvider } from '@/components/DirectorContext';
+import { db } from '@/db';
+import { tournaments } from '@/db/schema';
+import { canManageTournament, getCurrentAccount, getViewer } from '@/lib/authz';
+import { ViewerProvider } from '@/components/ViewerContext';
 import QrCompartir from '@/components/QrCompartir';
+import NavTabs from './NavTabs';
 
 export default async function CampionatLayout({
   children,
@@ -21,34 +18,41 @@ export default async function CampionatLayout({
   const [tournament] = await db.select().from(tournaments).where(eq(tournaments.id, id));
   if (!tournament) notFound();
 
-  const session = await getIronSession<SessionData>(await cookies(), sessionOptions);
-  const isDirector = session.isDirector ?? false;
+  const account = await getCurrentAccount();
+  const canManage = account ? await canManageTournament(account, id) : false;
+  const viewer = await getViewer(id);
 
   return (
-    <DirectorProvider isDirector={isDirector}>
+    <ViewerProvider
+      viewer={{
+        role: account?.role ?? null,
+        canManage,
+        displayName: account?.displayName ?? null,
+        entryId: viewer.entryId,
+      }}
+    >
       <div className="space-y-5">
-        {/* Capçalera del campionat */}
+        {/*
+          El nom de la competició surt un sol cop, a la barra de pestanyes:
+          abans es repetia al fil d'Ariadna i al títol (docs/pla-rols.md §15.1).
+        */}
         <div className="flex items-center gap-2 text-sm text-ink-3">
-          {isDirector ? (
-            <a href="/" className="hover:text-accent-ink">Campionats</a>
-          ) : (
-            <span>Campionats</span>
-          )}
-          <span>/</span>
-          <span className="text-ink font-medium">{tournament.name}</span>
-          {isDirector && (
-            <div className="ml-auto">
-              <QrCompartir tournamentId={id} />
-            </div>
+          {canManage && (
+            <>
+              <a href="/" className="hover:text-accent-ink">
+                Competicions
+              </a>
+              <div className="ml-auto">
+                <QrCompartir tournamentId={id} />
+              </div>
+            </>
           )}
         </div>
 
-        {/* Pestanyes de navegació */}
         <NavTabs id={id} name={tournament.name} />
 
-        {/* Contingut */}
         {children}
       </div>
-    </DirectorProvider>
+    </ViewerProvider>
   );
 }

@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
-import { useIsDirector } from '@/components/DirectorContext';
+import { useCanManage } from '@/components/ViewerContext';
 
 interface AccionsRondaProps {
   tournamentId: string;
@@ -21,11 +21,11 @@ export default function AccionsRonda({
   teResultats,
 }: AccionsRondaProps) {
   const router = useRouter();
-  const isDirector = useIsDirector();
+  const canManage = useCanManage();
   const [loading, setLoading] = useState<string | null>(null);
   const [confirmEsborrar, setConfirmEsborrar] = useState(false);
 
-  if (!isDirector) return null;
+  if (!canManage) return null;
 
   async function tancarRonda() {
     setLoading('tancar');

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
-import { useIsDirector } from '@/components/DirectorContext';
+import { useCanManage } from '@/components/ViewerContext';
 import type { PairingWarning } from '@/lib/pairing/types';
 import { readError } from '@/lib/http';
 
@@ -37,10 +37,10 @@ export default function GenerarAparellaments({
   previousAbsentIds?: string[];
 }) {
   const router = useRouter();
-  const isDirector = useIsDirector();
+  const canManage = useCanManage();
   const [absentIds, setAbsentIds] = useState<Set<string>>(new Set(previousAbsentIds));
 
-  if (!isDirector) return null;
+  if (!canManage) return null;
   const [modal, setModal] = useState<{
     isFirstRound: boolean;
     seedingOrder: SeedEntry[];

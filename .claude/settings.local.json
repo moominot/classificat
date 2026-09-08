@@ -22,7 +22,9 @@
       "Bash(npx drizzle-kit *)",
       "Bash(Get-ChildItem -Path \"d:\\\\Users\\\\tonil\\\\Documents\\\\PROGRAMES PROPIS\\\\classificat-1\" -Recurse -Directory)",
       "Bash(Select-Object -First 20 FullName)",
-      "Bash(xargs head -30)"
+      "Bash(xargs head -30)",
+      "Bash(curl -s http://localhost:3000/api/tournaments/b70037f7-6c60-4d85-a0d0-708b79e491ee/rounds/6e8f6078-9134-445b-969e-e05240717b02/pairings -w '\\\\nSTATUS:%{http_code}\\\\n')",
+      "Bash(curl -s http://localhost:3000/campionat/b70037f7-6c60-4d85-a0d0-708b79e491ee/classificacio?t=custom:594e52a4-a877-4b65-ae17-8eb6d7868285 -b /tmp/cookies.txt -w '\\\\nSTATUS:%{http_code}\\\\n')"
     ]
   }
 }

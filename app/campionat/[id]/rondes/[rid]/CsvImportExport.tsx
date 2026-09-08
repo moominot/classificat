@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
-import { useIsDirector } from '@/components/DirectorContext';
+import { useCanManage } from '@/components/ViewerContext';
 import { readError } from '@/lib/http';
 
 interface Props {
@@ -15,10 +15,10 @@ interface Props {
 
 export default function CsvImportExport({ tournamentId, roundId, roundNumber, rondaTancada }: Props) {
   const router = useRouter();
-  const isDirector = useIsDirector();
+  const canManage = useCanManage();
   const fileRef = useRef<HTMLInputElement>(null);
 
-  if (!isDirector) return null;
+  if (!canManage) return null;
   const [importing, setImporting] = useState(false);
   const [missatge, setMissatge] = useState<{ tipus: 'ok' | 'error'; text: string } | null>(null);
 

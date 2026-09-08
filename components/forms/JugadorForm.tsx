@@ -42,15 +42,15 @@ export default function JugadorForm({ tournamentId, grups, jugador, onDone }: Ju
     setError('');
 
     const url = jugador
-      ? `/api/tournaments/${tournamentId}/players/${jugador.id}`
-      : `/api/tournaments/${tournamentId}/players`;
+      ? `/api/tournaments/${tournamentId}/entries/${jugador.id}`
+      : `/api/tournaments/${tournamentId}/entries`;
     const method = jugador ? 'PATCH' : 'POST';
 
     const res = await fetch(url, {
       method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: nom.trim(),
+        displayName: nom.trim(),
         rating: rating ? parseInt(rating) : null,
         groupId: grupId || null,
         phone: phone.trim() || null,

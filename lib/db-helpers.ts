@@ -261,3 +261,28 @@ export async function loadQuestionMetrics(tournamentId: string): Promise<{
     answers,
   };
 }
+
+/**
+ * Com `loadEntrants()`, però amb les dades de contacte de la persona.
+ *
+ * Només per a les pantalles de gestió: el telèfon i el correu es veuen si
+ * l'admin té aquella persona en una competició seva (docs/pla-rols.md §14.4).
+ */
+export async function loadEntrantsWithContact(tournamentId: string) {
+  return db
+    .select({
+      id: entries.id,
+      tournamentId: entries.tournamentId,
+      personId: entries.personId,
+      displayName: people.displayName,
+      club: people.club,
+      phone: people.phone,
+      rating: entries.rating,
+      groupId: entries.groupId,
+      teamId: entries.teamId,
+      isActive: entries.isActive,
+    })
+    .from(entries)
+    .innerJoin(people, eq(people.id, entries.personId))
+    .where(eq(entries.tournamentId, tournamentId));
+}

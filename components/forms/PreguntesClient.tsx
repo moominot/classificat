@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useIsDirector } from '@/components/DirectorContext';
+import { useCanManage } from '@/components/ViewerContext';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import { Card } from '@/components/ui/Card';
@@ -10,8 +10,17 @@ import EmptyState from '@/components/ui/EmptyState';
 import { readError } from '@/lib/http';
 
 type QType = 'value' | 'wordvalue' | 'image';
-type QScope = 'match' | 'player';
+type QScope = 'match' | 'participant';
 type AnswerType = 'text' | 'number';
+type QuestionAggregate = 'sum' | 'avg' | 'max' | 'count' | 'none';
+
+const AGGREGATE_LABEL: Record<QuestionAggregate, string> = {
+  none: 'No compta al rànquing',
+  sum: 'Suma',
+  avg: 'Mitjana',
+  max: 'Màxim',
+  count: 'Recompte',
+};
 
 interface Question {
   id: string;
@@ -23,6 +32,8 @@ interface Question {
   label1: string | null;
   label2: string | null;
   answerType: AnswerType | null;
+  /** Com s'agrega la resposta per convertir-la en mètrica de classificació (§12.1). */
+  aggregate: QuestionAggregate;
   showInRanking: boolean;
   order: number;
 }
@@ -40,7 +51,7 @@ function subLabel(q: Question) {
 }
 
 function canRank(scope: QScope, type: QType) {
-  return scope === 'player' && type !== 'image';
+  return scope === 'participant' && type !== 'image';
 }
 
 function tabClass(active: boolean) {
@@ -57,7 +68,7 @@ export default function PreguntesClient({
   initialQuestions: Question[];
 }) {
   const router = useRouter();
-  const isDirector = useIsDirector();
+  const canManage = useCanManage();
   const [questions, setQuestions] = useState(initialQuestions);
   const [panelOpen, setPanelOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -66,9 +77,10 @@ export default function PreguntesClient({
   const [label1, setLabel1] = useState('Paraula');
   const [label2, setLabel2] = useState('Punts');
   const [type, setType] = useState<QType>('value');
-  const [scope, setScope] = useState<QScope>('player');
+  const [scope, setScope] = useState<QScope>('participant');
   const [answerType, setAnswerType] = useState<AnswerType>('text');
   const [showInRanking, setShowInRanking] = useState(false);
+  const [aggregate, setAggregate] = useState<QuestionAggregate>('none');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -87,9 +99,10 @@ export default function PreguntesClient({
     setLabel1('Paraula');
     setLabel2('Punts');
     setType('value');
-    setScope('player');
+    setScope('participant');
     setAnswerType('text');
     setShowInRanking(false);
+    setAggregate('none');
     setError('');
     setPanelOpen(true);
   }
@@ -103,6 +116,7 @@ export default function PreguntesClient({
     setScope(q.scope);
     setAnswerType(q.answerType ?? 'text');
     setShowInRanking(q.showInRanking);
+    setAggregate(q.aggregate);
     setError('');
     setPanelOpen(true);
   }
@@ -126,6 +140,7 @@ export default function PreguntesClient({
           label1: type === 'wordvalue' ? label1 : null,
           label2: type === 'wordvalue' ? label2 : null,
           showInRanking: canRank(scope, type) && showInRanking,
+          aggregate: canRank(scope, type) ? aggregate : 'none',
         }
       : {
           type,
@@ -135,6 +150,7 @@ export default function PreguntesClient({
           label2: type === 'wordvalue' ? label2 : null,
           answerType: type === 'value' ? answerType : null,
           showInRanking: canRank(scope, type) && showInRanking,
+          aggregate: canRank(scope, type) ? aggregate : 'none',
         };
 
     const res = await fetch(
@@ -175,7 +191,7 @@ export default function PreguntesClient({
     setDeletingId(null);
   }
 
-  if (!isDirector) {
+  if (!canManage) {
     return (
       <div className="space-y-4">
         <div>
@@ -190,7 +206,7 @@ export default function PreguntesClient({
                   {TYPE_BADGE[q.type].label}
                 </span>
                 <span className="text-[10.5px] font-semibold px-2.5 py-1 rounded-full bg-surface-2 text-ink-3 whitespace-nowrap">
-                  {q.scope === 'match' ? 'Per partida' : 'Per jugador (×2)'}
+                  {q.scope === 'match' ? 'Per partida' : 'Per jugador'}
                 </span>
               </div>
               <div className="text-sm font-medium text-ink">{q.label}</div>
@@ -233,7 +249,7 @@ export default function PreguntesClient({
                         {TYPE_BADGE[q.type].label}
                       </span>
                       <span className="text-[10.5px] font-semibold px-2.5 py-1 rounded-full bg-surface-2 text-ink-3 whitespace-nowrap">
-                        {q.scope === 'match' ? 'Per partida' : 'Per jugador (×2)'}
+                        {q.scope === 'match' ? 'Per partida' : 'Per jugador'}
                       </span>
                       {q.showInRanking && (
                         <span title="Té pestanya de rànquing a Classificació" className="text-[10.5px] font-semibold text-accent-ink whitespace-nowrap">
@@ -299,8 +315,8 @@ export default function PreguntesClient({
                 </button>
                 <button
                   disabled={isBuiltinEditing}
-                  onClick={() => setScope('player')}
-                  className={`flex-1 text-center px-2 py-2 rounded-xl border text-xs font-semibold cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 ${tabClass(scope === 'player')}`}
+                  onClick={() => setScope('participant')}
+                  className={`flex-1 text-center px-2 py-2 rounded-xl border text-xs font-semibold cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 ${tabClass(scope === 'participant')}`}
                 >
                   Per jugador<br /><span className="font-normal text-[10.5px]">2 respostes</span>
                 </button>
@@ -387,6 +403,31 @@ export default function PreguntesClient({
                 <span>
                   <span className="block text-xs font-semibold text-ink">Mostra rànquing a Classificació</span>
                   <span className="block text-xs text-ink-3 mt-0.5">Afegeix una pestanya que ordena els jugadors per aquesta resposta.</span>
+                </span>
+              </label>
+            )}
+
+            {/*
+              L'agregació és el que converteix una pregunta en mètrica de
+              classificació: amb "Suma" o "Màxim", aquesta resposta pot ser
+              columna del rànquing i desempat sense tocar codi (§12.1).
+            */}
+            {canRank(scope, type) && (
+              <label className="block bg-surface-2 rounded-xl px-3 py-2.5">
+                <span className="block text-xs font-semibold text-ink">Com compta al rànquing</span>
+                <select
+                  value={aggregate}
+                  onChange={(e) => setAggregate(e.target.value as QuestionAggregate)}
+                  className="mt-1.5 block w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink"
+                >
+                  {(Object.keys(AGGREGATE_LABEL) as QuestionAggregate[]).map((key) => (
+                    <option key={key} value={key}>
+                      {AGGREGATE_LABEL[key]}
+                    </option>
+                  ))}
+                </select>
+                <span className="block text-xs text-ink-3 mt-1.5">
+                  Si compta, la resposta també es pot fer servir com a desempat de la fase.
                 </span>
               </label>
             )}

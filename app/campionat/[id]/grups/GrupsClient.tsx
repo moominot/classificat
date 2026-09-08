@@ -7,7 +7,7 @@ import Input from '@/components/ui/Input';
 import Badge from '@/components/ui/Badge';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import EmptyState from '@/components/ui/EmptyState';
-import { useIsDirector } from '@/components/DirectorContext';
+import { useCanManage } from '@/components/ViewerContext';
 
 interface Grup { id: string; name: string; order: number }
 interface Jugador { id: string; name: string; groupId: string | null; isActive: boolean }
@@ -22,7 +22,7 @@ export default function GrupsClient({
   jugadors: Jugador[];
 }) {
   const router = useRouter();
-  const isDirector = useIsDirector();
+  const canManage = useCanManage();
   const [nomNouGrup, setNomNouGrup] = useState('');
   const [loadingNou, setLoadingNou] = useState(false);
   const [assignant, setAssignant] = useState<string | null>(null); // jugadorId
@@ -41,7 +41,7 @@ export default function GrupsClient({
   }
 
   async function assignarGrup(jugadorId: string, grupId: string | null) {
-    await fetch(`/api/tournaments/${tournamentId}/players/${jugadorId}`, {
+    await fetch(`/api/tournaments/${tournamentId}/entries/${jugadorId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ groupId: grupId }),
@@ -56,7 +56,7 @@ export default function GrupsClient({
   return (
     <div className="space-y-5">
       {/* Crear nou grup (només director) */}
-      {isDirector && (
+      {canManage && (
         <Card>
           <CardHeader><CardTitle>Crear grup</CardTitle></CardHeader>
           <div className="flex gap-3">
@@ -106,7 +106,7 @@ export default function GrupsClient({
                           {j.name[0]}
                         </div>
                         <span className="flex-1 text-sm text-ink-2">{j.name}</span>
-                        {isDirector && (
+                        {canManage && (
                           <div className="relative">
                             <select
                               value={j.groupId ?? ''}
@@ -142,7 +142,7 @@ export default function GrupsClient({
                       {j.name[0]}
                     </div>
                     <span className="flex-1 text-sm text-ink-2">{j.name}</span>
-                    {isDirector && (
+                    {canManage && (
                       <select
                         value=""
                         onChange={e => assignarGrup(j.id, e.target.value || null)}

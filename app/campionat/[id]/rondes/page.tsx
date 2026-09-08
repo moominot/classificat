@@ -1,6 +1,6 @@
 import { db } from '@/db';
-import { rounds, pairings, phases } from '@/db/schema';
-import { eq, asc, count } from 'drizzle-orm';
+import { matchParticipants, matches, phases, rounds } from '@/db/schema';
+import { asc, eq, inArray } from 'drizzle-orm';
 import Link from 'next/link';
 import Badge from '@/components/ui/Badge';
 import NouaRonda from './NouaRonda';
@@ -15,16 +15,26 @@ export default async function RondesPage({ params }: { params: Promise<{ id: str
     db.select().from(rounds).where(eq(rounds.tournamentId, id)).orderBy(asc(rounds.number)),
   ]);
 
-  // Per a cada ronda, obtenim les estadístiques d'aparellaments
+  // Partides per ronda i quantes en tenen resultat. Un bye no compta com a
+  // partida per jugar: ja neix resolt.
   const rondes_amb_stats = await Promise.all(
     totes_rondes.map(async (r) => {
-      const tots = await db
-        .select({ id: pairings.id, outcome1: pairings.outcome1, player2Id: pairings.player2Id })
-        .from(pairings)
-        .where(eq(pairings.roundId, r.id));
-      const totals = tots.filter(p => p.player2Id !== null).length;
-      const jugades = tots.filter(p => p.outcome1 !== null && p.outcome1 !== 'bye').length;
-      return { ...r, totals, jugades };
+      const partides = await db.select({ id: matches.id }).from(matches).where(eq(matches.roundId, r.id));
+      if (partides.length === 0) return { ...r, totals: 0, jugades: 0 };
+
+      const participants = await db
+        .select({ matchId: matchParticipants.matchId, rank: matchParticipants.rank })
+        .from(matchParticipants)
+        .where(inArray(matchParticipants.matchId, partides.map((p) => p.id)));
+
+      const perPartida = partides.map((p) => participants.filter((x) => x.matchId === p.id));
+      const jugables = perPartida.filter((rows) => rows.length > 1);
+
+      return {
+        ...r,
+        totals: jugables.length,
+        jugades: jugables.filter((rows) => rows.every((x) => x.rank !== null)).length,
+      };
     })
   );
 
@@ -95,8 +105,10 @@ export default async function RondesPage({ params }: { params: Promise<{ id: str
                       <div className="flex items-center gap-2">
                         {r.totals === 0 ? (
                           <Badge color="yellow">Pendent</Badge>
-                        ) : r.isComplete ? (
+                        ) : r.status === 'closed' ? (
                           <Badge color="green">Tancada</Badge>
+                        ) : r.status === 'draft' ? (
+                          <Badge color="gray">Esborrany</Badge>
                         ) : r.jugades === r.totals && r.totals > 0 ? (
                           <Badge color="blue">Jugada</Badge>
                         ) : (

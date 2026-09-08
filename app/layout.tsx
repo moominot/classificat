@@ -1,10 +1,8 @@
 import type { Metadata } from 'next';
 import './globals.css';
 import { cookies } from 'next/headers';
-import { getIronSession } from 'iron-session';
-import { sessionOptions } from '@/lib/session';
-import type { SessionData } from '@/lib/session';
 import HeaderAuth from '@/components/HeaderAuth';
+import { getCurrentAccount } from '@/lib/authz';
 import Link from 'next/link';
 
 export const metadata: Metadata = {
@@ -14,7 +12,7 @@ export const metadata: Metadata = {
 
 export default async function RootLayout({ children }: { children: React.ReactNode }) {
   const cookieStore = await cookies();
-  const session = await getIronSession<SessionData>(cookieStore, sessionOptions);
+  const account = await getCurrentAccount();
   const theme = cookieStore.get('theme')?.value;
 
   return (
@@ -23,7 +21,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         <header className="bg-surface border-b border-border sticky top-0 z-10">
           <div className="max-w-5xl mx-auto px-3 sm:px-4 h-14 flex items-center gap-2 sm:gap-3">
             <div className="flex items-center gap-2 sm:gap-2.5 flex-shrink-0 min-w-0">
-              {session.isDirector ? (
+              {account ? (
                 <a href="/" className="flex items-center gap-2 sm:gap-2.5 hover:opacity-80 transition-opacity min-w-0">
                   <Logo />
                   <span className="font-display font-bold text-base sm:text-lg text-ink truncate">Classificat</span>
@@ -41,12 +39,12 @@ export default async function RootLayout({ children }: { children: React.ReactNo
               <Link href="/preferencies" className="text-xs text-ink-3 hover:text-accent-ink transition-colors whitespace-nowrap" title="Preferències">
                 Preferències
               </Link>
-              {session.isDirector && (
-                <Link href="/directors" className="text-xs text-ink-3 hover:text-accent-ink transition-colors whitespace-nowrap">
+              {account?.role === 'superadmin' && (
+                <Link href="/usuaris" className="text-xs text-ink-3 hover:text-accent-ink transition-colors whitespace-nowrap">
                   Usuaris
                 </Link>
               )}
-              <HeaderAuth isDirector={session.isDirector ?? false} directorName={session.directorName} />
+              <HeaderAuth displayName={account?.displayName} />
             </div>
           </div>
         </header>

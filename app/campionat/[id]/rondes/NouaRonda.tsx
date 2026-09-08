@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import Select from '@/components/ui/Select';
-import { useIsDirector } from '@/components/DirectorContext';
+import { useCanManage } from '@/components/ViewerContext';
 import { readError } from '@/lib/http';
 
 interface Fase { id: string; name: string; startRound: number; endRound: number; order: number }
@@ -19,7 +19,7 @@ export default function NouaRonda({
   rondesExistents: number[];
 }) {
   const router = useRouter();
-  const isDirector = useIsDirector();
+  const canManage = useCanManage();
   const [obert, setObert] = useState(false);
   const [faseId, setFaseId] = useState(fases[0]?.id ?? '');
   const [loading, setLoading] = useState(false);
@@ -48,7 +48,7 @@ export default function NouaRonda({
     }
   }
 
-  if (!isDirector) return null;
+  if (!canManage) return null;
 
   if (!obert) {
     return (

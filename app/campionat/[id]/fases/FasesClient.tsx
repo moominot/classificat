@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useIsDirector } from '@/components/DirectorContext';
+import { useCanManage } from '@/components/ViewerContext';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
@@ -66,7 +66,7 @@ export default function FasesClient({
   grups: Grup[];
 }) {
   const router = useRouter();
-  const isDirector = useIsDirector();
+  const canManage = useCanManage();
   const [mostrarForm, setMostrarForm] = useState(false);
 
   return (
@@ -75,12 +75,12 @@ export default function FasesClient({
         <p className="text-sm text-ink-3 flex-1">
           Defineix les fases del campionat. Cada fase cobreix un rang de rondes amb el seu sistema d&apos;aparellament.
         </p>
-        {isDirector && !mostrarForm && (
+        {canManage && !mostrarForm && (
           <Button size="sm" onClick={() => setMostrarForm(true)}>+ Nova fase</Button>
         )}
       </div>
 
-      {isDirector && mostrarForm && (
+      {canManage && mostrarForm && (
         <Card>
           <CardHeader><CardTitle>Nova fase</CardTitle></CardHeader>
           <NovaFaseForm
@@ -97,7 +97,7 @@ export default function FasesClient({
         <EmptyState
           title="Sense fases"
           description="Afegeix fases per definir com es generaran els aparellaments. Exemple: rondes 1–20 Round Robin per grups, rondes 21–28 Sistema Suís."
-          action={isDirector ? <Button onClick={() => setMostrarForm(true)}>+ Nova fase</Button> : undefined}
+          action={canManage ? <Button onClick={() => setMostrarForm(true)}>+ Nova fase</Button> : undefined}
         />
       ) : (
         <div className="space-y-3">
@@ -128,7 +128,7 @@ function FaseCard({
   fases: Fase[];
   onRefresh: () => void;
 }) {
-  const isDirector = useIsDirector();
+  const canManage = useCanManage();
   const [mode, setMode] = useState<'view' | 'edit' | 'delete'>('view');
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
@@ -208,7 +208,7 @@ function FaseCard({
           )}
         </div>
       </div>
-      {isDirector && (
+      {canManage && (
         <div className="border-t border-border px-3 py-2 flex gap-1">
           <Button size="sm" variant="ghost" onClick={() => setMode('edit')}>Editar</Button>
           <Button size="sm" variant="ghost" onClick={() => setMode('delete')}

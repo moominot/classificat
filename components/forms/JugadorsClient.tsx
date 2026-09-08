@@ -8,7 +8,7 @@ import Badge from '@/components/ui/Badge';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import JugadorForm from './JugadorForm';
 import ImportarJugadors from './ImportarJugadors';
-import { useIsDirector } from '@/components/DirectorContext';
+import { useCanManage } from '@/components/ViewerContext';
 import { readError } from '@/lib/http';
 
 interface Grup { id: string; name: string }
@@ -32,7 +32,7 @@ export default function JugadorsClient({
   grups: Grup[];
 }) {
   const router = useRouter();
-  const isDirector = useIsDirector();
+  const canManage = useCanManage();
   const [mode, setMode] = useState<'llista' | 'nou' | 'importar'>('llista');
   const [editant, setEditant] = useState<string | null>(null);
   const [ordre, setOrdre] = useState<'nom' | 'elo'>('nom');
@@ -52,7 +52,7 @@ export default function JugadorsClient({
   }
 
   async function toggleActiu(jugador: Jugador) {
-    await fetch(`/api/tournaments/${tournamentId}/players/${jugador.id}`, {
+    await fetch(`/api/tournaments/${tournamentId}/entries/${jugador.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ isActive: !jugador.isActive }),
@@ -69,8 +69,8 @@ export default function JugadorsClient({
         </span>
         {mode === 'llista' ? (
           <>
-            {isDirector && <Button size="sm" onClick={() => setMode('nou')}>+ Afegir jugador</Button>}
-            {isDirector && (
+            {canManage && <Button size="sm" onClick={() => setMode('nou')}>+ Afegir jugador</Button>}
+            {canManage && (
               <Button size="sm" variant="secondary" onClick={() => setMode('importar')}>
                 Importar CSV
               </Button>
@@ -192,7 +192,7 @@ function JugadorRow({
   toggleActiu: (j: Jugador) => void;
 }) {
   const router = useRouter();
-  const isDirector = useIsDirector();
+  const canManage = useCanManage();
   const [confirmDel, setConfirmDel] = useState(false);
   const [delError, setDelError] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -200,7 +200,7 @@ function JugadorRow({
   async function handleDelete() {
     setDeleting(true);
     setDelError('');
-    const res = await fetch(`/api/tournaments/${tournamentId}/players/${j.id}`, { method: 'DELETE' });
+    const res = await fetch(`/api/tournaments/${tournamentId}/entries/${j.id}`, { method: 'DELETE' });
     if (res.ok) {
       router.refresh();
     } else {
@@ -247,7 +247,7 @@ function JugadorRow({
           </div>
           {delError && <p className="text-xs text-loss mt-1">{delError}</p>}
         </div>
-        {isDirector && (
+        {canManage && (
           <div className="flex gap-1 flex-shrink-0 items-center">
             {confirmDel ? (
               <>

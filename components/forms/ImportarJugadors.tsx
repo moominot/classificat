@@ -123,11 +123,11 @@ export default function ImportarJugadors({ tournamentId, grups }: { tournamentId
     // Import players
     for (const fila of files) {
       const grupId = fila.grupNom ? (grupMap.get(fila.grupNom.toLowerCase().trim()) ?? null) : null;
-      const res = await fetch(`/api/tournaments/${tournamentId}/players`, {
+      const res = await fetch(`/api/tournaments/${tournamentId}/entries`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: fila.nom,
+          displayName: fila.nom,
           rating: fila.elo,
           groupId: grupId,
           club: fila.club,

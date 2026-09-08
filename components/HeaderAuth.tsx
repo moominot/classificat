@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 
-export default function HeaderAuth({ isDirector, directorName }: { isDirector: boolean; directorName?: string }) {
+export default function HeaderAuth({ displayName }: { displayName?: string | null }) {
   const router = useRouter();
 
   async function handleLogout() {
@@ -11,30 +11,28 @@ export default function HeaderAuth({ isDirector, directorName }: { isDirector: b
     router.refresh();
   }
 
-  if (!isDirector) {
+  if (!displayName) {
     return (
       <Link href="/login" className="text-xs text-ink-3 hover:text-accent-ink transition-colors">
-        Director
+        Entra
       </Link>
     );
   }
 
-  const name = directorName ?? 'Director';
-
   return (
     <div className="flex items-center gap-2 sm:gap-3 flex-shrink-0">
       <span
-        title={name}
+        title={displayName}
         className="hidden sm:inline text-xs bg-accent-tint text-accent-ink font-semibold px-2.5 py-1 rounded-full whitespace-nowrap"
       >
-        {name}
+        {displayName}
       </span>
       <span
-        title={name}
-        aria-label={name}
+        title={displayName}
+        aria-label={displayName}
         className="sm:hidden w-6 h-6 rounded-full bg-accent-tint text-accent-ink font-semibold text-[11px] flex items-center justify-center flex-shrink-0"
       >
-        {name[0]?.toUpperCase()}
+        {displayName[0]?.toUpperCase()}
       </span>
       <button
         onClick={handleLogout}
