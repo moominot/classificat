@@ -34,44 +34,53 @@ export type DB = typeof db;
 // Substitueix els CREATE TABLE IF NOT EXISTS i els ALTER TABLE condicionals que
 // hi havia aquí: eren la font de les migracions trencades (docs/pla-rols.md §10.2).
 
-migrate(db, { migrationsFolder: path.join(process.cwd(), 'db/migrations') });
+// Next compila aquest mòdul en diversos bundles i tots s'inicialitzen alhora,
+// de manera que dues instàncies poden migrar i sembrar al mateix temps. Tot el
+// que hi ha aquí sota ha de ser **idempotent i tolerant a curses**: és el
+// mateix problema que va trencar les migracions de fases abans del redisseny.
+try {
+  migrate(db, { migrationsFolder: path.join(process.cwd(), 'db/migrations') });
+} catch (err) {
+  // Una altra instància ha aplicat la mateixa migració mentrestant.
+  if (!/already exists/i.test(String((err as Error)?.message))) throw err;
+}
 
 // ─── Sembra ───────────────────────────────────────────────────────────────────
 
 seedGameProfiles();
 seedSuperadmin();
 
-/** Els perfils de sèrie. Es refresquen per nom; les competicions ja creades no en depenen. */
+/** Els perfils de sèrie. Les competicions ja creades no en depenen: se'n copien. */
 function seedGameProfiles() {
-  const existing = new Set(
-    (sqlite.prepare('SELECT name FROM game_profiles').all() as { name: string }[]).map((r) => r.name)
-  );
   const insert = sqlite.prepare(
-    'INSERT INTO game_profiles (id, name, is_builtin, config) VALUES (?, ?, 1, ?)'
+    'INSERT OR IGNORE INTO game_profiles (id, name, is_builtin, config) VALUES (?, ?, 1, ?)'
   );
   for (const profile of BUILTIN_GAME_PROFILES) {
-    if (!existing.has(profile.name)) {
-      insert.run(uuid(), profile.name, JSON.stringify(profile.config));
-    }
+    insert.run(uuid(), profile.name, JSON.stringify(profile.config));
   }
 }
 
 /**
- * Crea el primer superadmin a partir de SUPERADMIN_PASSWORD. Només s'executa
- * si no hi ha cap compte, per no xafar-ne cap de creat després.
+ * Crea el primer superadmin a partir de SUPERADMIN_PASSWORD. Només si encara
+ * no hi ha cap compte, per no xafar-ne cap de creat després.
  */
 function seedSuperadmin() {
-  const { c } = sqlite.prepare('SELECT count(*) c FROM accounts').get() as { c: number };
   const password = process.env.SUPERADMIN_PASSWORD ?? process.env.DIRECTOR_PASSWORD;
-  if (c > 0 || !password) return;
+  if (!password) return;
 
   const personId = uuid();
-  sqlite
-    .prepare('INSERT INTO people (id, display_name) VALUES (?, ?)')
-    .run(personId, 'Superadmin');
-  sqlite
-    .prepare(
-      'INSERT INTO accounts (id, person_id, username, password_hash, role, is_active) VALUES (?, ?, ?, ?, ?, 1)'
-    )
-    .run(uuid(), personId, 'admin', hashPassword(password), 'superadmin');
+
+  // En una sola transacció, i amb OR IGNORE al compte: si dues instàncies hi
+  // arriben alhora, la segona no fa res en lloc de petar amb UNIQUE.
+  sqlite.transaction(() => {
+    const { c } = sqlite.prepare('SELECT count(*) c FROM accounts').get() as { c: number };
+    if (c > 0) return;
+
+    sqlite.prepare('INSERT INTO people (id, display_name) VALUES (?, ?)').run(personId, 'Superadmin');
+    sqlite
+      .prepare(
+        'INSERT OR IGNORE INTO accounts (id, person_id, username, password_hash, role, is_active) VALUES (?, ?, ?, ?, ?, 1)'
+      )
+      .run(uuid(), personId, 'admin', hashPassword(password), 'superadmin');
+  })();
 }

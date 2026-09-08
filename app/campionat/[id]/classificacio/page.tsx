@@ -1,43 +1,35 @@
-import { db } from '@/db';
-import { phases, players, questionDefinitions, pairingAnswers } from '@/db/schema';
-import { eq, asc, inArray } from 'drizzle-orm';
+import { asc, eq } from 'drizzle-orm';
 import Link from 'next/link';
-import { computeStandings } from '@/lib/pairing/standings';
-import { loadEngineRounds, loadAllPairings } from '@/lib/db-helpers';
-import type { Phase as EnginePhase, Tiebreaker, Standing } from '@/lib/pairing/types';
-
-const TIEBREAKER_COL: Record<Tiebreaker, {
-  label: string;
-  cell: (s: Standing) => string;
-  className?: string;
-} | null> = {
-  median_buchholz:  { label: 'Med.Buch.',   cell: s => s.tiebreakers.medianBuchholz.toFixed(1) },
-  buchholz:         { label: 'Buchholz',    cell: s => s.tiebreakers.buchholz.toFixed(1) },
-  berger:           { label: 'Berger',      cell: s => s.tiebreakers.berger.toFixed(1) },
-  spread:           { label: 'Spread',      cell: s => (s.spread > 0 ? '+' : '') + s.spread, className: 'spread' },
-  wins:             null,
-  cumulative:       { label: 'Total PF',    cell: s => s.tiebreakers.cumulative.toFixed(0) },
-  avg_score:        { label: 'Mitjana PF',  cell: s => s.tiebreakers.avgScore.toFixed(1) },
-  direct_encounter: { label: 'Enc.dir.',    cell: s => s.tiebreakers.directEncounterResult >= 0 ? s.tiebreakers.directEncounterResult.toFixed(1) : '—' },
-};
-
-const TIEBREAKER_LABEL: Record<Tiebreaker, string> = {
-  median_buchholz:  'Buchholz medià',
-  buchholz:         'Buchholz',
-  berger:           'Berger',
-  spread:           'Diferència',
-  wins:             'Victòries',
-  cumulative:       'Total punts a favor',
-  avg_score:        'Mitjana punts a favor',
-  direct_encounter: 'Enc. directe',
-};
+import { db } from '@/db';
+import { groups, phases, questionDefinitions } from '@/db/schema';
 import { Card } from '@/components/ui/Card';
+import Badge from '@/components/ui/Badge';
+import { canManageTournament, getCurrentAccount } from '@/lib/authz';
+import { loadStandings } from '@/lib/standings-service';
+import type { StandingRow } from '@/lib/standings-service';
 
 export const dynamic = 'force-dynamic';
 
-const FIXED_PESTANYES = ['general', 'scrabbles', 'jugada', 'conjunta', 'individual', 'desempats'] as const;
-type FixedPestanya = typeof FIXED_PESTANYES[number];
-type Pestanya = FixedPestanya | string; // string = `custom:<questionId>` per a rànquings personalitzats
+/**
+ * Classificació.
+ *
+ * Les columnes ja no són una llista fixa d'Scrabble: surten de les preguntes
+ * amb agregació i de les mètriques estructurals (docs/pla-rols.md §12.1 i
+ * §13.1 #7). Afegir "bingos" al rànquing és configurar una pregunta, no tocar
+ * aquesta pàgina.
+ */
+
+const METRIC_LABELS: Record<string, string> = {
+  wins: 'Victòries',
+  spread: 'Spread',
+  total_score: 'Punts a favor',
+  avg_score: 'Mitjana',
+};
+
+const MODE_NOTICE: Record<string, string> = {
+  closed_rounds: 'Només compten les rondes tancades.',
+  frozen_at: 'La classificació està congelada: no inclou les últimes rondes.',
+};
 
 export default async function ClassificacioPage({
   params,
@@ -48,693 +40,246 @@ export default async function ClassificacioPage({
 }) {
   const [{ id }, sp] = await Promise.all([params, searchParams]);
 
-  const [totes_fases, tots_jugadors, totesPreguntes] = await Promise.all([
+  const account = await getCurrentAccount();
+  const canManage = account ? await canManageTournament(account, id) : false;
+
+  const [totes_fases, totesPreguntes, tots_grups, vista] = await Promise.all([
     db.select().from(phases).where(eq(phases.tournamentId, id)).orderBy(asc(phases.order)),
-    db.select().from(players).where(eq(players.tournamentId, id)).orderBy(asc(players.name)),
-    db.select().from(questionDefinitions).where(eq(questionDefinitions.tournamentId, id)).orderBy(asc(questionDefinitions.order)),
+    db
+      .select()
+      .from(questionDefinitions)
+      .where(eq(questionDefinitions.tournamentId, id))
+      .orderBy(asc(questionDefinitions.order)),
+    db.select().from(groups).where(eq(groups.tournamentId, id)).orderBy(asc(groups.order)),
+    loadStandings(id, { canManage }),
   ]);
 
-  // Preguntes personalitzades del director marcades per sortir a Classificació
-  const preguntesRanquing = totesPreguntes.filter(q => !q.isBuiltin && q.scope === 'player' && q.showInRanking);
-  const labelBingos = totesPreguntes.find(q => q.key === 'bingos')?.label ?? 'Scrabbles';
-  const labelMillorJugada = totesPreguntes.find(q => q.key === 'best_word')?.label ?? 'Jugada';
-
-  const PESTANYES: { id: Pestanya; label: string }[] = [
-    { id: 'general',    label: 'General' },
-    { id: 'scrabbles',  label: labelBingos },
-    { id: 'jugada',     label: labelMillorJugada },
-    { id: 'conjunta',   label: 'Partida conjunta' },
-    { id: 'individual', label: 'Partida individual' },
-    { id: 'desempats',  label: 'Desempats' },
-    ...preguntesRanquing.map(q => ({ id: `custom:${q.id}`, label: q.label })),
-  ];
-  const pestanya: Pestanya = PESTANYES.some(p => p.id === sp.t) ? sp.t : 'general';
-
-  if (totes_fases.length === 0 || tots_jugadors.length === 0) {
+  if (!vista.visible) {
     return (
       <div className="text-center py-20 text-ink-3">
-        <p className="text-sm">Cal tenir jugadors i fases configurades per veure la classificació.</p>
+        <p className="text-sm">La classificació encara no està publicada.</p>
       </div>
     );
   }
 
-  const playerMap = new Map(tots_jugadors.map(p => [p.id, p]));
-
-  const [engineRounds, totesPart] = await Promise.all([
-    loadEngineRounds(id),
-    loadAllPairings(id),
-  ]);
-
-  const tiebreakers = (totes_fases[0]?.tiebreakers ?? ['median_buchholz', 'buchholz', 'spread']) as EnginePhase['tiebreakers'];
-  const standings = computeStandings(engineRounds, tots_jugadors.map(p => p.id), tiebreakers);
-  const rondesJugades = engineRounds.filter(r => r.pairings.some(p => p.result !== null)).length;
-
-  // ── Desglossament de desempats per jugador ───────────────────────────────────
-  interface OponentDetall {
-    ronda: number;
-    oponentNom: string;
-    oponentId: string;
-    outcome: 'win' | 'loss' | 'draw' | 'bye';
-    oponentPts: number;
-  }
-  const standingsPtsMap = new Map(standings.map(s => [s.playerId, s.points]));
-  const breakdownMap = new Map<string, OponentDetall[]>();
-  for (const j of tots_jugadors) breakdownMap.set(j.id, []);
-
-  for (const round of engineRounds) {
-    for (const pairing of round.pairings) {
-      if (!pairing.result) continue;
-      const isBye = pairing.player2Id === null;
-      const push = (pid: string, oppId: string, outcome: OponentDetall['outcome']) => {
-        breakdownMap.get(pid)?.push({
-          ronda: round.number,
-          oponentId: oppId,
-          oponentNom: oppId === '__bye__' ? 'BYE' : (playerMap.get(oppId)?.name ?? '?'),
-          outcome,
-          oponentPts: oppId === '__bye__' ? 0.5 : (standingsPtsMap.get(oppId) ?? 0),
-        });
-      };
-      push(pairing.player1Id, isBye ? '__bye__' : pairing.player2Id!, isBye ? 'bye' : (pairing.result.outcome1 as OponentDetall['outcome']));
-      if (!isBye) push(pairing.player2Id!, pairing.player1Id, pairing.result.outcome2 as OponentDetall['outcome']);
-    }
+  if (totes_fases.length === 0 || vista.standings.length === 0) {
+    return (
+      <div className="text-center py-20 text-ink-3">
+        <p className="text-sm">Calen jugadors i fases configurades per veure la classificació.</p>
+      </div>
+    );
   }
 
-  // ── Estadístiques per pestanyes ──────────────────────────────────────────────
+  // Mètriques que tenen columna pròpia: les preguntes marcades per al rànquing
+  // més l'spread, que és la que fa servir tothom.
+  const metriquesRanquing = [
+    'spread',
+    ...totesPreguntes.filter((q) => q.showInRanking && q.aggregate !== 'none').map((q) => q.key),
+  ].filter((key, i, all) => all.indexOf(key) === i);
 
-  // Scrabbles: total bingos per jugador
-  const scrabbleMap = new Map<string, { total: number; partides: number; maxPartida: number }>();
-  for (const p of totesPart) {
-    if (!p.outcome1) continue;
-    const registra = (pid: string, n: number | null) => {
-      if (!n && n !== 0) return;
-      const prev = scrabbleMap.get(pid) ?? { total: 0, partides: 0, maxPartida: 0 };
-      scrabbleMap.set(pid, {
-        total: prev.total + n,
-        partides: prev.partides + 1,
-        maxPartida: Math.max(prev.maxPartida, n),
-      });
-    };
-    registra(p.player1Id, p.p1Scrabbles);
-    if (p.player2Id) registra(p.player2Id, p.p2Scrabbles);
-  }
-  const rankingScrabbles = tots_jugadors
-    .map(j => ({ jugador: j, ...( scrabbleMap.get(j.id) ?? { total: 0, partides: 0, maxPartida: 0 }) }))
-    .filter(x => x.partides > 0)
-    .sort((a, b) => b.total - a.total || b.maxPartida - a.maxPartida);
+  const etiqueta = (key: string) =>
+    METRIC_LABELS[key] ?? totesPreguntes.find((q) => q.key === key)?.label ?? key;
 
-  // Millor jugada: max p1BestWordScore / p2BestWordScore per jugador
-  const jugadaMap = new Map<string, { paraula: string; punts: number; ronda: number; rival: string }>();
-  for (const p of totesPart) {
-    if (!p.outcome1) continue;
-    const actualitza = (pid: string, word: string | null, score: number | null, ronda: number, rivalId: string | null) => {
-      if (!word || !score) return;
-      const prev = jugadaMap.get(pid);
-      if (!prev || score > prev.punts) {
-        jugadaMap.set(pid, { paraula: word, punts: score, ronda, rival: rivalId ?? 'bye' });
-      }
-    };
-    actualitza(p.player1Id, p.p1BestWord, p.p1BestWordScore, p.roundNumber, p.player2Id);
-    if (p.player2Id) actualitza(p.player2Id, p.p2BestWord, p.p2BestWordScore, p.roundNumber, p.player1Id);
-  }
-  const rankingJugada = [...jugadaMap.entries()]
-    .map(([pid, d]) => ({ jugador: playerMap.get(pid)!, ...d }))
-    .filter(x => x.jugador)
-    .sort((a, b) => b.punts - a.punts);
+  const PESTANYES: { id: string; label: string }[] = [
+    { id: 'general', label: 'General' },
+    ...metriquesRanquing.filter((key) => key !== 'spread').map((key) => ({ id: key, label: etiqueta(key) })),
+    ...(vista.teamStandings ? [{ id: 'equips', label: 'Equips' }] : []),
+    ...(tots_grups.length > 0 ? [{ id: 'grups', label: 'Per grups' }] : []),
+  ];
+  const pestanya = PESTANYES.some((p) => p.id === sp.t) ? sp.t : 'general';
 
-  // Partida conjunta: p1Score + p2Score per aparellament
-  const partidesConjuntes = totesPart
-    .filter(p => p.outcome1 && p.player2Id && p.p1Score != null && p.p2Score != null)
-    .map(p => ({
-      ronda: p.roundNumber,
-      jugador1: playerMap.get(p.player1Id)!,
-      jugador2: playerMap.get(p.player2Id!)!,
-      p1Score: p.p1Score!,
-      p2Score: p.p2Score!,
-      total: p.p1Score! + p.p2Score!,
-    }))
-    .filter(x => x.jugador1 && x.jugador2)
-    .sort((a, b) => b.total - a.total);
-
-  // Partida individual: millor puntuació d'una sola partida per jugador
-  const individualMap = new Map<string, { punts: number; ronda: number; rival: string }>();
-  for (const p of totesPart) {
-    if (!p.outcome1) continue;
-    const actualitza = (pid: string, score: number | null, ronda: number, rivalId: string | null) => {
-      if (score == null) return;
-      const prev = individualMap.get(pid);
-      if (!prev || score > prev.punts) {
-        individualMap.set(pid, { punts: score, ronda, rival: rivalId ?? 'bye' });
-      }
-    };
-    actualitza(p.player1Id, p.p1Score, p.roundNumber, p.player2Id);
-    if (p.player2Id) actualitza(p.player2Id, p.p2Score, p.roundNumber, p.player1Id);
-  }
-  const rankingIndividual = [...individualMap.entries()]
-    .map(([pid, d]) => ({ jugador: playerMap.get(pid)!, ...d }))
-    .filter(x => x.jugador)
-    .sort((a, b) => b.punts - a.punts);
-
-  // Rànquings de preguntes personalitzades: suma (tipus "value") o millor
-  // instància (tipus "wordvalue"), calculats sobre les respostes de totes
-  // les partides jugades del torneig.
-  const pairingMap = new Map(totesPart.map(p => [p.id, p]));
-  const preguntesRanquingAnswers = preguntesRanquing.length > 0
-    ? await db.select().from(pairingAnswers).where(
-        inArray(pairingAnswers.questionId, preguntesRanquing.map(q => q.id))
-      )
-    : [];
-
-  interface RankingValueRow { jugador: typeof tots_jugadors[number]; total: number; partides: number }
-  interface RankingWordRow { jugador: typeof tots_jugadors[number]; text: string; punts: number; ronda: number; rival: string }
-
-  const customRankings = new Map<string, { question: typeof preguntesRanquing[number]; value?: RankingValueRow[]; word?: RankingWordRow[] }>();
-  for (const q of preguntesRanquing) {
-    const answersForQ = preguntesRanquingAnswers.filter(a => a.questionId === q.id);
-    if (q.type === 'wordvalue') {
-      const best = new Map<string, RankingWordRow>();
-      for (const a of answersForQ) {
-        const pairing = pairingMap.get(a.pairingId);
-        if (!pairing || a.player == null || !a.textValue || a.numberValue == null) continue;
-        const pid = a.player === 1 ? pairing.player1Id : pairing.player2Id;
-        const rivalId = a.player === 1 ? pairing.player2Id : pairing.player1Id;
-        const jugador = pid ? playerMap.get(pid) : undefined;
-        if (!jugador) continue;
-        const prev = best.get(pid!);
-        if (!prev || a.numberValue > prev.punts) {
-          best.set(pid!, { jugador, text: a.textValue, punts: a.numberValue, ronda: pairing.roundNumber, rival: rivalId ?? 'bye' });
-        }
-      }
-      customRankings.set(q.id, { question: q, word: [...best.values()].sort((a, b) => b.punts - a.punts) });
-    } else {
-      const totals = new Map<string, RankingValueRow>();
-      for (const a of answersForQ) {
-        const pairing = pairingMap.get(a.pairingId);
-        if (!pairing || a.player == null || a.numberValue == null) continue;
-        const pid = a.player === 1 ? pairing.player1Id : pairing.player2Id;
-        const jugador = pid ? playerMap.get(pid) : undefined;
-        if (!jugador) continue;
-        const prev = totals.get(pid!) ?? { jugador, total: 0, partides: 0 };
-        totals.set(pid!, { jugador, total: prev.total + a.numberValue, partides: prev.partides + 1 });
-      }
-      customRankings.set(q.id, { question: q, value: [...totals.values()].sort((a, b) => b.total - a.total) });
-    }
-  }
-
-  // ── Render ───────────────────────────────────────────────────────────────────
+  const avis = MODE_NOTICE[vista.mode];
 
   return (
     <div className="space-y-4">
-      {/* Pestanyes */}
-      <div className="flex gap-1 border-b border-border overflow-x-auto">
-        {PESTANYES.map(({ id: tid, label }) => (
-          <Link
-            key={tid}
-            href={`/campionat/${id}/classificacio?t=${tid}`}
-            className={`px-4 py-2 text-sm font-medium whitespace-nowrap border-b-2 transition-colors ${
-              pestanya === tid
-                ? 'border-accent text-ink font-semibold'
-                : 'border-transparent text-ink-3 hover:text-ink-2 hover:border-border'
-            }`}
-          >
-            {label}
-          </Link>
-        ))}
-      </div>
-
-      {/* ── General ── */}
-      {pestanya === 'general' && (() => {
-        // Columnes de desempat en l'ordre configurat (excloent 'wins', que ja és columna fixa)
-        const tbCols = tiebreakers
-          .map(t => ({ key: t, def: TIEBREAKER_COL[t] }))
-          .filter((x): x is { key: Tiebreaker; def: NonNullable<typeof TIEBREAKER_COL[Tiebreaker]> } => x.def !== null);
-        // Classes responsive: 1a → sm, 2a → md, resta → lg
-        const responsiveClass = (i: number) =>
-          i === 0 ? 'hidden sm:table-cell' : i === 1 ? 'hidden md:table-cell' : 'hidden lg:table-cell';
-
-        return (
-          <>
-            <p className="text-sm text-ink-3">
-              {rondesJugades} ronda{rondesJugades !== 1 ? 'es' : ''} computades
-              {' · '}
-              {standings.filter(s => s.gamesPlayed > 0).length} jugadors amb partides
-            </p>
-            <Card padding={false}>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide w-10">#</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Jugador</th>
-                      <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Pts</th>
-                      <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">V</th>
-                      <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">D</th>
-                      <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide hidden sm:table-cell">PJ</th>
-                      {tbCols.map(({ key, def }, i) => (
-                        <th key={key} className={`text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide ${responsiveClass(i)}`}>
-                          {def.label}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {standings.map((s) => {
-                      const jugador = playerMap.get(s.playerId);
-                      const isPodi = s.rank <= 3 && s.gamesPlayed > 0;
-                      return (
-                        <tr key={s.playerId} className={`${isPodi ? 'bg-accent-tint' : 'hover:bg-surface-2'} transition-colors`}>
-                          <td className="px-4 py-3">
-                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-display font-bold tabular-nums ${
-                              s.rank === 1 ? 'bg-accent text-surface' :
-                              s.rank === 2 ? 'bg-surface-2 text-ink-2' :
-                              s.rank === 3 ? 'bg-accent-ink text-surface' :
-                              'bg-surface-2 text-ink-3'
-                            }`}>
-                              {s.rank}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <Link href={`/campionat/${id}/jugadors/${s.playerId}`} className="flex items-center gap-2.5 group min-w-0">
-                              <span className="w-7 h-7 rounded-full bg-surface-2 flex items-center justify-center text-xs font-display font-semibold text-ink-2 flex-shrink-0">
-                                {(jugador?.name ?? '?')[0]?.toUpperCase()}
-                              </span>
-                              <span className="font-medium text-ink group-hover:text-accent-ink transition-colors truncate">
-                                {jugador?.name ?? '?'}
-                              </span>
-                              {!jugador?.isActive && <span className="text-xs text-ink-3 flex-shrink-0">Inactiu</span>}
-                            </Link>
-                          </td>
-                          <td className="px-3 py-3 text-center font-display font-bold text-ink tabular-nums">{s.points}</td>
-                          <td className="px-3 py-3 text-center text-win font-medium tabular-nums">{s.wins}</td>
-                          <td className="px-3 py-3 text-center text-loss font-medium tabular-nums">{s.losses}</td>
-                          <td className="px-3 py-3 text-center text-ink-3 hidden sm:table-cell tabular-nums">{s.gamesPlayed}</td>
-                          {tbCols.map(({ key, def }, i) => (
-                            <td key={key} className={`px-3 py-3 text-center tabular-nums ${responsiveClass(i)} ${
-                              def.className === 'spread'
-                                ? s.spread > 0 ? 'text-win font-medium' : s.spread < 0 ? 'text-loss font-medium' : 'text-ink-3'
-                                : 'text-ink-3'
-                            }`}>
-                              {def.cell(s)}
-                            </td>
-                          ))}
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-            <p className="text-xs text-ink-3 text-right">
-              Desempats: {tiebreakers.map(t => TIEBREAKER_LABEL[t]).join(' → ')}
-            </p>
-          </>
-        );
-      })()}
-
-      {/* ── Scrabbles ── */}
-      {pestanya === 'scrabbles' && (
-        <Card padding={false}>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide w-10">#</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Jugador</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Total</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide hidden sm:table-cell">Mitjana</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide hidden sm:table-cell">Màx. partida</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {rankingScrabbles.length === 0 ? (
-                  <tr><td colSpan={5} className="px-4 py-8 text-center text-ink-3 text-sm">Sense dades de scrabbles registrades</td></tr>
-                ) : rankingScrabbles.map((x, i) => (
-                  <tr key={x.jugador.id} className={`${i < 3 ? 'bg-accent-tint' : 'hover:bg-surface-2'} transition-colors`}>
-                    <td className="px-4 py-3">
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                        i === 0 ? 'bg-accent text-surface' :
-                        i === 1 ? 'bg-surface-2 text-ink-2' :
-                        i === 2 ? 'bg-accent-ink text-surface' :
-                        'bg-surface-2 text-ink-3'
-                      }`}>{i + 1}</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Link href={`/campionat/${id}/jugadors/${x.jugador.id}`} className="font-medium text-ink hover:text-accent-ink transition-colors">
-                        {x.jugador.name}
-                      </Link>
-                    </td>
-                    <td className="px-3 py-3 text-center font-bold text-ink">{x.total}</td>
-                    <td className="px-3 py-3 text-center text-ink-3 hidden sm:table-cell">
-                      {(x.total / x.partides).toFixed(2)}
-                    </td>
-                    <td className="px-3 py-3 text-center text-ink-3 hidden sm:table-cell">{x.maxPartida}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+      {avis && (
+        <p className="text-xs text-ink-3 bg-surface-2 border border-border rounded-lg px-3 py-2">
+          {avis}
+          {vista.mode === 'frozen_at' && vista.frozenRound !== null && ` Última ronda inclosa: ${vista.frozenRound}.`}
+        </p>
       )}
 
-      {/* ── Millor jugada ── */}
-      {pestanya === 'jugada' && (
-        <Card padding={false}>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide w-10">#</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Jugador</th>
-                  <th className="text-left px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Paraula</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Punts</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide hidden sm:table-cell">Ronda</th>
-                  <th className="text-left px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide hidden md:table-cell">Rival</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {rankingJugada.length === 0 ? (
-                  <tr><td colSpan={6} className="px-4 py-8 text-center text-ink-3 text-sm">Sense dades de millors jugades registrades</td></tr>
-                ) : rankingJugada.map((x, i) => (
-                  <tr key={x.jugador.id} className={`${i < 3 ? 'bg-accent-tint' : 'hover:bg-surface-2'} transition-colors`}>
-                    <td className="px-4 py-3">
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                        i === 0 ? 'bg-accent text-surface' :
-                        i === 1 ? 'bg-surface-2 text-ink-2' :
-                        i === 2 ? 'bg-accent-ink text-surface' :
-                        'bg-surface-2 text-ink-3'
-                      }`}>{i + 1}</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Link href={`/campionat/${id}/jugadors/${x.jugador.id}`} className="font-medium text-ink hover:text-accent-ink transition-colors">
-                        {x.jugador.name}
-                      </Link>
-                    </td>
-                    <td className="px-3 py-3 font-mono font-semibold text-ink-2 uppercase">{x.paraula}</td>
-                    <td className="px-3 py-3 text-center font-bold text-accent-ink">{x.punts}</td>
-                    <td className="px-3 py-3 text-center text-ink-3 hidden sm:table-cell">{x.ronda}</td>
-                    <td className="px-3 py-3 text-ink-3 hidden md:table-cell">
-                      {playerMap.get(x.rival)?.name ?? (x.rival === 'bye' ? 'Bye' : '?')}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+      {PESTANYES.length > 1 && (
+        <nav className="flex gap-1.5 overflow-x-auto pb-1">
+          {PESTANYES.map((p) => (
+            <Link
+              key={p.id}
+              href={`/campionat/${id}/classificacio${p.id === 'general' ? '' : `?t=${p.id}`}`}
+              className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
+                pestanya === p.id
+                  ? 'bg-accent text-surface'
+                  : 'bg-surface-2 text-ink-2 hover:text-ink'
+              }`}
+            >
+              {p.label}
+            </Link>
+          ))}
+        </nav>
       )}
 
-      {/* ── Partida conjunta ── */}
-      {pestanya === 'conjunta' && (
+      {pestanya === 'equips' && vista.teamStandings ? (
         <Card padding={false}>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide w-10">#</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide hidden sm:table-cell">Ronda</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Jugadors</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {partidesConjuntes.length === 0 ? (
-                  <tr><td colSpan={4} className="px-4 py-8 text-center text-ink-3 text-sm">Sense partides registrades</td></tr>
-                ) : partidesConjuntes.map((x, i) => (
-                  <tr key={`${x.jugador1.id}-${x.ronda}`} className={`${i < 3 ? 'bg-accent-tint' : 'hover:bg-surface-2'} transition-colors`}>
-                    <td className="px-4 py-3">
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                        i === 0 ? 'bg-accent text-surface' :
-                        i === 1 ? 'bg-surface-2 text-ink-2' :
-                        i === 2 ? 'bg-accent-ink text-surface' :
-                        'bg-surface-2 text-ink-3'
-                      }`}>{i + 1}</div>
-                    </td>
-                    <td className="px-3 py-3 text-center text-ink-3 hidden sm:table-cell">{x.ronda}</td>
-                    <td className="px-4 py-3">
-                      <div className="flex flex-wrap items-baseline gap-x-1 gap-y-0.5">
-                        <span className="font-medium text-ink truncate max-w-[120px]">{x.jugador1.name}</span>
-                        <span className="text-ink-3 text-xs">·</span>
-                        <span className="font-medium text-ink truncate max-w-[120px]">{x.jugador2.name}</span>
-                        <span className="text-xs text-ink-3 whitespace-nowrap">({x.p1Score}+{x.p2Score})</span>
-                      </div>
-                    </td>
-                    <td className="px-3 py-3 text-center font-bold text-accent-ink">{x.total}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <ul className="divide-y divide-border">
+            {vista.teamStandings.map((equip) => (
+              <li key={equip.teamId} className="flex items-center gap-3 px-4 py-3">
+                <span className="w-7 text-center font-display font-bold text-ink-2 tabular-nums">{equip.rank}</span>
+                <span className="flex-1 font-medium text-ink truncate">{equip.name}</span>
+                <span className="text-xs text-ink-3">{equip.countedEntryIds.length} membres</span>
+                <span className="font-display font-bold text-ink tabular-nums">{formatNumber(equip.points)}</span>
+              </li>
+            ))}
+          </ul>
         </Card>
-      )}
-
-      {/* ── Desempats (debug) ── */}
-      {pestanya === 'desempats' && (
+      ) : pestanya === 'grups' ? (
         <div className="space-y-4">
-          <p className="text-xs text-ink-3">
-            Pts oponent = punts de torneig finals de l'oponent (victòria=1, empat=0.5, derrota=0, BYE fictici=0.5).
-            Les files ombrejades s'exclouen del Buchholz medià.
-          </p>
-          {standings.filter(s => s.gamesPlayed > 0).map(s => {
-            const jugador = playerMap.get(s.playerId);
-            if (!jugador) return null;
-            const detalls = (breakdownMap.get(s.playerId) ?? []).slice().sort((a, b) => a.ronda - b.ronda);
-            const scores = detalls.map(d => d.oponentPts);
-            const buchholz = scores.reduce((a, b) => a + b, 0);
-
-            let exclMinIdx = -1, exclMaxIdx = -1;
-            if (scores.length >= 3) {
-              const minVal = Math.min(...scores);
-              const maxVal = Math.max(...scores);
-              exclMinIdx = scores.indexOf(minVal);
-              exclMaxIdx = scores.lastIndexOf(maxVal);
-              if (exclMaxIdx === exclMinIdx) {
-                const next = scores.indexOf(maxVal, exclMinIdx + 1);
-                exclMaxIdx = next !== -1 ? next : exclMinIdx === 0 ? 1 : 0;
-              }
-            }
-
-            const median = scores.filter((_, i) => i !== exclMinIdx && i !== exclMaxIdx).reduce((a, b) => a + b, 0);
-            const berger = detalls.reduce((acc, d) => {
-              if (d.outcome === 'win') return acc + d.oponentPts;
-              if (d.outcome === 'draw') return acc + d.oponentPts * 0.5;
-              return acc;
-            }, 0);
-
+          {tots_grups.map((grup) => {
+            const delGrup = vista.standings.filter((s) => s.groupId === grup.id);
+            if (delGrup.length === 0) return null;
             return (
-              <Card key={s.playerId} padding={false}>
-                <div className="px-4 py-2 border-b border-border flex items-center justify-between gap-2 flex-wrap">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-bold text-ink-3 w-5 text-center">{s.rank}</span>
-                    <span className="font-semibold text-ink">{jugador.name}</span>
-                    <span className="text-xs text-ink-3">{s.points} pts</span>
-                  </div>
-                  <div className="flex gap-3 text-xs tabular-nums">
-                    <span className="text-ink-3">Buch <strong className="text-ink-2">{buchholz.toFixed(1)}</strong></span>
-                    <span className="text-ink-3">Med <strong className="text-ink-2">{median.toFixed(1)}</strong></span>
-                    <span className="text-ink-3">Berg <strong className="text-ink-2">{berger.toFixed(1)}</strong></span>
-                  </div>
-                </div>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-xs">
-                    <thead>
-                      <tr className="bg-surface-2 border-b border-border">
-                        <th className="text-left px-3 py-1.5 font-medium text-ink-3">R</th>
-                        <th className="text-left px-3 py-1.5 font-medium text-ink-3">Oponent</th>
-                        <th className="text-center px-2 py-1.5 font-medium text-ink-3">Res</th>
-                        <th className="text-center px-2 py-1.5 font-medium text-ink-3">Pts op.</th>
-                        <th className="text-center px-2 py-1.5 font-medium text-ink-3">→ Buchholz</th>
-                        <th className="text-center px-2 py-1.5 font-medium text-ink-3">→ Berger</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border">
-                      {detalls.map((d, i) => {
-                        const exclos = i === exclMinIdx || i === exclMaxIdx;
-                        const bergerContrib = d.outcome === 'win' ? d.oponentPts : d.outcome === 'draw' ? d.oponentPts * 0.5 : 0;
-                        return (
-                          <tr key={i} className={exclos ? 'bg-surface-2 opacity-40' : ''}>
-                            <td className="px-3 py-1.5 text-ink-3">{d.ronda}</td>
-                            <td className="px-3 py-1.5 font-medium text-ink-2">
-                              {d.oponentNom}
-                              {i === exclMinIdx && <span className="text-ink-3 ml-1">(−mín)</span>}
-                              {i === exclMaxIdx && <span className="text-ink-3 ml-1">(−màx)</span>}
-                            </td>
-                            <td className="px-2 py-1.5 text-center">
-                              <span className={`font-bold ${
-                                d.outcome === 'win' ? 'text-win' :
-                                d.outcome === 'loss' ? 'text-loss' :
-                                d.outcome === 'draw' ? 'text-accent-ink' : 'text-ink-3'
-                              }`}>
-                                {d.outcome === 'win' ? 'V' : d.outcome === 'loss' ? 'D' : d.outcome === 'draw' ? 'E' : 'BYE'}
-                              </span>
-                            </td>
-                            <td className="px-2 py-1.5 text-center tabular-nums text-ink-2">{d.oponentPts.toFixed(1)}</td>
-                            <td className="px-2 py-1.5 text-center tabular-nums text-ink-3">
-                              {exclos ? <span className="line-through text-ink-3">{d.oponentPts.toFixed(1)}</span> : `+${d.oponentPts.toFixed(1)}`}
-                            </td>
-                            <td className="px-2 py-1.5 text-center tabular-nums text-ink-3">
-                              {bergerContrib > 0 ? `+${bergerContrib.toFixed(1)}` : '—'}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                    <tfoot>
-                      <tr className="border-t border-border bg-surface-2 font-semibold">
-                        <td colSpan={3} className="px-3 py-1.5 text-ink-3">Total</td>
-                        <td className="px-2 py-1.5 text-center text-ink-2 tabular-nums">{buchholz.toFixed(1)}</td>
-                        <td className="px-2 py-1.5 text-center text-ink-2 tabular-nums">{median.toFixed(1)}</td>
-                        <td className="px-2 py-1.5 text-center text-ink-2 tabular-nums">{berger.toFixed(1)}</td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              </Card>
+              <div key={grup.id}>
+                <h3 className="text-xs font-semibold text-ink-3 uppercase tracking-wide px-1 mb-2">
+                  Grup {grup.name}
+                </h3>
+                <TaulaClassificacio
+                  tournamentId={id}
+                  standings={delGrup.map((s, i) => ({ ...s, rank: i + 1 }))}
+                  metriques={metriquesRanquing}
+                  etiqueta={etiqueta}
+                />
+              </div>
             );
           })}
         </div>
+      ) : pestanya === 'general' ? (
+        <TaulaClassificacio
+          tournamentId={id}
+          standings={vista.standings}
+          metriques={metriquesRanquing}
+          etiqueta={etiqueta}
+        />
+      ) : (
+        <RanquingMetrica
+          tournamentId={id}
+          standings={vista.standings}
+          metrica={pestanya}
+          etiqueta={etiqueta(pestanya)}
+        />
       )}
-
-      {/* ── Partida individual ── */}
-      {pestanya === 'individual' && (
-        <Card padding={false}>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border">
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide w-10">#</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Jugador</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Punts</th>
-                  <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide hidden sm:table-cell">Ronda</th>
-                  <th className="text-left px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide hidden md:table-cell">Rival</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-border">
-                {rankingIndividual.length === 0 ? (
-                  <tr><td colSpan={5} className="px-4 py-8 text-center text-ink-3 text-sm">Sense partides registrades</td></tr>
-                ) : rankingIndividual.map((x, i) => (
-                  <tr key={x.jugador.id} className={`${i < 3 ? 'bg-accent-tint' : 'hover:bg-surface-2'} transition-colors`}>
-                    <td className="px-4 py-3">
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                        i === 0 ? 'bg-accent text-surface' :
-                        i === 1 ? 'bg-surface-2 text-ink-2' :
-                        i === 2 ? 'bg-accent-ink text-surface' :
-                        'bg-surface-2 text-ink-3'
-                      }`}>{i + 1}</div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Link href={`/campionat/${id}/jugadors/${x.jugador.id}`} className="font-medium text-ink hover:text-accent-ink transition-colors">
-                        {x.jugador.name}
-                      </Link>
-                    </td>
-                    <td className="px-3 py-3 text-center font-bold text-accent-ink">{x.punts}</td>
-                    <td className="px-3 py-3 text-center text-ink-3 hidden sm:table-cell">{x.ronda}</td>
-                    <td className="px-3 py-3 text-ink-3 hidden md:table-cell">
-                      {playerMap.get(x.rival)?.name ?? (x.rival === 'bye' ? 'Bye' : '?')}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
-      )}
-
-      {/* ── Preguntes personalitzades ── */}
-      {pestanya.startsWith('custom:') && (() => {
-        const qid = pestanya.slice('custom:'.length);
-        const ranking = customRankings.get(qid);
-        if (!ranking) return null;
-        const { question, value, word } = ranking;
-
-        if (word) {
-          return (
-            <Card padding={false}>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="border-b border-border">
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide w-10">#</th>
-                      <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Jugador</th>
-                      <th className="text-left px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">{question.label1 ?? 'Valor'}</th>
-                      <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">{question.label2 ?? 'Punts'}</th>
-                      <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide hidden sm:table-cell">Ronda</th>
-                      <th className="text-left px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide hidden md:table-cell">Rival</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-border">
-                    {word.length === 0 ? (
-                      <tr><td colSpan={6} className="px-4 py-8 text-center text-ink-3 text-sm">Sense dades registrades</td></tr>
-                    ) : word.map((x, i) => (
-                      <tr key={x.jugador.id} className={`${i < 3 ? 'bg-accent-tint' : 'hover:bg-surface-2'} transition-colors`}>
-                        <td className="px-4 py-3">
-                          <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                            i === 0 ? 'bg-accent text-surface' :
-                            i === 1 ? 'bg-surface-2 text-ink-2' :
-                            i === 2 ? 'bg-accent-ink text-surface' :
-                            'bg-surface-2 text-ink-3'
-                          }`}>{i + 1}</div>
-                        </td>
-                        <td className="px-4 py-3">
-                          <Link href={`/campionat/${id}/jugadors/${x.jugador.id}`} className="font-medium text-ink hover:text-accent-ink transition-colors">
-                            {x.jugador.name}
-                          </Link>
-                        </td>
-                        <td className="px-3 py-3 font-mono font-semibold text-ink-2 uppercase">{x.text}</td>
-                        <td className="px-3 py-3 text-center font-bold text-accent-ink">{x.punts}</td>
-                        <td className="px-3 py-3 text-center text-ink-3 hidden sm:table-cell">{x.ronda}</td>
-                        <td className="px-3 py-3 text-ink-3 hidden md:table-cell">
-                          {playerMap.get(x.rival)?.name ?? (x.rival === 'bye' ? 'Bye' : '?')}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </Card>
-          );
-        }
-
-        return (
-          <Card padding={false}>
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="border-b border-border">
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide w-10">#</th>
-                    <th className="text-left px-4 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Jugador</th>
-                    <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide">Total</th>
-                    <th className="text-center px-3 py-3 text-xs font-semibold text-ink-3 uppercase tracking-wide hidden sm:table-cell">Mitjana</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  {(value ?? []).length === 0 ? (
-                    <tr><td colSpan={4} className="px-4 py-8 text-center text-ink-3 text-sm">Sense dades registrades</td></tr>
-                  ) : (value ?? []).map((x, i) => (
-                    <tr key={x.jugador.id} className={`${i < 3 ? 'bg-accent-tint' : 'hover:bg-surface-2'} transition-colors`}>
-                      <td className="px-4 py-3">
-                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${
-                          i === 0 ? 'bg-accent text-surface' :
-                          i === 1 ? 'bg-surface-2 text-ink-2' :
-                          i === 2 ? 'bg-accent-ink text-surface' :
-                          'bg-surface-2 text-ink-3'
-                        }`}>{i + 1}</div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Link href={`/campionat/${id}/jugadors/${x.jugador.id}`} className="font-medium text-ink hover:text-accent-ink transition-colors">
-                          {x.jugador.name}
-                        </Link>
-                      </td>
-                      <td className="px-3 py-3 text-center font-bold text-ink">{x.total}</td>
-                      <td className="px-3 py-3 text-center text-ink-3 hidden sm:table-cell">
-                        {(x.total / x.partides).toFixed(2)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </Card>
-        );
-      })()}
     </div>
   );
+}
+
+function TaulaClassificacio({
+  tournamentId,
+  standings,
+  metriques,
+  etiqueta,
+}: {
+  tournamentId: string;
+  standings: StandingRow[];
+  metriques: string[];
+  etiqueta: (key: string) => string;
+}) {
+  return (
+    <Card padding={false}>
+      {/* Al mòbil la taula llisca dins del seu contenidor i no arrossega la pàgina */}
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-[11px] uppercase tracking-wide text-ink-3 border-b border-border">
+              <th className="px-3 py-2 font-semibold">#</th>
+              <th className="px-2 py-2 font-semibold">Jugador</th>
+              <th className="px-2 py-2 font-semibold text-right">PJ</th>
+              <th className="px-2 py-2 font-semibold text-right">V-E-D</th>
+              <th className="px-2 py-2 font-semibold text-right">Punts</th>
+              {metriques.map((key) => (
+                <th key={key} className="px-2 py-2 font-semibold text-right whitespace-nowrap">
+                  {etiqueta(key)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-border">
+            {standings.map((s) => (
+              <tr key={s.entryId} className="hover:bg-surface-2 transition-colors">
+                <td className="px-3 py-2.5 font-display font-bold text-ink-2 tabular-nums">{s.rank}</td>
+                <td className="px-2 py-2.5 min-w-[9rem]">
+                  <Link
+                    href={`/campionat/${tournamentId}/jugadors/${s.entryId}`}
+                    className="font-medium text-ink hover:text-accent-ink transition-colors"
+                  >
+                    {s.displayName}
+                  </Link>
+                </td>
+                <td className="px-2 py-2.5 text-right tabular-nums text-ink-3">{s.gamesPlayed}</td>
+                <td className="px-2 py-2.5 text-right tabular-nums text-ink-3 whitespace-nowrap">
+                  {s.wins}-{s.draws}-{s.losses}
+                </td>
+                <td className="px-2 py-2.5 text-right font-display font-bold text-ink tabular-nums">
+                  {formatNumber(s.points)}
+                </td>
+                {metriques.map((key) => (
+                  <td key={key} className="px-2 py-2.5 text-right tabular-nums text-ink-2">
+                    {formatMetric(key, s.metrics[key] ?? 0)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </Card>
+  );
+}
+
+/** Rànquing d'una sola mètrica, ordenat per ella. */
+function RanquingMetrica({
+  tournamentId,
+  standings,
+  metrica,
+  etiqueta,
+}: {
+  tournamentId: string;
+  standings: StandingRow[];
+  metrica: string;
+  etiqueta: string;
+}) {
+  const ordenat = [...standings]
+    .filter((s) => (s.metrics[metrica] ?? 0) !== 0 || s.gamesPlayed > 0)
+    .sort((a, b) => (b.metrics[metrica] ?? 0) - (a.metrics[metrica] ?? 0));
+
+  return (
+    <Card padding={false}>
+      <ul className="divide-y divide-border">
+        {ordenat.map((s, i) => (
+          <li key={s.entryId} className="flex items-center gap-3 px-4 py-3">
+            <span className="w-7 text-center font-display font-bold text-ink-2 tabular-nums">{i + 1}</span>
+            <Link
+              href={`/campionat/${tournamentId}/jugadors/${s.entryId}`}
+              className="flex-1 font-medium text-ink hover:text-accent-ink transition-colors truncate"
+            >
+              {s.displayName}
+            </Link>
+            {s.gamesPlayed > 0 && <Badge color="gray">{s.gamesPlayed} PJ</Badge>}
+            <span className="font-display font-bold text-ink tabular-nums">
+              {formatMetric(metrica, s.metrics[metrica] ?? 0)}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {ordenat.length === 0 && (
+        <p className="text-sm text-ink-3 text-center py-10">Encara no hi ha dades de {etiqueta.toLowerCase()}.</p>
+      )}
+    </Card>
+  );
+}
+
+function formatMetric(key: string, value: number): string {
+  if (key === 'spread' && value > 0) return `+${formatNumber(value)}`;
+  return formatNumber(value);
+}
+
+/** Punts i spread poden tenir decimals (§12.10 i §12.11); es mostren sense soroll. */
+function formatNumber(value: number): string {
+  return Number.isInteger(value) ? value.toString() : value.toFixed(1);
 }
