@@ -1,125 +1,227 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/db';
-import { pairings, rounds, questionDefinitions, pairingAnswers } from '@/db/schema';
-import { eq, and, isNull, inArray } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { v4 as uuid } from 'uuid';
-import type { GameOutcome } from '@/lib/pairing/types';
+import { db } from '@/db';
+import {
+  matchAnswers,
+  matchParticipants,
+  matchRevisions,
+  matches,
+  phases,
+  questionDefinitions,
+  rounds,
+} from '@/db/schema';
+import { canManageTournament, canReportResult, getViewer } from '@/lib/authz';
+import { scoreMatch } from '@/lib/pairing/scoring';
 
 type Params = { params: Promise<{ tournamentId: string; roundId: string }> };
 
+interface ParticipantInput {
+  entryId: string;
+  score?: number | null;
+  rank?: number | null;
+}
+
 interface AnswerInput {
   questionId: string;
-  player: 1 | 2 | null;
+  /** null quan la pregunta és d'àmbit `match`. */
+  entryId?: string | null;
   textValue?: string | null;
   numberValue?: number | null;
   imageUrl?: string | null;
 }
 
 /**
- * PUT /api/tournaments/:tid/rounds/:rid/result
- * Body: { pairingId, answers: AnswerInput[], location?, comments? }
+ * PUT — Registra o corregeix el resultat d'una partida.
  *
- * `answers` cobreix TANT les 5 preguntes bàsiques (identificades pel seu
- * `key` a question_definitions: score/bingos/best_word/sheet_image/
- * board_image, que es desen a les columnes fixes de `pairings` d'on beu el
- * motor d'aparellaments) COM les preguntes personalitzades del director
- * (es desen a `pairing_answers`).
+ * Qui hi pot escriure (docs/pla-rols.md §15.6 i §15.7):
+ *  - l'admin, **sempre**, encara que la ronda estigui tancada;
+ *  - un jugador, només les seves partides i mentre la ronda sigui oberta.
+ *
+ * Tot el que entra queda amb traça a `match_revisions`: qui era, des d'on i
+ * què deia abans. És el que permet explicar després una classificació que ha
+ * canviat.
  */
 export async function PUT(req: Request, { params }: Params) {
   const { tournamentId, roundId } = await params;
-  const body = await req.json();
-  const { pairingId, answers, location, comments } = body as {
-    pairingId?: string; answers?: AnswerInput[]; location?: string; comments?: string;
+  const body = await req.json().catch(() => ({}));
+  const { matchId, participants, answers, location, comments } = body as {
+    matchId?: string;
+    participants?: ParticipantInput[];
+    answers?: AnswerInput[];
+    location?: string;
+    comments?: string;
   };
 
-  if (!pairingId) return NextResponse.json({ error: 'Cal pairingId' }, { status: 400 });
+  if (!matchId) return NextResponse.json({ error: 'Cal matchId' }, { status: 400 });
 
-  const [pairing] = await db.select().from(pairings).where(eq(pairings.id, pairingId));
-  if (!pairing) return NextResponse.json({ error: 'Aparellament no trobat' }, { status: 404 });
-  if (pairing.roundId !== roundId) return NextResponse.json({ error: 'L\'aparellament no pertany a aquesta ronda' }, { status: 400 });
-
-  const [round] = await db.select().from(rounds).where(eq(rounds.id, roundId));
-  if (round?.isComplete) {
-    return NextResponse.json({ error: 'La ronda ja està tancada' }, { status: 409 });
+  const [match] = await db.select().from(matches).where(eq(matches.id, matchId));
+  if (!match) return NextResponse.json({ error: 'Partida no trobada' }, { status: 404 });
+  if (match.roundId !== roundId) {
+    return NextResponse.json({ error: 'La partida no pertany a aquesta ronda' }, { status: 400 });
   }
 
-  // Si és un bye, el resultat és automàtic
-  if (pairing.player2Id === null) {
-    await db.update(pairings)
-      .set({ outcome1: 'bye', p1Score: null, p2Score: null, reportedAt: new Date() })
-      .where(eq(pairings.id, pairingId));
-    return NextResponse.json({ ok: true });
-  }
+  const [round] = await db
+    .select()
+    .from(rounds)
+    .where(and(eq(rounds.id, roundId), eq(rounds.tournamentId, tournamentId)));
+  if (!round) return NextResponse.json({ error: 'Ronda no trobada' }, { status: 404 });
 
-  const allAnswers = Array.isArray(answers) ? answers : [];
-  const questionIds = [...new Set(allAnswers.map(a => a.questionId))];
-  const questions = questionIds.length > 0
-    ? await db.select().from(questionDefinitions).where(
-        and(eq(questionDefinitions.tournamentId, tournamentId), inArray(questionDefinitions.id, questionIds))
-      )
-    : [];
-  const questionMap = new Map(questions.map(q => [q.id, q]));
+  const existingParticipants = await db
+    .select()
+    .from(matchParticipants)
+    .where(eq(matchParticipants.matchId, matchId))
+    .orderBy(matchParticipants.seat);
 
-  const byKey = (key: string, player: 1 | 2 | null) =>
-    allAnswers.find(a => questionMap.get(a.questionId)?.key === key && a.player === player);
+  const viewer = await getViewer(tournamentId);
+  const managesTournament = viewer.account
+    ? await canManageTournament(viewer.account, tournamentId)
+    : false;
 
-  const scoreP1 = byKey('score', 1)?.numberValue;
-  const scoreP2 = byKey('score', 2)?.numberValue;
-  if (scoreP1 == null || scoreP2 == null) {
-    return NextResponse.json({ error: 'Cal el resultat dels dos jugadors' }, { status: 400 });
-  }
+  const allowed = canReportResult(viewer, {
+    participantEntryIds: existingParticipants.map((p) => p.entryId),
+    roundIsOpen: round.status === 'open',
+    managesTournament,
+  });
 
-  let outcome1: GameOutcome;
-  let outcome2: GameOutcome;
-  if (scoreP1 > scoreP2) { outcome1 = 'win'; outcome2 = 'loss'; }
-  else if (scoreP2 > scoreP1) { outcome1 = 'loss'; outcome2 = 'win'; }
-  else { outcome1 = 'draw'; outcome2 = 'draw'; }
-
-  const bingosP1 = byKey('bingos', 1)?.numberValue;
-  const bingosP2 = byKey('bingos', 2)?.numberValue;
-  const bestWordP1 = byKey('best_word', 1);
-  const bestWordP2 = byKey('best_word', 2);
-  const sheetImage = byKey('sheet_image', null);
-  const boardImage = byKey('board_image', null);
-
-  await db.update(pairings).set({
-    p1Score: scoreP1,
-    p2Score: scoreP2,
-    outcome1,
-    outcome2,
-    p1Scrabbles: bingosP1 ?? null,
-    p2Scrabbles: bingosP2 ?? null,
-    p1BestWord: bestWordP1?.textValue ?? null,
-    p2BestWord: bestWordP2?.textValue ?? null,
-    p1BestWordScore: bestWordP1?.numberValue ?? null,
-    p2BestWordScore: bestWordP2?.numberValue ?? null,
-    location: location ?? null,
-    comments: comments ?? null,
-    sheetImageUrl: sheetImage?.imageUrl ?? null,
-    boardImageUrl: boardImage?.imageUrl ?? null,
-    reportedAt: new Date(),
-  }).where(eq(pairings.id, pairingId));
-
-  // Respostes de preguntes personalitzades (no bàsiques) -> taula genèrica
-  const customAnswers = allAnswers.filter(a => !questionMap.get(a.questionId)?.isBuiltin);
-  for (const a of customAnswers) {
-    const playerFilter = a.player === null ? isNull(pairingAnswers.player) : eq(pairingAnswers.player, a.player);
-    await db.delete(pairingAnswers).where(
-      and(eq(pairingAnswers.pairingId, pairingId), eq(pairingAnswers.questionId, a.questionId), playerFilter)
+  if (!allowed) {
+    return NextResponse.json(
+      {
+        error:
+          round.status === 'open'
+            ? 'Només pots enviar el resultat de les teves partides'
+            : 'La ronda està tancada: només el director pot corregir el resultat',
+      },
+      { status: 403 }
     );
-    const hasValue = a.textValue != null || a.numberValue != null || a.imageUrl != null;
-    if (hasValue) {
-      await db.insert(pairingAnswers).values({
-        id: uuid(),
-        pairingId,
-        questionId: a.questionId,
-        player: a.player,
-        textValue: a.textValue ?? null,
-        numberValue: a.numberValue ?? null,
-        imageUrl: a.imageUrl ?? null,
-      });
-    }
   }
 
-  return NextResponse.json({ ok: true });
+  const [phase] = await db.select().from(phases).where(eq(phases.id, round.phaseId));
+  if (!phase) return NextResponse.json({ error: 'Fase no trobada' }, { status: 404 });
+
+  const before = existingParticipants.map((p) => ({
+    entryId: p.entryId,
+    rank: p.rank,
+    score: p.score,
+    points: p.points,
+  }));
+
+  // El bye no es reporta: ja té resultat des que es generen els aparellaments.
+  if (existingParticipants.length === 1) {
+    return NextResponse.json({ ok: true, bye: true });
+  }
+
+  const inputByEntry = new Map((participants ?? []).map((p) => [p.entryId, p]));
+  const missing = existingParticipants.filter((p) => {
+    const input = inputByEntry.get(p.entryId);
+    return !input || (input.score == null && input.rank == null);
+  });
+  if (missing.length > 0) {
+    return NextResponse.json(
+      { error: 'Cal el resultat de tots els participants de la partida' },
+      { status: 400 }
+    );
+  }
+
+  // Posicions, resultats i punts es deriven en un sol lloc (§12.10).
+  const scored = scoreMatch(
+    existingParticipants.map((p) => ({
+      entryId: p.entryId,
+      score: inputByEntry.get(p.entryId)?.score ?? null,
+      rank: inputByEntry.get(p.entryId)?.rank ?? null,
+    })),
+    phase.scoring
+  );
+
+  for (const participant of existingParticipants) {
+    const result = scored.find((s) => s.entryId === participant.entryId);
+    if (!result) continue;
+    await db
+      .update(matchParticipants)
+      .set({ rank: result.rank, score: result.score, outcome: result.outcome, points: result.points })
+      .where(eq(matchParticipants.id, participant.id));
+  }
+
+  await db
+    .update(matches)
+    .set({ location: location ?? null, comments: comments ?? null })
+    .where(eq(matches.id, matchId));
+
+  await saveAnswers(tournamentId, matchId, existingParticipants, answers ?? []);
+
+  await db.insert(matchRevisions).values({
+    id: uuid(),
+    matchId,
+    actorKind: viewer.kind,
+    actorAccountId: viewer.account?.id ?? null,
+    actorEntryId: viewer.entryId ?? null,
+    deviceId: viewer.deviceId ?? null,
+    createdAt: new Date(),
+    before,
+    after: scored.map((s) => ({ entryId: s.entryId, rank: s.rank, score: s.score, points: s.points })),
+  });
+
+  return NextResponse.json({ ok: true, participants: scored });
+}
+
+/**
+ * Desa les respostes de les preguntes.
+ *
+ * Ja no hi ha columnes fixes d'Scrabble: bingos, millor jugada i fotos són
+ * respostes com qualsevol altra, i les que tenen agregació alimenten les
+ * mètriques de la classificació (§12.1).
+ */
+async function saveAnswers(
+  tournamentId: string,
+  matchId: string,
+  participants: Array<{ id: string; entryId: string }>,
+  answers: AnswerInput[]
+) {
+  if (answers.length === 0) return;
+
+  const questionIds = [...new Set(answers.map((a) => a.questionId))];
+  const questions = await db
+    .select()
+    .from(questionDefinitions)
+    .where(
+      and(
+        eq(questionDefinitions.tournamentId, tournamentId),
+        inArray(questionDefinitions.id, questionIds)
+      )
+    );
+  const known = new Set(questions.map((q) => q.id));
+  const participantIdByEntry = new Map(participants.map((p) => [p.entryId, p.id]));
+
+  for (const answer of answers) {
+    if (!known.has(answer.questionId)) continue;
+
+    const participantId = answer.entryId ? participantIdByEntry.get(answer.entryId) ?? null : null;
+    if (answer.entryId && !participantId) continue;
+
+    await db
+      .delete(matchAnswers)
+      .where(
+        and(
+          eq(matchAnswers.matchId, matchId),
+          eq(matchAnswers.questionId, answer.questionId),
+          participantId === null
+            ? isNull(matchAnswers.participantId)
+            : eq(matchAnswers.participantId, participantId)
+        )
+      );
+
+    const hasValue =
+      answer.textValue != null || answer.numberValue != null || answer.imageUrl != null;
+    if (!hasValue) continue;
+
+    await db.insert(matchAnswers).values({
+      id: uuid(),
+      matchId,
+      participantId,
+      questionId: answer.questionId,
+      textValue: answer.textValue ?? null,
+      numberValue: answer.numberValue ?? null,
+      imageUrl: answer.imageUrl ?? null,
+    });
+  }
 }

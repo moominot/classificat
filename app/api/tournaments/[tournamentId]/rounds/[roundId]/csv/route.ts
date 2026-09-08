@@ -1,67 +1,67 @@
 import { NextResponse } from 'next/server';
+import { and, eq } from 'drizzle-orm';
 import { db } from '@/db';
-import { rounds, pairings, players } from '@/db/schema';
-import { eq, and } from 'drizzle-orm';
-import type { GameOutcome } from '@/lib/pairing/types';
+import { entries, matchParticipants, people, phases, rounds } from '@/db/schema';
+import { requireTournamentAccess } from '@/lib/authz';
+import { loadRoundMatches } from '@/lib/db-helpers';
+import { scoreMatch } from '@/lib/pairing/scoring';
 
 type Params = { params: Promise<{ tournamentId: string; roundId: string }> };
 
-const CSV_HEADERS =
-  'id,taula,jugador1,jugador2,punts_j1,punts_j2,bingos_j1,bingos_j2,millor_j1,pts_millor_j1,millor_j2,pts_millor_j2,localitat,comentaris';
+/**
+ * CSV de resultats en format llarg: **una fila per participant**.
+ *
+ * Amb taules de N no hi ha manera de tenir columnes fixes per jugador
+ * (`punts_j1`, `punts_j2`…), així que cada fila és una participació. Per a
+ * l'1v1 això són dues files per partida, i continua sent llegible amb un full
+ * de càlcul.
+ */
+const CSV_HEADERS = 'partida,taula,jugador,jugador_id,puntuacio,posicio,localitat,comentaris';
 
-function esc(val: string | number | null | undefined): string {
-  if (val == null) return '';
-  const s = String(val);
-  return s.includes(',') || s.includes('"') || s.includes('\n')
-    ? `"${s.replace(/"/g, '""')}"`
-    : s;
+function esc(value: string | number | null | undefined): string {
+  if (value == null) return '';
+  const text = String(value);
+  return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
 }
 
 export async function GET(_req: Request, { params }: Params) {
   const { tournamentId, roundId } = await params;
+  const guard = await requireTournamentAccess(tournamentId);
+  if (guard.error) return guard.error;
 
   const [round] = await db
     .select()
     .from(rounds)
     .where(and(eq(rounds.id, roundId), eq(rounds.tournamentId, tournamentId)));
-
   if (!round) return NextResponse.json({ error: 'Ronda no trobada' }, { status: 404 });
 
-  const allPairings = await db
-    .select()
-    .from(pairings)
-    .where(eq(pairings.roundId, roundId))
-    .orderBy(pairings.tableNumber);
+  const roundMatches = await loadRoundMatches(roundId);
+  const names = new Map(
+    (
+      await db
+        .select({ id: entries.id, displayName: people.displayName })
+        .from(entries)
+        .innerJoin(people, eq(people.id, entries.personId))
+        .where(eq(entries.tournamentId, tournamentId))
+    ).map((row) => [row.id, row.displayName])
+  );
 
-  const allPlayers = await db
-    .select()
-    .from(players)
-    .where(eq(players.tournamentId, tournamentId));
-  const playerMap = new Map(allPlayers.map((p) => [p.id, p.name]));
+  const rows = roundMatches.flatMap((match) =>
+    match.participants.map((participant) =>
+      [
+        match.id,
+        match.tableNumber,
+        esc(names.get(participant.entryId)),
+        participant.entryId,
+        esc(participant.score),
+        esc(participant.rank),
+        esc(match.participants.length === 1 ? 'bye' : ''),
+        '',
+      ].join(',')
+    )
+  );
 
-  const rows = allPairings.map((p) => {
-    const isBye = p.player2Id === null;
-    return [
-      p.id,
-      p.tableNumber,
-      esc(playerMap.get(p.player1Id)),
-      isBye ? '' : esc(playerMap.get(p.player2Id ?? '')),
-      isBye ? 'bye' : esc(p.p1Score),
-      isBye ? '' : esc(p.p2Score),
-      esc(p.p1Scrabbles),
-      esc(p.p2Scrabbles),
-      esc(p.p1BestWord),
-      esc(p.p1BestWordScore),
-      esc(p.p2BestWord),
-      esc(p.p2BestWordScore),
-      esc(p.location),
-      esc(p.comments),
-    ].join(',');
-  });
-
-  const csv = [CSV_HEADERS, ...rows].join('\n');
-
-  return new Response(csv, {
+  return new Response([CSV_HEADERS, ...rows].join('\n'), {
     headers: {
       'Content-Type': 'text/csv; charset=utf-8',
       'Content-Disposition': `attachment; filename="ronda-${round.number}.csv"`,
@@ -69,71 +69,79 @@ export async function GET(_req: Request, { params }: Params) {
   });
 }
 
-type ImportRow = {
-  pairingId: string;
-  p1Score: number;
-  p2Score: number;
-  p1Scrabbles?: number | null;
-  p2Scrabbles?: number | null;
-  p1BestWord?: string | null;
-  p1BestWordScore?: number | null;
-  p2BestWord?: string | null;
-  p2BestWordScore?: number | null;
-  location?: string | null;
-  comments?: string | null;
-};
+interface ResultRow {
+  matchId: string;
+  entryId: string;
+  score?: number | null;
+  rank?: number | null;
+}
 
+/**
+ * POST — Importa resultats en bloc.
+ *
+ * Accepta files soltes (partida + jugador + puntuació) i les agrupa per
+ * partida, perquè el resultat d'una taula només es pot calcular sencer.
+ */
 export async function POST(req: Request, { params }: Params) {
   const { tournamentId, roundId } = await params;
+  const guard = await requireTournamentAccess(tournamentId);
+  if (guard.error) return guard.error;
 
   const [round] = await db
     .select()
     .from(rounds)
     .where(and(eq(rounds.id, roundId), eq(rounds.tournamentId, tournamentId)));
-
   if (!round) return NextResponse.json({ error: 'Ronda no trobada' }, { status: 404 });
-  if (round.isComplete) return NextResponse.json({ error: 'La ronda ja està tancada' }, { status: 409 });
 
-  const body = (await req.json()) as ImportRow[];
-  if (!Array.isArray(body)) {
+  const [phase] = await db.select().from(phases).where(eq(phases.id, round.phaseId));
+  if (!phase) return NextResponse.json({ error: 'Fase no trobada' }, { status: 404 });
+
+  const body = await req.json().catch(() => null);
+  const rows: ResultRow[] = Array.isArray(body) ? body : body?.rows;
+  if (!Array.isArray(rows)) {
     return NextResponse.json({ error: 'Cal un array de resultats' }, { status: 400 });
   }
 
-  const allPairings = await db.select().from(pairings).where(eq(pairings.roundId, roundId));
-  const pairingMap = new Map(allPairings.map((p) => [p.id, p]));
+  const roundMatches = await loadRoundMatches(roundId);
+  const byMatch = new Map<string, ResultRow[]>();
+  for (const row of rows) {
+    byMatch.set(row.matchId, [...(byMatch.get(row.matchId) ?? []), row]);
+  }
 
   const errors: string[] = [];
   let updated = 0;
 
-  for (const row of body) {
-    const pairing = pairingMap.get(row.pairingId);
-    if (!pairing) {
-      errors.push(`Aparellament no trobat: ${row.pairingId}`);
+  for (const [matchId, matchRows] of byMatch) {
+    const match = roundMatches.find((m) => m.id === matchId);
+    if (!match) {
+      errors.push(`Partida no trobada: ${matchId}`);
       continue;
     }
-    if (pairing.player2Id === null) continue;
+    if (match.participants.length === 1) continue; // bye
 
-    let o1: GameOutcome, o2: GameOutcome;
-    if (row.p1Score > row.p2Score) { o1 = 'win'; o2 = 'loss'; }
-    else if (row.p2Score > row.p1Score) { o1 = 'loss'; o2 = 'win'; }
-    else { o1 = 'draw'; o2 = 'draw'; }
+    const inputs = match.participants.map((participant) => {
+      const row = matchRows.find((r) => r.entryId === participant.entryId);
+      return {
+        entryId: participant.entryId,
+        score: row?.score ?? null,
+        rank: row?.rank ?? null,
+      };
+    });
 
-    await db.update(pairings).set({
-      p1Score: row.p1Score,
-      p2Score: row.p2Score,
-      outcome1: o1,
-      outcome2: o2,
-      p1Scrabbles: row.p1Scrabbles ?? null,
-      p2Scrabbles: row.p2Scrabbles ?? null,
-      p1BestWord: row.p1BestWord ?? null,
-      p1BestWordScore: row.p1BestWordScore ?? null,
-      p2BestWord: row.p2BestWord ?? null,
-      p2BestWordScore: row.p2BestWordScore ?? null,
-      location: row.location ?? null,
-      comments: row.comments ?? null,
-      reportedAt: new Date(),
-    }).where(eq(pairings.id, row.pairingId));
+    if (inputs.some((i) => i.score == null && i.rank == null)) {
+      errors.push(`Falten resultats de la partida ${matchId}`);
+      continue;
+    }
 
+    const scored = scoreMatch(inputs, phase.scoring);
+    for (const participant of match.participants) {
+      const result = scored.find((s) => s.entryId === participant.entryId);
+      if (!result) continue;
+      await db
+        .update(matchParticipants)
+        .set({ rank: result.rank, score: result.score, outcome: result.outcome, points: result.points })
+        .where(eq(matchParticipants.id, participant.id));
+    }
     updated++;
   }
 
