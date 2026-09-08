@@ -1,94 +1,49 @@
-// ─── Enumerations ────────────────────────────────────────────────────────────
+import type {
+  Outcome,
+  PairingMethod,
+  PhaseConfig,
+  ScoringConfig,
+  StandingsScopeKey,
+  TeamAggregation,
+} from '@/db/types';
 
-export type PairingMethod = 'swiss' | 'swiss_fide' | 'round_robin' | 'king_of_the_hill' | 'manual';
+export type { Outcome, PairingMethod, PhaseConfig, ScoringConfig, StandingsScopeKey, TeamAggregation };
+export type { ByeHandling, SeedingCriterion } from '@/db/types';
 
-export type Tiebreaker =
-  | 'median_buchholz'   // Buchholz menys el millor i pitjor oponent
-  | 'buchholz'          // Suma de punts dels oponents
-  | 'berger'            // Sonneborn-Berger: suma de punts dels oponents batuts
-  | 'wins'              // Nombre de victòries
-  | 'direct_encounter'  // Resultat directe entre jugadors empatats
-  | 'cumulative'        // Suma total de punts a favor (puntuació de les fitxes)
-  | 'avg_score'         // Mitjana de puntuació a favor per partida
-  | 'spread';           // Diferència de puntuació total (específic Scrabble)
+export const DEFAULT_SEEDING_CRITERIA = ['points', 'elo', 'name'] as const;
 
-export type GameOutcome = 'win' | 'loss' | 'draw' | 'bye' | 'forfeit';
+// ─── Domini ───────────────────────────────────────────────────────────────────
 
-export type ByeHandling =
-  | 'lowest_ranked'     // Bye al jugador millor classificat del darrer grup de punts
-  | 'random_last_group' // Aleatori del darrer grup de punts
-  | 'least_byes';       // Jugador amb menys byes anteriors
-
-export type SeedingCriterion =
-  | 'points'  // Punts totals (descendent)
-  | 'elo'     // Puntuació ELO (descendent, null al final)
-  | 'rank'    // Rànquing de classificació (ascendent)
-  | 'name';   // Nom alfabètic (ascendent)
-
-export const DEFAULT_SEEDING_CRITERIA: SeedingCriterion[] = ['points', 'elo', 'name'];
-
-// ─── Core Domain ─────────────────────────────────────────────────────────────
-
-export interface Player {
-  id: string;
+/**
+ * Qui competeix: una participació (`entries`), no una persona.
+ *
+ * El motor no sap res de persones ni de comptes; treballa amb inscripcions
+ * d'una competició concreta (docs/pla-rols.md §12.3).
+ */
+export interface Entrant {
+  id: string;               // entries.id
   tournamentId: string;
-  name: string;
-  rating?: number | null;   // Puntuació ELO/FIDE opcional per sembrar
-  groupId?: string | null;  // null = sense grup (fase suïssa global)
+  personId: string;
+  displayName: string;      // de `people`, per al sembrat alfabètic
+  rating?: number | null;
+  groupId?: string | null;
+  teamId?: string | null;
   isActive: boolean;
-  createdAt: Date;
 }
 
 export interface Group {
   id: string;
   tournamentId: string;
-  name: string;             // "A", "B", "C"
+  name: string;
 }
 
-// ─── Configuració de fases ────────────────────────────────────────────────────
-
-export interface SwissConfig {
-  method: 'swiss';
-  avoidRematches: boolean;
-  byeHandling: ByeHandling;
-  scoreGroupWindowSize: number;  // quants grups considerar per creuaments
-  carryStandingsFromPhaseIds: string[];
-  seedingCriteria: SeedingCriterion[];  // ordre de seeding (per defecte: points, elo, name)
+export interface Team {
+  id: string;
+  tournamentId: string;
+  name: string;
 }
 
-export interface SwissFideConfig {
-  method: 'swiss_fide';
-  scope: 'all' | 'intra_group';  // 'all' = tots junts, 'intra_group' = cada grup per separat
-  carryStandingsFromPhaseIds: string[];
-  expectedRounds?: number;  // per millorar l'assignació del bye a les darreres rondes
-}
-
-export interface RoundRobinConfig {
-  method: 'round_robin';
-  scope: 'intra_group' | 'inter_group' | 'all';
-  groupIds?: string[];      // si intra_group, quins grups participen
-  doubleRound: boolean;     // cada oponent es juga dues vegades
-}
-
-export interface KingOfTheHillConfig {
-  method: 'king_of_the_hill';
-  topN?: number | null;     // restringir als N millors; null = tots
-  carryStandingsFromPhaseIds: string[];
-}
-
-export interface ManualConfig {
-  method: 'manual';
-  allowCsvImport: boolean;
-}
-
-export type PhaseConfig =
-  | SwissConfig
-  | SwissFideConfig
-  | RoundRobinConfig
-  | KingOfTheHillConfig
-  | ManualConfig;
-
-// ─── Fase ────────────────────────────────────────────────────────────────────
+// ─── Fase ─────────────────────────────────────────────────────────────────────
 
 export interface Phase {
   id: string;
@@ -96,109 +51,182 @@ export interface Phase {
   order: number;
   name: string;
   method: PairingMethod;
+  config: PhaseConfig;
+  /** 2 per a l'1v1; més només amb round_robin o manual (§13.1 #8). */
+  participantsPerMatch: number;
+  scoring: ScoringConfig;
+  /** Claus del registre de desempats, en ordre d'aplicació (§11.3). */
+  tiebreakers: string[];
+  standingsScope: StandingsScopeKey[];
+  teamAggregation?: TeamAggregation | null;
   startRound: number;
   endRound: number;
-  tiebreakers: Tiebreaker[];
-  config: PhaseConfig;
   isComplete: boolean;
 }
 
-// ─── Ronda / Aparellament ────────────────────────────────────────────────────
+// ─── Rondes i partides ────────────────────────────────────────────────────────
+
+export type RoundStatus = 'draft' | 'open' | 'closed';
 
 export interface Round {
   id: string;
   tournamentId: string;
   phaseId: string;
   number: number;
-  pairings: Pairing[];
-  isComplete: boolean;
+  status: RoundStatus;
+  matches: Match[];
   createdAt: Date;
 }
 
-export interface Pairing {
+/**
+ * Una partida amb N participants. L'1v1 en té dos i el bye, un de sol
+ * (docs/pla-rols.md §12.2).
+ */
+export interface Match {
   id: string;
   roundId: string;
   tableNumber: number;
-  player1Id: string;
-  player2Id: string | null;   // null = bye
-  result: PairingResult | null;
+  participants: MatchParticipant[];
 }
 
-export interface PairingResult {
-  p1Score: number;
-  p2Score: number | null;     // null si és bye
-  outcome1: GameOutcome;
-  outcome2: GameOutcome | null;
-  reportedAt: Date;
-  reportedBy?: string | null;
+export interface MatchParticipant {
+  id: string;
+  entryId: string;
+  seat: number;
+  /** Resultat primari: posició a la partida. null mentre no s'ha registrat (§12.10). */
+  rank: number | null;
+  /** Puntuació bruta del joc: fitxes, gols, punts. Alimenta mètriques i desempats. */
+  score: number | null;
+  /** Derivat de `rank`. Es desa, però el calcula `deriveOutcome()` i ningú més. */
+  outcome: Outcome | null;
+  /** Punts de classificació. Decimal: els empats reparteixen posicions (§12.10). */
+  points: number | null;
+  /** Instantània de l'equip en el moment de jugar (§12.9). */
+  teamId: string | null;
 }
 
-// ─── Classificació ───────────────────────────────────────────────────────────
+/** Una partida té resultat quan tots els participants tenen posició. */
+export function hasResult(match: Match): boolean {
+  return match.participants.length > 0 && match.participants.every((p) => p.rank !== null);
+}
 
+export function isBye(match: Match): boolean {
+  return match.participants.length === 1;
+}
+
+// ─── Classificació ────────────────────────────────────────────────────────────
+
+/**
+ * Les mètriques ja no són camps fixos: `spread`, `bingos` o `avgScore` són
+ * entrades de `metrics`, derivades de les preguntes amb agregació (§12.1).
+ * Això és el que permet que l'aplicació serveixi per a altres jocs sense
+ * arrossegar columnes d'Scrabble.
+ */
 export interface Standing {
-  playerId: string;
+  entryId: string;
   rank: number;
-  points: number;             // victòria=1, empat=0.5, derrota=0, bye=1
+  points: number;
   wins: number;
   losses: number;
   draws: number;
   byes: number;
   gamesPlayed: number;
-  spread: number;             // diferència total de puntuació Scrabble
-  tiebreakers: TiebreakerValues;
+  metrics: Record<string, number>;
 }
 
-export interface TiebreakerValues {
-  buchholz: number;
-  medianBuchholz: number;
-  berger: number;
-  cumulative: number;  // suma total de punts de fitxa a favor
-  avgScore: number;    // mitjana de punts a favor per partida real
-  spread: number;
-  wins: number;
-  directEncounterResult: number; // 1=victòria, 0.5=empat, 0=derrota, -1=no s'han enfrontat
+/** Classificació d'equips: agregació dels membres, mai partides equip-contra-equip (§12.9). */
+export interface TeamStanding {
+  teamId: string;
+  rank: number;
+  points: number;
+  memberEntryIds: string[];
+  /** Membres que han comptat quan la regla és `top_n`. */
+  countedEntryIds: string[];
+  metrics: Record<string, number>;
 }
 
-// ─── Context i resultat del motor ────────────────────────────────────────────
+// ─── Registre de desempats ────────────────────────────────────────────────────
 
-export interface PreviousPairing {
-  player1Id: string;
-  player2Id: string | null;  // null = bye
+/**
+ * Cada desempat és un mòdul registrat, no una branca d'un `switch`
+ * (docs/pla-rols.md §11.3). Afegir-ne un és afegir un fitxer.
+ */
+export interface TiebreakerDef {
+  key: string;
+  label: string;
+  higherIsBetter: boolean;
+  /** Àmbits on té sentit. El directe, per exemple, no en té per a equips. */
+  scopes: StandingsScopeKey[];
+  /**
+   * Cert si es basa en els oponents (Buchholz, Berger). Aquests desempats
+   * queden **desactivats** quan la fase té taules de més de dos, perquè la
+   * noció d'oponent deixa de ser única (§12.10).
+   */
+  opponentBased: boolean;
+  compute(ctx: TiebreakerContext): Map<string, number>;
+}
+
+export interface TiebreakerContext {
+  entryIds: string[];
+  matches: Match[];
+  /** Punts acumulats per participació, ja calculats. */
+  points: Map<string, number>;
+  /** Mètriques derivades de preguntes, per si el desempat n'és una. */
+  metrics: Map<string, Record<string, number>>;
+}
+
+/** Un desempat és aplicable a una fase? (§12.10) */
+export function isTiebreakerApplicable(def: TiebreakerDef, participantsPerMatch: number): boolean {
+  return !def.opponentBased || participantsPerMatch === 2;
+}
+
+// ─── Context i resultat del motor ─────────────────────────────────────────────
+
+/** Partida anterior, per evitar repeticions. Els oponents són els altres participants. */
+export interface PreviousMatch {
   roundNumber: number;
   phaseId: string;
-  outcome1: GameOutcome | null;  // resultat del jugador 1 (null = no reportat)
+  entryIds: string[];
+  /** Posicions finals, alineades amb `entryIds`. null si no hi ha resultat. */
+  ranks: (number | null)[];
 }
 
 export interface PairingContext {
   phase: Phase;
   roundNumber: number;
-  players: Player[];
+  entrants: Entrant[];
   standings: Standing[];
-  previousPairings: PreviousPairing[];
+  previousMatches: PreviousMatch[];
 }
 
-export interface GeneratedPairing {
+/** Una taula generada: N participacions. Una de sola vol dir bye. */
+export interface GeneratedMatch {
   tableNumber: number;
-  player1Id: string;
-  player2Id: string | null;
+  entryIds: string[];
 }
 
 export interface PairingEngineResult {
-  pairings: GeneratedPairing[];
+  matches: GeneratedMatch[];
   warnings: PairingWarning[];
-  seedingOrder?: string[]; // IDs de jugadors en l'ordre usat per aparellar
+  /** Ordre de sembrat emprat, per poder-lo mostrar i depurar. */
+  seedingOrder?: string[];
 }
 
 export interface PairingWarning {
-  type: 'rematch_forced' | 'bye_reassigned' | 'cross_group_pair' | 'incomplete_round_robin';
+  type:
+    | 'rematch_forced'
+    | 'bye_reassigned'
+    | 'cross_group_pair'
+    | 'incomplete_round_robin'
+    | 'uneven_table';
   message: string;
-  affectedPlayerIds: string[];
+  affectedEntryIds: string[];
 }
 
-// ─── CSV Import ──────────────────────────────────────────────────────────────
+// ─── Importació CSV ───────────────────────────────────────────────────────────
 
-export interface CsvPairingRow {
+export interface CsvMatchRow {
   tableNumber: number;
-  player1Id: string;
-  player2Id: string | null; // buit = bye
+  /** Buit o amb un sol element = bye. */
+  entryIds: string[];
 }
