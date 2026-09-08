@@ -163,7 +163,14 @@ export interface TiebreakerDef {
    * noció d'oponent deixa de ser única (§12.10).
    */
   opponentBased: boolean;
-  compute(ctx: TiebreakerContext): Map<string, number>;
+  /** Valor escalar per participació. La via normal. */
+  compute?(ctx: TiebreakerContext): Map<string, number>;
+  /**
+   * Desempats que només tenen sentit dins d'un grup d'empatats, com
+   * l'encontre directe: es calculen sobre el grup, no sobre tota la
+   * classificació.
+   */
+  resolveGroup?(entryIds: string[], ctx: TiebreakerContext): Map<string, number>;
 }
 
 export interface TiebreakerContext {
