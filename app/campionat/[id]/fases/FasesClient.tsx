@@ -11,10 +11,11 @@ import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import EmptyState from '@/components/ui/EmptyState';
 import { readError } from '@/lib/http';
 import type {
-  PhaseConfig, Tiebreaker, SeedingCriterion,
+  PhaseConfig, SeedingCriterion,
   SwissConfig, SwissFideConfig, RoundRobinConfig, KingOfTheHillConfig,
 } from '@/lib/pairing/types';
 import { DEFAULT_SEEDING_CRITERIA } from '@/lib/pairing/types';
+import { availableTiebreakers } from '@/lib/pairing/tiebreakers';
 
 interface Grup { id: string; name: string }
 interface Fase {
@@ -24,7 +25,8 @@ interface Fase {
   method: string;
   startRound: number;
   endRound: number;
-  tiebreakers: Tiebreaker[];
+  tiebreakers: string[];
+  participantsPerMatch: number;
   config: PhaseConfig;
   isComplete: boolean;
 }
@@ -37,16 +39,20 @@ const METODES = [
   { value: 'manual',           label: 'Manual / CSV' },
 ];
 
-const DESEMPATS: { value: Tiebreaker; label: string }[] = [
-  { value: 'median_buchholz', label: 'Median Buchholz' },
-  { value: 'buchholz',        label: 'Buchholz' },
-  { value: 'berger',          label: 'Berger (Sonneborn-Berger)' },
-  { value: 'spread',          label: 'Diferència de puntuació (spread)' },
-  { value: 'wins',            label: 'Nombre de victòries' },
-  { value: 'cumulative',      label: 'Total punts a favor' },
-  { value: 'avg_score',       label: 'Mitjana de puntuació a favor' },
-  { value: 'direct_encounter', label: 'Encontre directe' },
-];
+/**
+ * Els desempats surten del registre, no d'una llista escrita a mà
+ * (docs/pla-rols.md §11.3), i es filtren per mida de taula: amb més de dos
+ * per partida, els que es basen en els oponents deixen de tenir sentit
+ * (§12.10).
+ */
+function desempatsDisponibles(participantsPerMatch: number) {
+  return availableTiebreakers({ participantsPerMatch }).map((def) => ({
+    value: def.key,
+    label: def.label,
+  }));
+}
+
+const TOTS_ELS_DESEMPATS = desempatsDisponibles(2);
 
 const METHOD_BADGES: Record<string, { label: string; color: 'blue' | 'green' | 'purple' | 'gray' }> = {
   swiss_fide:       { label: 'Suís FIDE',   color: 'blue' },
@@ -202,7 +208,7 @@ function FaseCard({
           {fase.tiebreakers.length > 0 && (
             <p className="text-xs text-ink-3 mt-1 leading-relaxed">
               Desempats: {fase.tiebreakers.map(t =>
-                DESEMPATS.find(d => d.value === t)?.label ?? t
+                TOTS_ELS_DESEMPATS.find(d => d.value === t)?.label ?? t
               ).join(' → ')}
             </p>
           )}
@@ -263,7 +269,8 @@ function EditarFaseForm({
   const [nom, setNom] = useState(fase.name);
   const [startRound, setStartRound] = useState(fase.startRound.toString());
   const [endRound, setEndRound] = useState(fase.endRound.toString());
-  const [desempats, setDesempats] = useState<Tiebreaker[]>(fase.tiebreakers);
+  const [desempats, setDesempats] = useState<string[]>(fase.tiebreakers);
+  const [participantsPerMatch, setParticipantsPerMatch] = useState(fase.participantsPerMatch ?? 2);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -271,7 +278,7 @@ function EditarFaseForm({
   const [swissAvoidRematches, setSwissAvoidRematches] = useState(swissConfig?.avoidRematches ?? true);
   const [swissCarry, setSwissCarry] = useState<string[]>(swissConfig?.carryStandingsFromPhaseIds ?? []);
   const [swissSeedingCriteria, setSwissSeedingCriteria] = useState<SeedingCriterion[]>(
-    swissConfig?.seedingCriteria?.length ? swissConfig.seedingCriteria : DEFAULT_SEEDING_CRITERIA
+    swissConfig?.seedingCriteria?.length ? swissConfig.seedingCriteria : [...DEFAULT_SEEDING_CRITERIA]
   );
 
   const swissFideConfig = fase.method === 'swiss_fide' ? (fase.config as SwissFideConfig) : null;
@@ -321,11 +328,11 @@ function EditarFaseForm({
     return { method: 'manual', allowCsvImport: true };
   }
 
-  function toggleDesempat(d: Tiebreaker) {
+  function toggleDesempat(d: string) {
     setDesempats(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]);
   }
 
-  function moveDesempat(d: Tiebreaker, dir: -1 | 1) {
+  function moveDesempat(d: string, dir: -1 | 1) {
     setDesempats(prev => {
       const i = prev.indexOf(d);
       if (i < 0) return prev;
@@ -353,6 +360,7 @@ function EditarFaseForm({
         startRound: parseInt(startRound),
         endRound: parseInt(endRound),
         tiebreakers: desempats,
+        participantsPerMatch,
         config: buildConfig(),
       }),
     });
@@ -397,6 +405,20 @@ function EditarFaseForm({
             onChange={e => setEndRound(e.target.value)}
           />
         </div>
+        {/*
+          Mida de taula: amb més de dos, el suís i el rei del turó deixen de
+          ser aplicables i els desempats basats en oponents desapareixen de la
+          llista (docs/pla-rols.md §13.1 #8 i §12.10).
+        */}
+        <Input
+          label="Jugadors per partida"
+          type="number"
+          min={2}
+          max={8}
+          value={participantsPerMatch.toString()}
+          onChange={e => setParticipantsPerMatch(Math.max(2, parseInt(e.target.value) || 2))}
+          hint={participantsPerMatch > 2 ? 'Només round robin i manual' : undefined}
+        />
       </div>
 
       {fase.method === 'swiss_fide' && (
@@ -448,7 +470,7 @@ function EditarFaseForm({
             <span className="font-normal text-ink-3 ml-2">Selecciona i ordena</span>
           </p>
           <div className="space-y-1">
-            {DESEMPATS.map(d => {
+            {desempatsDisponibles(participantsPerMatch).map(d => {
               const idx = desempats.indexOf(d.value);
               const actiu = idx >= 0;
               return (
@@ -506,7 +528,8 @@ function NovaFaseForm({
   const [metode, setMetode] = useState<string>('swiss_fide');
   const [startRound, setStartRound] = useState('');
   const [endRound, setEndRound] = useState('');
-  const [desempats, setDesempats] = useState<Tiebreaker[]>(['median_buchholz', 'buchholz', 'spread']);
+  const [desempats, setDesempats] = useState<string[]>(['median_buchholz', 'buchholz', 'spread']);
+  const [participantsPerMatch, setParticipantsPerMatch] = useState(2);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -514,7 +537,7 @@ function NovaFaseForm({
   const [rrDoble, setRrDoble] = useState(false);
   const [swissAvoidRematches, setSwissAvoidRematches] = useState(true);
   const [swissCarry, setSwissCarry] = useState<string[]>([]);
-  const [swissSeedingCriteria, setSwissSeedingCriteria] = useState<SeedingCriterion[]>(DEFAULT_SEEDING_CRITERIA);
+  const [swissSeedingCriteria, setSwissSeedingCriteria] = useState<SeedingCriterion[]>([...DEFAULT_SEEDING_CRITERIA]);
   const [swissFideScope, setSwissFideScope] = useState<'all' | 'intra_group'>('all');
   const [swissFideCarry, setSwissFideCarry] = useState<string[]>([]);
   const [swissFideExpectedRounds, setSwissFideExpectedRounds] = useState('');
@@ -557,11 +580,11 @@ function NovaFaseForm({
     return { method: 'manual', allowCsvImport: true };
   }
 
-  function toggleDesempat(d: Tiebreaker) {
+  function toggleDesempat(d: string) {
     setDesempats(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]);
   }
 
-  function moveDesempat(d: Tiebreaker, dir: -1 | 1) {
+  function moveDesempat(d: string, dir: -1 | 1) {
     setDesempats(prev => {
       const i = prev.indexOf(d);
       if (i < 0) return prev;
@@ -590,6 +613,7 @@ function NovaFaseForm({
         startRound: parseInt(startRound),
         endRound: parseInt(endRound),
         tiebreakers: desempats,
+        participantsPerMatch,
         config: buildConfig(),
       }),
     });
@@ -633,6 +657,20 @@ function NovaFaseForm({
             onChange={e => setEndRound(e.target.value)}
           />
         </div>
+        {/*
+          Mida de taula: amb més de dos, el suís i el rei del turó deixen de
+          ser aplicables i els desempats basats en oponents desapareixen de la
+          llista (docs/pla-rols.md §13.1 #8 i §12.10).
+        */}
+        <Input
+          label="Jugadors per partida"
+          type="number"
+          min={2}
+          max={8}
+          value={participantsPerMatch.toString()}
+          onChange={e => setParticipantsPerMatch(Math.max(2, parseInt(e.target.value) || 2))}
+          hint={participantsPerMatch > 2 ? 'Només round robin i manual' : undefined}
+        />
       </div>
 
       {metode === 'swiss_fide' && (
@@ -684,7 +722,7 @@ function NovaFaseForm({
             <span className="font-normal text-ink-3 ml-2">Selecciona i ordena</span>
           </p>
           <div className="space-y-1">
-            {DESEMPATS.map(d => {
+            {desempatsDisponibles(participantsPerMatch).map(d => {
               const idx = desempats.indexOf(d.value);
               const actiu = idx >= 0;
               return (
