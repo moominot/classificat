@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Button from '@/components/ui/Button';
@@ -8,6 +8,7 @@ import Badge from '@/components/ui/Badge';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import JugadorForm from './JugadorForm';
 import ImportarJugadors from './ImportarJugadors';
+import NomBarrufInput, { type BarrufResultat } from './NomBarrufInput';
 import { useCanManage } from '@/components/ViewerContext';
 import { readError } from '@/lib/http';
 
@@ -34,7 +35,7 @@ export default function JugadorsClient({
 }) {
   const router = useRouter();
   const canManage = useCanManage();
-  const [mode, setMode] = useState<'llista' | 'nou' | 'importar'>('llista');
+  const [mode, setMode] = useState<'llista' | 'importar'>('llista');
   const [editant, setEditant] = useState<string | null>(null);
   const [ordre, setOrdre] = useState<'nom' | 'elo'>('nom');
 
@@ -70,7 +71,6 @@ export default function JugadorsClient({
         </span>
         {mode === 'llista' ? (
           <>
-            {canManage && <Button size="sm" onClick={() => setMode('nou')}>+ Afegir jugador</Button>}
             {canManage && (
               <Button size="sm" variant="secondary" onClick={() => setMode('importar')}>
                 Importar CSV
@@ -96,16 +96,9 @@ export default function JugadorsClient({
         )}
       </div>
 
-      {/* Formulari nou jugador */}
-      {mode === 'nou' && (
-        <Card>
-          <CardHeader><CardTitle>Nou jugador</CardTitle></CardHeader>
-          <JugadorForm
-            tournamentId={tournamentId}
-            grups={grups}
-            onDone={() => setMode('llista')}
-          />
-        </Card>
+      {/* Afegir ràpidament: sempre visible per no haver de canviar de pantalla */}
+      {mode === 'llista' && canManage && (
+        <AfegeixRapid tournamentId={tournamentId} />
       )}
 
       {/* Formulari importació CSV */}
@@ -137,6 +130,94 @@ export default function JugadorsClient({
         )
       )}
     </div>
+  );
+}
+
+/** Camp sempre visible a sobre del llistat: afegeix un jugador sense canviar de pantalla. */
+function AfegeixRapid({ tournamentId }: { tournamentId: string }) {
+  const router = useRouter();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [nom, setNom] = useState('');
+  const [barrufNumero, setBarrufNumero] = useState<number | null>(null);
+  const [barrufNom, setBarrufNom] = useState<string | null>(null);
+  const [club, setClub] = useState<string | null>(null);
+  const [rating, setRating] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  function handleNomChange(v: string) {
+    setNom(v);
+    if (barrufNumero != null && v !== barrufNom) {
+      setBarrufNumero(null);
+      setBarrufNom(null);
+      setClub(null);
+      setRating(null);
+    }
+  }
+
+  function handlePick(b: BarrufResultat) {
+    setNom(b.nom);
+    setBarrufNumero(b.numero);
+    setBarrufNom(b.nom);
+    setClub(b.club ?? null);
+    setRating(b.barruf ?? null);
+  }
+
+  async function afegeix() {
+    if (!nom.trim() || loading) return;
+    setLoading(true);
+    setError('');
+    const res = await fetch(`/api/tournaments/${tournamentId}/entries`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ displayName: nom.trim(), club, rating, barrufNumero }),
+    });
+    if (res.ok) {
+      setNom('');
+      setBarrufNumero(null);
+      setBarrufNom(null);
+      setClub(null);
+      setRating(null);
+      router.refresh();
+      inputRef.current?.focus();
+    } else {
+      setError(await readError(res, 'Error en afegir el jugador'));
+    }
+    setLoading(false);
+  }
+
+  return (
+    <Card className="space-y-2">
+      <div className="flex items-end gap-2">
+        <div className="flex-1">
+          <NomBarrufInput
+            ref={inputRef}
+            value={nom}
+            onChange={handleNomChange}
+            onPick={handlePick}
+            placeholder="Nom del jugador — cerca automàticament al BARRUF…"
+            onKeyDownEnter={afegeix}
+          />
+        </div>
+        <Button onClick={afegeix} loading={loading} disabled={!nom.trim()}>
+          + Afegeix
+        </Button>
+      </div>
+      {barrufNumero != null && (
+        <div className="flex items-center gap-2 bg-accent-tint text-accent-ink text-xs font-medium px-3 py-2 rounded-lg">
+          <span>Vinculat al BARRUF #{barrufNumero}{club ? ` · ${club}` : ''}{rating != null ? ` · BARRUF ${rating}` : ''}</span>
+          <button
+            type="button"
+            onClick={() => { setBarrufNumero(null); setBarrufNom(null); setClub(null); setRating(null); }}
+            className="ml-auto text-accent-ink hover:opacity-70 cursor-pointer"
+            aria-label="Desvincula"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+      {error && <p className="text-xs text-loss">{error}</p>}
+    </Card>
   );
 }
 
