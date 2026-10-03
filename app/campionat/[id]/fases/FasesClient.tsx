@@ -7,7 +7,7 @@ import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import Badge from '@/components/ui/Badge';
-import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
+import Modal from '@/components/ui/Modal';
 import EmptyState from '@/components/ui/EmptyState';
 import { readError } from '@/lib/http';
 import type {
@@ -219,9 +219,8 @@ export default function FasesClient({
         )}
       </div>
 
-      {canManage && mostrarForm && (
-        <Card>
-          <CardHeader><CardTitle>Nova fase</CardTitle></CardHeader>
+      {canManage && (
+        <Modal open={mostrarForm} onClose={() => setMostrarForm(false)} title="Nova fase" maxWidth="2xl">
           <NovaFaseForm
             tournamentId={tournamentId}
             fases={fases}
@@ -229,7 +228,7 @@ export default function FasesClient({
             onDone={() => { setMostrarForm(false); router.refresh(); }}
             onCancel={() => setMostrarForm(false)}
           />
-        </Card>
+        </Modal>
       )}
 
       {fases.length === 0 && !mostrarForm ? (

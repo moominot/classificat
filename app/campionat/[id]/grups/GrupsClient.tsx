@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Badge from '@/components/ui/Badge';
-import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
+import { Card } from '@/components/ui/Card';
+import Modal from '@/components/ui/Modal';
 import EmptyState from '@/components/ui/EmptyState';
 import { useCanManage } from '@/components/ViewerContext';
 
@@ -23,6 +24,7 @@ export default function GrupsClient({
 }) {
   const router = useRouter();
   const canManage = useCanManage();
+  const [modalObert, setModalObert] = useState(false);
   const [nomNouGrup, setNomNouGrup] = useState('');
   const [loadingNou, setLoadingNou] = useState(false);
   const [assignant, setAssignant] = useState<string | null>(null); // jugadorId
@@ -37,6 +39,7 @@ export default function GrupsClient({
     });
     setNomNouGrup('');
     setLoadingNou(false);
+    setModalObert(false);
     router.refresh();
   }
 
@@ -55,33 +58,41 @@ export default function GrupsClient({
 
   return (
     <div className="space-y-5">
-      {/* Crear nou grup (només director) */}
       {canManage && (
-        <Card>
-          <CardHeader><CardTitle>Crear grup</CardTitle></CardHeader>
-          <div className="flex gap-3">
-            <Input
-              value={nomNouGrup}
-              onChange={e => setNomNouGrup(e.target.value)}
-              placeholder="ex. A, B, Preferent, Regional..."
-              onKeyDown={e => e.key === 'Enter' && crearGrup()}
-            />
-            <Button onClick={crearGrup} loading={loadingNou} disabled={!nomNouGrup.trim()}>
+        <div className="flex justify-end">
+          <Button size="sm" onClick={() => setModalObert(true)}>+ Nou grup</Button>
+        </div>
+      )}
+
+      <Modal open={modalObert} onClose={() => setModalObert(false)} title="Nou grup">
+        <div className="space-y-4">
+          <Input
+            label="Nom del grup"
+            value={nomNouGrup}
+            onChange={e => setNomNouGrup(e.target.value)}
+            placeholder="ex. A, B, Preferent, Regional..."
+            onKeyDown={e => e.key === 'Enter' && crearGrup()}
+            autoFocus
+          />
+          <p className="text-sm text-ink-3">
+            Els grups permeten fer round robin intern i Swiss global a la fase final.
+          </p>
+          <div className="flex gap-2 pt-1">
+            <Button onClick={crearGrup} loading={loadingNou} disabled={!nomNouGrup.trim()} className="flex-1 sm:flex-none">
               Crear
             </Button>
+            <Button type="button" variant="ghost" onClick={() => setModalObert(false)}>
+              Cancel·lar
+            </Button>
           </div>
-          {grups.length === 0 && (
-            <p className="text-sm text-ink-3 mt-3">
-              Els grups permeten fer round robin intern i Swiss global a la fase final.
-            </p>
-          )}
-        </Card>
-      )}
+        </div>
+      </Modal>
 
       {grups.length === 0 ? (
         <EmptyState
           title="Sense grups"
           description="Crea grups per separar els jugadors en categories o divisions. Si no cal, pots deixar tots els jugadors sense grup."
+          action={canManage ? <Button onClick={() => setModalObert(true)}>+ Nou grup</Button> : undefined}
         />
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
