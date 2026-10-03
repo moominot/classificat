@@ -22,7 +22,7 @@ export default function NavTabs({ id }: { id: string }) {
   const configKeys = new Set(CONFIG_LINKS.map((l) => l.key));
 
   return (
-    <nav className="flex gap-6 border-b border-border overflow-x-auto">
+    <nav className="sticky top-12 z-10 bg-bg flex gap-6 border-b border-border overflow-x-auto">
       {tabs.map((tab) => {
         const href = `/campionat/${id}/${tab.key}`;
         const active = pathname.startsWith(href);

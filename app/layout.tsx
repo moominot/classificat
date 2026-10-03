@@ -20,7 +20,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
       <body className="min-h-screen bg-bg text-ink antialiased">
         <HeaderTitleProvider>
           <Header loggedIn={!!account} displayName={account?.displayName ?? null} role={account?.role ?? null} />
-          <main className="max-w-5xl mx-auto px-3 sm:px-4 py-5 sm:py-6">
+          <main className="max-w-5xl mx-auto px-3 sm:px-4 pt-3 pb-5 sm:pt-4 sm:pb-6">
             {children}
           </main>
         </HeaderTitleProvider>
