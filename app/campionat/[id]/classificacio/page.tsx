@@ -9,6 +9,7 @@ import { loadStandings } from '@/lib/standings-service';
 import { resolveTiebreaker } from '@/lib/pairing/tiebreakers';
 import RanquingMetrica from './RanquingMetrica';
 import ClassificacioGeneral from './ClassificacioGeneral';
+import FiltresClassificacio from './FiltresClassificacio';
 
 export const dynamic = 'force-dynamic';
 
@@ -201,64 +202,41 @@ export default async function ClassificacioPage({
         </p>
       )}
 
-      <form method="get" className="flex flex-wrap items-end gap-2 bg-surface-2 border border-border rounded-lg p-2.5">
-        {pestanya !== 'general' && <input type="hidden" name="t" value={pestanya} />}
-        {faseSeleccionada && <input type="hidden" name="f" value={faseSeleccionada} />}
-        <input
-          type="text"
-          name="q"
-          defaultValue={sp.q ?? ''}
-          placeholder="Nom o club"
-          className="flex-1 min-w-[140px] text-sm border border-border rounded-lg px-2.5 py-1.5 bg-surface text-ink"
-        />
-        <select
-          name="br"
-          defaultValue={barrufComparador ?? ''}
-          className="text-sm border border-border rounded-lg px-2 py-1.5 bg-surface text-ink"
-        >
-          <option value="">BARRUF</option>
-          <option value="lt">Menys de</option>
-          <option value="gt">Més de</option>
-        </select>
-        <input
-          type="number"
-          name="bv"
-          defaultValue={sp.bv ?? ''}
-          placeholder="valor"
-          className="w-20 text-sm border border-border rounded-lg px-2.5 py-1.5 bg-surface text-ink"
-        />
-        <button type="submit" className="px-3 py-1.5 rounded-lg bg-accent text-surface text-xs font-semibold">
-          Filtra
-        </button>
-        {hiHaFiltre && (
-          <Link href={hrefFor({ clearFilters: true })} className="text-xs text-ink-3 hover:text-ink underline px-1 py-1.5">
-            Treu filtres
-          </Link>
-        )}
-      </form>
+      <div className="flex items-center gap-2">
+        <div className="flex-1 min-w-0 overflow-hidden space-y-2">
+          {mostrarFasesFiltre && (
+            <nav className="flex gap-1.5 overflow-x-auto pb-1">
+              <Link href={hrefFor({ f: null })} className={pillClass(faseSeleccionada === null)}>
+                Totes les fases
+              </Link>
+              {totes_fases.map((f) => (
+                <Link key={f.id} href={hrefFor({ f: f.id })} className={pillClass(faseSeleccionada === f.id)}>
+                  {f.name}
+                </Link>
+              ))}
+            </nav>
+          )}
 
-      {mostrarFasesFiltre && (
-        <nav className="flex gap-1.5 overflow-x-auto pb-1">
-          <Link href={hrefFor({ f: null })} className={pillClass(faseSeleccionada === null)}>
-            Totes les fases
-          </Link>
-          {totes_fases.map((f) => (
-            <Link key={f.id} href={hrefFor({ f: f.id })} className={pillClass(faseSeleccionada === f.id)}>
-              {f.name}
-            </Link>
-          ))}
-        </nav>
-      )}
+          {PESTANYES.length > 1 && (
+            <nav className="flex gap-1.5 overflow-x-auto pb-1">
+              {PESTANYES.map((p) => (
+                <Link key={p.id} href={hrefFor({ t: p.id })} className={pillClass(pestanya === p.id)}>
+                  {p.label}
+                </Link>
+              ))}
+            </nav>
+          )}
+        </div>
 
-      {PESTANYES.length > 1 && (
-        <nav className="flex gap-1.5 overflow-x-auto pb-1">
-          {PESTANYES.map((p) => (
-            <Link key={p.id} href={hrefFor({ t: p.id })} className={pillClass(pestanya === p.id)}>
-              {p.label}
-            </Link>
-          ))}
-        </nav>
-      )}
+        <FiltresClassificacio
+          tournamentId={id}
+          pestanya={pestanya}
+          faseSeleccionada={faseSeleccionada}
+          q={sp.q ?? ''}
+          br={barrufComparador ?? ''}
+          bv={sp.bv ?? ''}
+        />
+      </div>
 
       {pestanya === 'equips' && vista.teamStandings ? (
         <Card padding={false}>
