@@ -55,6 +55,13 @@ export default function RanquingMetrica({
         const realGames = Math.max(0, s.gamesPlayed - s.byes);
         const mitjana = realGames > 0 ? total / realGames : 0;
         const obert = oberts.has(s.entryId);
+        // El valor de la darrera ronda jugada, no el millor (que ja es veu
+        // a sota): és el que acaba de passar, el que més interessa d'un cop
+        // d'ull quan es consulta la classificació entre rondes.
+        const darrera = history.reduce<MetricHistoryRow | null>(
+          (acc, row) => (!acc || row.roundNumber > acc.roundNumber ? row : acc),
+          null
+        );
 
         return (
           <div key={s.entryId} className="border-2 border-border rounded-xl overflow-hidden bg-surface">
@@ -74,6 +81,14 @@ export default function RanquingMetrica({
                 >
                   {s.displayName}
                 </Link>
+                {darrera && (
+                  <span
+                    title={`Ronda ${darrera.roundNumber}`}
+                    className="flex-shrink-0 px-2.5 py-1 rounded-full bg-accent text-surface text-xs font-bold tabular-nums"
+                  >
+                    +{formatValue(darrera.value)}
+                  </span>
+                )}
                 {history.length > 0 && (
                   <svg
                     className={`w-5 h-5 text-ink-3 flex-shrink-0 transition-transform ${obert ? 'rotate-180' : ''}`}
