@@ -196,15 +196,15 @@ async function findClaimedEntry(tournamentId: string, deviceId: string) {
 /**
  * Pot enviar o corregir el resultat d'aquesta partida?
  *
- * L'admin sempre, fins i tot amb la ronda tancada (§15.7). El jugador, només
- * les seves i mentre la ronda sigui oberta (§15.6). La comprovació de la
- * ronda i de la participació es fa a la ruta, que ja les té carregades.
+ * La gràcia de l'aplicació és la gestió autònoma de la classificació:
+ * qualsevol persona present, encara que no hagi iniciat sessió ni sigui
+ * un dels participants, pot registrar el resultat d'una taula mentre la
+ * ronda estigui oberta — no cal esperar el director. Un cop tancada, només
+ * el director pot corregir-la (§15.7).
  */
 export function canReportResult(
-  viewer: Viewer,
+  _viewer: Viewer,
   opts: { participantEntryIds: string[]; roundIsOpen: boolean; managesTournament: boolean }
 ): boolean {
-  if (opts.managesTournament) return true;
-  if (!opts.roundIsOpen) return false;
-  return viewer.entryId !== null && opts.participantEntryIds.includes(viewer.entryId);
+  return opts.managesTournament || opts.roundIsOpen;
 }
