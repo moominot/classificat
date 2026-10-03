@@ -44,7 +44,10 @@ export function generateRoundRobinPairings(ctx: PairingContext): PairingEngineRe
       });
       matches = [];
     } else {
-      matches = schedule;
+      // bergerSchedule() numera totes les taules a 0 (no sap de numeració
+      // global); cal renumerar-les aquí o l'inserció xoca amb l'únic
+      // (roundId, tableNumber) en repetir el 0 a totes les files.
+      matches = schedule.map((match, i) => ({ ...match, tableNumber: i + 1 }));
     }
   }
 
