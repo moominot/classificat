@@ -351,3 +351,88 @@ export async function loadEntrantsWithContact(tournamentId: string) {
     .innerJoin(people, eq(people.id, entries.personId))
     .where(eq(entries.tournamentId, tournamentId));
 }
+
+// ─── Historial d'una mètrica ───────────────────────────────────────────────────
+
+export interface MetricHistoryRow {
+  roundNumber: number;
+  matchId: string;
+  value: number;
+  /** Només a les preguntes "paraula + valor" (p.ex. Millor jugada). */
+  word: string | null;
+  opponentNames: string[];
+}
+
+/**
+ * Totes les respostes d'una pregunta (una per ronda jugada), perquè el
+ * rànquing d'una mètrica pugui desplegar l'historial complet d'un jugador en
+ * lloc de només el millor valor (docs/pla-rols.md §12.1 i §15.3).
+ */
+export async function loadMetricHistory(
+  tournamentId: string,
+  questionKey: string
+): Promise<Map<string, MetricHistoryRow[]>> {
+  const result = new Map<string, MetricHistoryRow[]>();
+
+  const [question] = await db
+    .select({ id: questionDefinitions.id })
+    .from(questionDefinitions)
+    .where(and(eq(questionDefinitions.tournamentId, tournamentId), eq(questionDefinitions.key, questionKey)));
+  if (!question) return result;
+
+  const roundRows = await db
+    .select({ id: rounds.id, number: rounds.number })
+    .from(rounds)
+    .where(eq(rounds.tournamentId, tournamentId));
+  if (roundRows.length === 0) return result;
+  const roundNumberById = new Map(roundRows.map((r) => [r.id, r.number]));
+
+  const matchRows = await db
+    .select({ id: matches.id, roundId: matches.roundId })
+    .from(matches)
+    .where(inArray(matches.roundId, roundRows.map((r) => r.id)));
+  if (matchRows.length === 0) return result;
+  const roundIdByMatch = new Map(matchRows.map((m) => [m.id, m.roundId]));
+
+  const [participantRows, answerRows, entrants] = await Promise.all([
+    db
+      .select({ id: matchParticipants.id, matchId: matchParticipants.matchId, entryId: matchParticipants.entryId })
+      .from(matchParticipants)
+      .where(inArray(matchParticipants.matchId, matchRows.map((m) => m.id))),
+    db
+      .select({ participantId: matchAnswers.participantId, numberValue: matchAnswers.numberValue, textValue: matchAnswers.textValue })
+      .from(matchAnswers)
+      .where(eq(matchAnswers.questionId, question.id)),
+    loadEntrants(tournamentId),
+  ]);
+
+  const nameByEntry = new Map(entrants.map((e) => [e.id, e.displayName]));
+  const answerByParticipant = new Map(
+    answerRows.filter((a) => a.participantId !== null).map((a) => [a.participantId as string, a])
+  );
+
+  const byMatch = new Map<string, typeof participantRows>();
+  for (const p of participantRows) {
+    const list = byMatch.get(p.matchId) ?? [];
+    list.push(p);
+    byMatch.set(p.matchId, list);
+  }
+
+  for (const [matchId, parts] of byMatch) {
+    if (parts.length < 2) continue; // un bye no té resposta a cap pregunta
+    const roundNumber = roundNumberById.get(roundIdByMatch.get(matchId)!);
+    if (roundNumber === undefined) continue;
+
+    for (const p of parts) {
+      const answer = answerByParticipant.get(p.id);
+      if (!answer || answer.numberValue === null) continue;
+      const opponentNames = parts.filter((x) => x.id !== p.id).map((x) => nameByEntry.get(x.entryId) ?? '?');
+      const list = result.get(p.entryId) ?? [];
+      list.push({ roundNumber, matchId, value: answer.numberValue, word: answer.textValue, opponentNames });
+      result.set(p.entryId, list);
+    }
+  }
+
+  for (const list of result.values()) list.sort((a, b) => b.value - a.value);
+  return result;
+}
