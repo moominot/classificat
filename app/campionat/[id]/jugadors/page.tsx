@@ -26,6 +26,7 @@ export default async function JugadorsPage({ params }: { params: Promise<{ id: s
           id: entrant.id,
           name: entrant.displayName,
           rating: entrant.rating ?? null,
+          barrufNumero: entrant.barrufNumero ?? null,
           groupId: entrant.groupId ?? null,
           // El contacte no surt del servidor si qui mira no gestiona la
           // competició (docs/pla-rols.md §14.4).

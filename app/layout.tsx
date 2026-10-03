@@ -40,9 +40,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
                 Preferències
               </Link>
               {account?.role === 'superadmin' && (
-                <Link href="/usuaris" className="text-xs text-ink-3 hover:text-accent-ink transition-colors whitespace-nowrap">
-                  Usuaris
-                </Link>
+                <>
+                  <Link href="/usuaris" className="text-xs text-ink-3 hover:text-accent-ink transition-colors whitespace-nowrap">
+                    Usuaris
+                  </Link>
+                  <Link href="/configuracio" className="text-xs text-ink-3 hover:text-accent-ink transition-colors whitespace-nowrap">
+                    Configuració
+                  </Link>
+                </>
               )}
               <HeaderAuth displayName={account?.displayName} />
             </div>

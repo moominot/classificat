@@ -26,6 +26,7 @@ export async function GET(_req: Request, { params }: Params) {
       alias: people.alias,
       club: people.club,
       photoUrl: people.photoUrl,
+      barrufNumero: people.barrufNumero,
       rating: entries.rating,
       groupId: entries.groupId,
       teamId: entries.teamId,
@@ -81,6 +82,8 @@ export async function PATCH(req: Request, { params }: Params) {
   if (body.club !== undefined) personUpdates.club = body.club;
   if (body.phone !== undefined) personUpdates.phone = body.phone;
   if (body.email !== undefined) personUpdates.email = body.email;
+  // Número del BARRUF (docs/api.md): identitat de la persona, no de la inscripció.
+  if (body.barrufNumero !== undefined) personUpdates.barrufNumero = body.barrufNumero;
 
   if (Object.keys(entryUpdates).length > 0) {
     await db.update(entries).set(entryUpdates).where(eq(entries.id, entryId));

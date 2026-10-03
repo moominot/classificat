@@ -277,6 +277,7 @@ export async function loadEntrantsWithContact(tournamentId: string) {
       displayName: people.displayName,
       club: people.club,
       phone: people.phone,
+      barrufNumero: people.barrufNumero,
       rating: entries.rating,
       groupId: entries.groupId,
       teamId: entries.teamId,

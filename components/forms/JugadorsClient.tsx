@@ -19,6 +19,7 @@ interface Jugador {
   groupId: string | null;
   phone: string | null;
   club: string | null;
+  barrufNumero: number | null;
   isActive: boolean;
 }
 
@@ -241,6 +242,7 @@ function JugadorRow({
           </div>
           <div className="flex gap-3 text-xs text-ink-3 mt-0.5 flex-wrap">
             {j.rating && <span>BARRUF {j.rating}</span>}
+            {j.barrufNumero && <span className="text-accent-ink font-medium">#{j.barrufNumero}</span>}
             {j.groupId && <span>Grup {grupMap.get(j.groupId)}</span>}
             {j.club && <span>{j.club}</span>}
             {j.phone && <span>{j.phone}</span>}

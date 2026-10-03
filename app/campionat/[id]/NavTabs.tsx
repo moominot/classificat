@@ -13,7 +13,10 @@ const TABS = [
 ];
 
 /** Seccions que només tenen sentit per a qui gestiona la competició. */
-const MANAGER_TABS = [{ key: 'preguntes', label: 'Preguntes' }];
+const MANAGER_TABS = [
+  { key: 'preguntes', label: 'Preguntes' },
+  { key: 'barruf', label: 'BARRUF' },
+];
 
 export default function NavTabs({ id, name }: { id: string; name: string }) {
   const pathname = usePathname();

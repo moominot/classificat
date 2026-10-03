@@ -8,6 +8,13 @@
       "when": 1788862861478,
       "tag": "0000_redesign",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "6",
+      "when": 1790954388849,
+      "tag": "0001_groovy_swordsman",
+      "breakpoints": true
     }
   ]
 }

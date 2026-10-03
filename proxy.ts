@@ -26,7 +26,7 @@ const PUBLIC_API_WRITES = new Set([
 const RESULT_SUBMISSION = /^\/api\/tournaments\/[^/]+\/rounds\/[^/]+\/result$/;
 
 /** Pàgines de gestió: sense sessió, cap a la pantalla d'entrada. */
-const ACCOUNT_ONLY_PAGES = new Set(['/', '/usuaris']);
+const ACCOUNT_ONLY_PAGES = new Set(['/', '/usuaris', '/configuracio']);
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
@@ -59,5 +59,5 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/', '/usuaris', '/api/:path*'],
+  matcher: ['/', '/usuaris', '/configuracio', '/api/:path*'],
 };

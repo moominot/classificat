@@ -35,7 +35,7 @@ export async function POST(req: Request, { params }: Params) {
   if (guard.error) return guard.error;
 
   const body = await req.json().catch(() => ({}));
-  const { personId, displayName, club, phone, email, rating, groupId, teamId } = body;
+  const { personId, displayName, club, phone, email, rating, groupId, teamId, barrufNumero } = body;
 
   const [tournament] = await db.select().from(tournaments).where(eq(tournaments.id, tournamentId));
   if (!tournament) return NextResponse.json({ error: 'Competició no trobada' }, { status: 404 });
@@ -80,6 +80,7 @@ export async function POST(req: Request, { params }: Params) {
       photoUrl: null,
       club: club ?? null,
       rating: rating ?? null,
+      barrufNumero: barrufNumero ?? null,
       phone: phone ?? null,
       email: email ?? null,
       isAnonymized: false,

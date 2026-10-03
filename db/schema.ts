@@ -36,6 +36,7 @@ export const people = sqliteTable('people', {
   photoUrl:      text('photo_url'),
   club:          text('club'),
   rating:        integer('rating'),           // valoració global; sembra la de cada competició
+  barrufNumero:  integer('barruf_numero'),    // identificador al registre del BARRUF (docs/api.md)
   phone:         text('phone'),               // contacte: visibilitat restringida (§14.4)
   email:         text('email'),
   isAnonymized:  integer('is_anonymized', { mode: 'boolean' }).notNull().default(false),
@@ -388,6 +389,17 @@ export const meetupAttendance = sqliteTable('meetup_attendance', {
 ]);
 
 // ══════════════════════════════════════════════════════════════════════════════
+// 7. CONFIGURACIÓ GLOBAL
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** Clau-valor genèric per a configuració d'abast d'aplicació (p. ex. la connexió amb el BARRUF). */
+export const appSettings = sqliteTable('app_settings', {
+  key:       text('key').primaryKey(),
+  value:     text('value'),
+  updatedAt: integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+});
+
+// ══════════════════════════════════════════════════════════════════════════════
 // TIPUS EXPORTATS
 // ══════════════════════════════════════════════════════════════════════════════
 
@@ -430,3 +442,5 @@ export type NewAnnouncement = typeof announcements.$inferInsert;
 export type Meetup = typeof meetups.$inferSelect;
 export type NewMeetup = typeof meetups.$inferInsert;
 export type MeetupAttendance = typeof meetupAttendance.$inferSelect;
+export type AppSetting = typeof appSettings.$inferSelect;
+export type NewAppSetting = typeof appSettings.$inferInsert;
