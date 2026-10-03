@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useContext, useEffect, useLayoutEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useState } from 'react';
 
 // `useLayoutEffect` no fa res al servidor (sense DOM); amb `useEffect` allà
 // on sí que hi ha finestra, el títol es fixa abans del primer pintat del
@@ -28,8 +28,12 @@ const HeaderTitleContext = createContext<Ctx | null>(null);
  */
 export function HeaderTitleProvider({ children }: { children: React.ReactNode }) {
   const [title, setTitle] = useState<Title | null>(null);
+  // Memoitzat perquè `setTitle` (estable, de useState) no quedi dins d'un
+  // objecte nou a cada render: si no, el canvi de referència retrigeraria
+  // l'efecte de `SetHeaderTitle` que acaba de cridar-lo — bucle infinit.
+  const value = useMemo(() => ({ title, setTitle }), [title]);
   return (
-    <HeaderTitleContext.Provider value={{ title, setTitle }}>
+    <HeaderTitleContext.Provider value={value}>
       {children}
     </HeaderTitleContext.Provider>
   );
@@ -43,9 +47,13 @@ export function useHeaderTitle(): Title | null {
 /** Fixa el títol de la capçalera mentre aquest component estigui muntat; el treu en desmuntar-se. */
 export function SetHeaderTitle({ name, id }: Title) {
   const ctx = useContext(HeaderTitleContext);
+  const setTitle = ctx?.setTitle;
+  // Depèn només del setter (estable) i de name/id, mai de `ctx` sencer: `ctx`
+  // canvia de referència cada cop que `title` canvia, que és precisament el
+  // que aquest efecte provoca — dependre'n hi tornaria a entrar en bucle.
   useIsomorphicLayoutEffect(() => {
-    ctx?.setTitle({ name, id });
-    return () => ctx?.setTitle(null);
-  }, [ctx, name, id]);
+    setTitle?.({ name, id });
+    return () => setTitle?.(null);
+  }, [setTitle, name, id]);
   return null;
 }
