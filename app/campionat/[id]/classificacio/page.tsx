@@ -4,7 +4,7 @@ import { db } from '@/db';
 import { groups, phases, questionDefinitions, rounds } from '@/db/schema';
 import { Card } from '@/components/ui/Card';
 import { canManageTournament, getCurrentAccount } from '@/lib/authz';
-import { loadMetricHistory, loadVisibleRoundIds } from '@/lib/db-helpers';
+import { loadEntrantsWithContact, loadMetricHistory, loadVisibleRoundIds } from '@/lib/db-helpers';
 import { loadStandings } from '@/lib/standings-service';
 import { resolveTiebreaker } from '@/lib/pairing/tiebreakers';
 import RanquingMetrica from './RanquingMetrica';
@@ -43,7 +43,7 @@ export default async function ClassificacioPage({
   const account = await getCurrentAccount();
   const canManage = account ? await canManageTournament(account, id) : false;
 
-  const [totes_fases, totesPreguntes, tots_grups, vista, totes_rondes] = await Promise.all([
+  const [totes_fases, totesPreguntes, tots_grups, vistaCompleta, totes_rondes, entrants] = await Promise.all([
     db.select().from(phases).where(eq(phases.tournamentId, id)).orderBy(asc(phases.order)),
     db
       .select()
@@ -53,11 +53,24 @@ export default async function ClassificacioPage({
     db.select().from(groups).where(eq(groups.tournamentId, id)).orderBy(asc(groups.order)),
     loadStandings(id, { canManage }),
     db
-      .select({ id: rounds.id, number: rounds.number })
+      .select({ id: rounds.id, number: rounds.number, phaseId: rounds.phaseId })
       .from(rounds)
       .where(eq(rounds.tournamentId, id))
       .orderBy(asc(rounds.number)),
+    loadEntrantsWithContact(id),
   ]);
+
+  // Club i BARRUF per jugador, per al cercador — són públics (ja es veuen a
+  // la fitxa de cada jugador), no cal gestionar-los perquè apareguin aquí.
+  const infoPerEntry = new Map(entrants.map((e) => [e.id, { club: e.club, rating: e.rating }]));
+
+  // Filtre per fase: només té sentit oferir-lo quan n'hi ha més d'una i ja
+  // s'ha jugat alguna cosa visible — amb una de sola, "per fases" i "general"
+  // dirien el mateix, i sense partides és una pestanya buida.
+  const mostrarFasesFiltre = totes_fases.length > 1 && vistaCompleta.standings.some((s) => s.gamesPlayed > 0);
+  const faseSeleccionada =
+    mostrarFasesFiltre && totes_fases.some((f) => f.id === sp.f) ? (sp.f as string) : null;
+  const vista = faseSeleccionada ? await loadStandings(id, { canManage, phaseId: faseSeleccionada }) : vistaCompleta;
 
   if (!vista.visible) {
     return (
@@ -75,6 +88,29 @@ export default async function ClassificacioPage({
     );
   }
 
+  // Cercador per nom/club i per BARRUF (menys de X o més de X — una franja de
+  // nivell, no un número exacte). Tot per querystring: cap component client
+  // necessari i els enllaços de pestanya/fase el poden arrossegar igual.
+  const cerca = (sp.q ?? '').trim().toLowerCase();
+  const barrufComparador = sp.br === 'lt' || sp.br === 'gt' ? sp.br : null;
+  const barrufValor = barrufComparador && sp.bv && !Number.isNaN(Number(sp.bv)) ? Number(sp.bv) : null;
+  const hiHaFiltre = cerca.length > 0 || barrufValor !== null;
+
+  function passaFiltre(entryId: string, displayName: string): boolean {
+    const info = infoPerEntry.get(entryId);
+    if (cerca && !`${displayName} ${info?.club ?? ''}`.toLowerCase().includes(cerca)) return false;
+    if (barrufValor !== null) {
+      if (info?.rating == null) return false;
+      if (barrufComparador === 'lt' && !(info.rating < barrufValor)) return false;
+      if (barrufComparador === 'gt' && !(info.rating > barrufValor)) return false;
+    }
+    return true;
+  }
+
+  const standingsFiltrats = hiHaFiltre
+    ? vista.standings.filter((s) => passaFiltre(s.entryId, s.displayName))
+    : vista.standings;
+
   // Mètriques que tenen pestanya pròpia: les preguntes marcades per al
   // rànquing (Bingos, Millor jugada...), no els desempats configurats.
   const metriquesRanquing = totesPreguntes
@@ -85,11 +121,13 @@ export default async function ClassificacioPage({
     METRIC_LABELS[key] ?? totesPreguntes.find((q) => q.key === key)?.label ?? key;
 
   // Les columnes de la classificació general són els desempats configurats a
-  // la fase (l'última, com fa el motor per decidir l'ordre — vegeu
-  // lib/standings-service.ts), en el seu ordre: expliquen per què algú va
-  // davant d'un altre. L'encontre directe queda fora perquè no té un valor
-  // absolut per jugador, només dins d'un bloc d'empatats (§11.3).
-  const faseReferencia = totes_fases[totes_fases.length - 1] ?? null;
+  // la fase (l'última si no se n'ha triat cap, com fa el motor per decidir
+  // l'ordre — vegeu lib/standings-service.ts), en el seu ordre: expliquen
+  // per què algú va davant d'un altre. L'encontre directe queda fora perquè
+  // no té un valor absolut per jugador, només dins d'un bloc d'empatats (§11.3).
+  const faseReferencia = faseSeleccionada
+    ? (totes_fases.find((f) => f.id === faseSeleccionada) ?? null)
+    : (totes_fases[totes_fases.length - 1] ?? null);
   const desempatsGeneral = (faseReferencia?.tiebreakers ?? [])
     .map((key) => ({ key, def: resolveTiebreaker(key) }))
     .filter((d) => d.def?.compute)
@@ -107,7 +145,10 @@ export default async function ClassificacioPage({
   // d'una mètrica concreta: és l'única que en treu profit (§15.3).
   const preguntaActiva = totesPreguntes.find((q) => q.key === pestanya) ?? null;
   const historial = preguntaActiva
-    ? await loadMetricHistory(id, pestanya, { onlyClosedRounds: vista.mode === 'closed_rounds' })
+    ? await loadMetricHistory(id, pestanya, {
+        onlyClosedRounds: vista.mode === 'closed_rounds',
+        phaseIds: faseSeleccionada ? [faseSeleccionada] : undefined,
+      })
     : new Map();
 
   // Quines rondes alimenten la classificació que s'està veient — útil quan el
@@ -128,6 +169,29 @@ export default async function ClassificacioPage({
       : null;
   const avis = MODE_NOTICE[vista.mode];
 
+  // Un únic constructor d'enllaç perquè pestanya/fase/cerca es puguin
+  // combinar sense que triar-ne un esborri els altres.
+  function hrefFor(overrides: { t?: string; f?: string | null; clearFilters?: boolean }) {
+    const params = new URLSearchParams();
+    const t = overrides.t ?? pestanya;
+    const f = overrides.f !== undefined ? overrides.f : faseSeleccionada;
+    if (t && t !== 'general') params.set('t', t);
+    if (f) params.set('f', f);
+    if (!overrides.clearFilters) {
+      if (sp.q) params.set('q', sp.q);
+      if (sp.br) params.set('br', sp.br);
+      if (sp.bv) params.set('bv', sp.bv);
+    }
+    const qs = params.toString();
+    return `/campionat/${id}/classificacio${qs ? `?${qs}` : ''}`;
+  }
+
+  function pillClass(actiu: boolean) {
+    return `px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
+      actiu ? 'bg-accent text-surface' : 'bg-surface-2 text-ink-2 hover:text-ink'
+    }`;
+  }
+
   return (
     <div className="space-y-4">
       {(avis || avisRondes) && (
@@ -137,18 +201,59 @@ export default async function ClassificacioPage({
         </p>
       )}
 
+      <form method="get" className="flex flex-wrap items-end gap-2 bg-surface-2 border border-border rounded-lg p-2.5">
+        {pestanya !== 'general' && <input type="hidden" name="t" value={pestanya} />}
+        {faseSeleccionada && <input type="hidden" name="f" value={faseSeleccionada} />}
+        <input
+          type="text"
+          name="q"
+          defaultValue={sp.q ?? ''}
+          placeholder="Nom o club"
+          className="flex-1 min-w-[140px] text-sm border border-border rounded-lg px-2.5 py-1.5 bg-surface text-ink"
+        />
+        <select
+          name="br"
+          defaultValue={barrufComparador ?? ''}
+          className="text-sm border border-border rounded-lg px-2 py-1.5 bg-surface text-ink"
+        >
+          <option value="">BARRUF</option>
+          <option value="lt">Menys de</option>
+          <option value="gt">Més de</option>
+        </select>
+        <input
+          type="number"
+          name="bv"
+          defaultValue={sp.bv ?? ''}
+          placeholder="valor"
+          className="w-20 text-sm border border-border rounded-lg px-2.5 py-1.5 bg-surface text-ink"
+        />
+        <button type="submit" className="px-3 py-1.5 rounded-lg bg-accent text-surface text-xs font-semibold">
+          Filtra
+        </button>
+        {hiHaFiltre && (
+          <Link href={hrefFor({ clearFilters: true })} className="text-xs text-ink-3 hover:text-ink underline px-1 py-1.5">
+            Treu filtres
+          </Link>
+        )}
+      </form>
+
+      {mostrarFasesFiltre && (
+        <nav className="flex gap-1.5 overflow-x-auto pb-1">
+          <Link href={hrefFor({ f: null })} className={pillClass(faseSeleccionada === null)}>
+            Totes les fases
+          </Link>
+          {totes_fases.map((f) => (
+            <Link key={f.id} href={hrefFor({ f: f.id })} className={pillClass(faseSeleccionada === f.id)}>
+              {f.name}
+            </Link>
+          ))}
+        </nav>
+      )}
+
       {PESTANYES.length > 1 && (
         <nav className="flex gap-1.5 overflow-x-auto pb-1">
           {PESTANYES.map((p) => (
-            <Link
-              key={p.id}
-              href={`/campionat/${id}/classificacio${p.id === 'general' ? '' : `?t=${p.id}`}`}
-              className={`px-3 py-1.5 rounded-full text-xs font-semibold whitespace-nowrap transition-colors ${
-                pestanya === p.id
-                  ? 'bg-accent text-surface'
-                  : 'bg-surface-2 text-ink-2 hover:text-ink'
-              }`}
-            >
+            <Link key={p.id} href={hrefFor({ t: p.id })} className={pillClass(pestanya === p.id)}>
               {p.label}
             </Link>
           ))}
@@ -171,7 +276,7 @@ export default async function ClassificacioPage({
       ) : pestanya === 'grups' ? (
         <div className="space-y-4">
           {tots_grups.map((grup) => {
-            const delGrup = vista.standings.filter((s) => s.groupId === grup.id);
+            const delGrup = standingsFiltrats.filter((s) => s.groupId === grup.id);
             if (delGrup.length === 0) return null;
             return (
               <div key={grup.id}>
@@ -188,11 +293,11 @@ export default async function ClassificacioPage({
           })}
         </div>
       ) : pestanya === 'general' ? (
-        <ClassificacioGeneral tournamentId={id} standings={vista.standings} desempats={desempatsGeneral} />
+        <ClassificacioGeneral tournamentId={id} standings={standingsFiltrats} desempats={desempatsGeneral} />
       ) : (
         <RanquingMetrica
           tournamentId={id}
-          standings={vista.standings}
+          standings={standingsFiltrats}
           metrica={pestanya}
           etiqueta={etiqueta(pestanya)}
           isWordMetric={preguntaActiva?.type === 'wordvalue'}

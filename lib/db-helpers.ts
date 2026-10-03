@@ -243,7 +243,7 @@ export async function loadEntryMatches(tournamentId: string, entryId: string) {
  */
 export async function loadQuestionMetrics(
   tournamentId: string,
-  opts: { onlyClosedRounds?: boolean } = {}
+  opts: { onlyClosedRounds?: boolean; phaseIds?: string[] } = {}
 ): Promise<{
   metrics: QuestionMetric[];
   answers: MetricAnswer[];
@@ -267,6 +267,7 @@ export async function loadQuestionMetrics(
 
   const keyByQuestionId = new Map(definitions.map((d) => [d.id, d.key]));
   const visibleIds = opts.onlyClosedRounds ? await loadVisibleRoundIds(tournamentId) : null;
+  const phaseFilter = opts.phaseIds ? new Set(opts.phaseIds) : null;
 
   const rows = await db
     .select({
@@ -274,14 +275,21 @@ export async function loadQuestionMetrics(
       numberValue: matchAnswers.numberValue,
       entryId: matchParticipants.entryId,
       roundId: matches.roundId,
+      phaseId: rounds.phaseId,
     })
     .from(matchAnswers)
     .innerJoin(matchParticipants, eq(matchParticipants.id, matchAnswers.participantId))
     .innerJoin(matches, eq(matches.id, matchParticipants.matchId))
+    .innerJoin(rounds, eq(rounds.id, matches.roundId))
     .where(inArray(matchAnswers.questionId, definitions.map((d) => d.id)));
 
   const answers: MetricAnswer[] = rows
-    .filter((r) => r.numberValue !== null && (!visibleIds || visibleIds.has(r.roundId)))
+    .filter(
+      (r) =>
+        r.numberValue !== null &&
+        (!visibleIds || visibleIds.has(r.roundId)) &&
+        (!phaseFilter || phaseFilter.has(r.phaseId))
+    )
     .map((r) => ({
       entryId: r.entryId,
       key: keyByQuestionId.get(r.questionId)!,
@@ -405,7 +413,7 @@ export interface MetricHistoryRow {
 export async function loadMetricHistory(
   tournamentId: string,
   questionKey: string,
-  opts: { onlyClosedRounds?: boolean } = {}
+  opts: { onlyClosedRounds?: boolean; phaseIds?: string[] } = {}
 ): Promise<Map<string, MetricHistoryRow[]>> {
   const result = new Map<string, MetricHistoryRow[]>();
 
@@ -416,13 +424,14 @@ export async function loadMetricHistory(
   if (!question) return result;
 
   const visibleIds = opts.onlyClosedRounds ? await loadVisibleRoundIds(tournamentId) : null;
+  const phaseFilter = opts.phaseIds ? new Set(opts.phaseIds) : null;
 
   const roundRows = (
     await db
-      .select({ id: rounds.id, number: rounds.number })
+      .select({ id: rounds.id, number: rounds.number, phaseId: rounds.phaseId })
       .from(rounds)
       .where(eq(rounds.tournamentId, tournamentId))
-  ).filter((r) => !visibleIds || visibleIds.has(r.id));
+  ).filter((r) => (!visibleIds || visibleIds.has(r.id)) && (!phaseFilter || phaseFilter.has(r.phaseId)));
   if (roundRows.length === 0) return result;
   const roundNumberById = new Map(roundRows.map((r) => [r.id, r.number]));
 
