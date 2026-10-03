@@ -62,6 +62,13 @@ export default function RanquingMetrica({
           (acc, row) => (!acc || row.roundNumber > acc.roundNumber ? row : acc),
           null
         );
+        // A "paraula + valor" (p.ex. Millor jugada) el nombre no diu res per
+        // si sol — el que interessa és si la darrera jugada ha millorat les
+        // anteriors, no el seu valor absolut.
+        const anteriorsMillor = history
+          .filter((row) => row !== darrera)
+          .reduce((max, row) => Math.max(max, row.value), -Infinity);
+        const esMillora = darrera !== null && darrera.value >= anteriorsMillor;
 
         return (
           <div key={s.entryId} className="border-2 border-border rounded-xl overflow-hidden bg-surface">
@@ -81,14 +88,23 @@ export default function RanquingMetrica({
                 >
                   {s.displayName}
                 </Link>
-                {darrera && (
-                  <span
-                    title={`Ronda ${darrera.roundNumber}`}
-                    className="flex-shrink-0 px-2.5 py-1 rounded-full bg-accent text-surface text-xs font-bold tabular-nums"
-                  >
-                    +{formatValue(darrera.value)}
-                  </span>
-                )}
+                {isWordMetric
+                  ? esMillora && (
+                      <span
+                        title={`Ronda ${darrera!.roundNumber}`}
+                        className="flex-shrink-0 px-2.5 py-1 rounded-full bg-accent text-surface text-xs font-bold"
+                      >
+                        Millora
+                      </span>
+                    )
+                  : darrera && (
+                      <span
+                        title={`Ronda ${darrera.roundNumber}`}
+                        className="flex-shrink-0 px-2.5 py-1 rounded-full bg-accent text-surface text-xs font-bold tabular-nums"
+                      >
+                        +{formatValue(darrera.value)}
+                      </span>
+                    )}
                 {history.length > 0 && (
                   <svg
                     className={`w-5 h-5 text-ink-3 flex-shrink-0 transition-transform ${obert ? 'rotate-180' : ''}`}
