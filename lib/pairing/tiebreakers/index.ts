@@ -95,8 +95,13 @@ export function sortStandings<T extends Pick<Standing, 'entryId' | 'points'>>(
     if (def.compute) scalarValues.set(def.key, def.compute(ctx));
   }
 
+  // Els punts són el primer criteri, sempre — abans de qualsevol desempat
+  // configurat. Cal agrupar-hi primer: si es passés la llista sencera a
+  // `resolveTies` amb profunditat 0 directament, el primer desempat la
+  // reordenaria sencera i els punts deixarien de pintar res.
   const byPoints = [...standings].sort((a, b) => b.points - a.points);
-  return resolveTies(byPoints, 0);
+  const pointBlocks = splitIntoTiedBlocks(byPoints, (s) => s.points);
+  return pointBlocks.flatMap((block) => resolveTies(block, 0));
 
   function resolveTies(group: T[], depth: number): T[] {
     if (group.length <= 1 || depth >= defs.length) return group;
@@ -113,22 +118,26 @@ export function sortStandings<T extends Pick<Standing, 'entryId' | 'points'>>(
     });
 
     // Els que continuen empatats passen al desempat següent.
-    const result: T[] = [];
-    let block: T[] = [];
-    for (const standing of sorted) {
-      const previous = block[block.length - 1];
-      const tied =
-        previous !== undefined &&
-        Math.abs((values.get(previous.entryId) ?? 0) - (values.get(standing.entryId) ?? 0)) < EPSILON;
-      if (previous !== undefined && !tied) {
-        result.push(...resolveTies(block, depth + 1));
-        block = [];
-      }
-      block.push(standing);
-    }
-    result.push(...resolveTies(block, depth + 1));
-    return result;
+    const blocks = splitIntoTiedBlocks(sorted, (s) => values.get(s.entryId) ?? 0);
+    return blocks.flatMap((block) => resolveTies(block, depth + 1));
   }
+}
+
+/** Parteix una llista ja ordenada en blocs d'elements empatats (mateix valor de `keyOf`). */
+function splitIntoTiedBlocks<T>(items: T[], keyOf: (item: T) => number): T[][] {
+  const blocks: T[][] = [];
+  let block: T[] = [];
+  for (const item of items) {
+    const previous = block[block.length - 1];
+    const tied = previous !== undefined && Math.abs(keyOf(previous) - keyOf(item)) < EPSILON;
+    if (previous !== undefined && !tied) {
+      blocks.push(block);
+      block = [];
+    }
+    block.push(item);
+  }
+  if (block.length > 0) blocks.push(block);
+  return blocks;
 }
 
 export { REGISTRY as TIEBREAKERS };
