@@ -7,6 +7,7 @@ import { CONFIG_LINKS } from './ConfigSidebar';
 
 /** Contingut que es consulta sovint: sempre a dalt, a totes les mides. */
 const CONTENT_TABS = [
+  { key: '', label: 'Inici' },
   { key: 'jugadors', label: 'Jugadors' },
   { key: 'rondes', label: 'Rondes' },
   { key: 'classificacio', label: 'Classificació' },
@@ -24,8 +25,10 @@ export default function NavTabs({ id }: { id: string }) {
   return (
     <nav className="sticky top-12 z-10 bg-bg flex gap-6 border-b border-border overflow-x-auto">
       {tabs.map((tab) => {
-        const href = `/campionat/${id}/${tab.key}`;
-        const active = pathname.startsWith(href);
+        const href = tab.key === '' ? `/campionat/${id}` : `/campionat/${id}/${tab.key}`;
+        // "Inici" és un prefix de totes les altres pestanyes: cal comparació
+        // exacta perquè no quedi marcada com a activa a cada pàgina.
+        const active = tab.key === '' ? pathname === href : pathname.startsWith(href);
         return (
           <Link
             key={tab.key}
