@@ -6,7 +6,7 @@ import { groups, questionDefinitions } from '@/db/schema';
 import Badge from '@/components/ui/Badge';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import { canManageTournament, getCurrentAccount } from '@/lib/authz';
-import { loadEntrantsWithContact, loadEntryMatches } from '@/lib/db-helpers';
+import { loadEntrantsWithContact, loadEntryMatches, loadEntryWordAnswers } from '@/lib/db-helpers';
 import { loadStandings } from '@/lib/standings-service';
 
 export const dynamic = 'force-dynamic';
@@ -45,9 +45,10 @@ export default async function JugadorDetallPage({
   const grupNom = tots_grups.find((g) => g.id === jugador.groupId)?.name;
   const nomPerEntry = new Map(inscrits.map((e) => [e.id, e.displayName]));
 
-  const [vista, partides] = await Promise.all([
+  const [vista, partides, paraulesDestacades] = await Promise.all([
     loadStandings(id, { canManage }),
     loadEntryMatches(id, pid),
+    loadEntryWordAnswers(id, pid),
   ]);
 
   const myStanding = vista.standings.find((s) => s.entryId === pid);
@@ -111,6 +112,7 @@ export default async function JugadorDetallPage({
               key={key}
               label={etiquetaMetrica(key)}
               value={key === 'spread' && value > 0 ? `+${formatNumber(value)}` : formatNumber(value)}
+              sublabel={paraulesDestacades.get(key)}
               color={key === 'spread' ? (value > 0 ? 'green' : value < 0 ? 'red' : 'gray') : 'gray'}
             />
           ))}
@@ -235,10 +237,13 @@ function formatNumber(value: number): string {
 function StatCard({
   label,
   value,
+  sublabel,
   color = 'gray',
 }: {
   label: string;
   value: string;
+  /** La paraula d'una pregunta "paraula + valor" (p.ex. la millor jugada). */
+  sublabel?: string;
   color?: 'gray' | 'green' | 'red' | 'blue';
 }) {
   const colorClass = {
@@ -252,6 +257,7 @@ function StatCard({
     <div className="bg-surface border border-border rounded-xl p-3 text-center">
       <p className="text-[11px] font-semibold text-ink-3 uppercase tracking-wide mb-1">{label}</p>
       <p className={`font-display text-xl font-bold tabular-nums ${colorClass}`}>{value}</p>
+      {sublabel && <p className="text-xs text-ink-3 mt-0.5 truncate">{sublabel}</p>}
     </div>
   );
 }

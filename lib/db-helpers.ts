@@ -263,6 +263,53 @@ export async function loadQuestionMetrics(tournamentId: string): Promise<{
 }
 
 /**
+ * La paraula de la millor jugada (o qualsevol pregunta "paraula + valor") d'un
+ * jugador, perquè els destacats puguin mostrar-la al costat del valor.
+ *
+ * Un `sum`/`avg`/`count` no té "la" resposta — en són diverses sumades — però
+ * `max` sí: la paraula que ha fet aquell punt és la que es mostra.
+ */
+export async function loadEntryWordAnswers(
+  tournamentId: string,
+  entryId: string
+): Promise<Map<string, string>> {
+  const wordQuestions = await db
+    .select({ id: questionDefinitions.id, key: questionDefinitions.key })
+    .from(questionDefinitions)
+    .where(
+      and(eq(questionDefinitions.tournamentId, tournamentId), eq(questionDefinitions.type, 'wordvalue'))
+    );
+  if (wordQuestions.length === 0) return new Map();
+
+  const rows = await db
+    .select({
+      questionId: matchAnswers.questionId,
+      textValue: matchAnswers.textValue,
+      numberValue: matchAnswers.numberValue,
+    })
+    .from(matchAnswers)
+    .innerJoin(matchParticipants, eq(matchParticipants.id, matchAnswers.participantId))
+    .where(
+      and(
+        eq(matchParticipants.entryId, entryId),
+        inArray(matchAnswers.questionId, wordQuestions.map((q) => q.id))
+      )
+    );
+
+  const keyByQuestionId = new Map(wordQuestions.map((q) => [q.id, q.key]));
+  const best = new Map<string, { value: number; text: string }>();
+  for (const row of rows) {
+    if (!row.textValue) continue;
+    const key = keyByQuestionId.get(row.questionId);
+    if (!key) continue;
+    const value = row.numberValue ?? 0;
+    const current = best.get(key);
+    if (!current || value > current.value) best.set(key, { value, text: row.textValue });
+  }
+  return new Map([...best].map(([key, v]) => [key, v.text]));
+}
+
+/**
  * Com `loadEntrants()`, però amb les dades de contacte de la persona.
  *
  * Només per a les pantalles de gestió: el telèfon i el correu es veuen si
