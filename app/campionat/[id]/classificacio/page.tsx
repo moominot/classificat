@@ -24,7 +24,7 @@ const METRIC_LABELS: Record<string, string> = {
   wins: 'Victòries',
   spread: 'Spread',
   total_score: 'Punts a favor',
-  avg_score: 'Mitjana',
+  scrabbles_per_game: 'Scrabbles/Partida',
 };
 
 const MODE_NOTICE: Record<string, string> = {
@@ -72,11 +72,28 @@ export default async function ClassificacioPage({
     );
   }
 
+  // "Scrabbles/Partida" és Scrabbles ÷ partides jugades: no és una resposta
+  // ni una suma, sinó un quocient entre dues mètriques, així que es calcula
+  // aquí i no al motor de classificacions (que no sap què és un "bingo").
+  const teBingos = totesPreguntes.some((q) => q.key === 'bingos');
+  const standings = teBingos
+    ? vista.standings.map((s) => {
+        const partides = s.gamesPlayed - s.byes;
+        return {
+          ...s,
+          metrics: {
+            ...s.metrics,
+            scrabbles_per_game: partides > 0 ? (s.metrics.bingos ?? 0) / partides : 0,
+          },
+        };
+      })
+    : vista.standings;
+
   // Mètriques que tenen columna pròpia: les preguntes marcades per al rànquing
-  // més spread i mitjana, que fa servir tothom encara que no siguin preguntes.
+  // més spread, que fa servir tothom encara que no sigui una pregunta.
   const metriquesRanquing = [
     'spread',
-    'avg_score',
+    ...(teBingos ? ['scrabbles_per_game'] : []),
     ...totesPreguntes.filter((q) => q.showInRanking && q.aggregate !== 'none').map((q) => q.key),
   ].filter((key, i, all) => all.indexOf(key) === i);
 
@@ -136,7 +153,7 @@ export default async function ClassificacioPage({
       ) : pestanya === 'grups' ? (
         <div className="space-y-4">
           {tots_grups.map((grup) => {
-            const delGrup = vista.standings.filter((s) => s.groupId === grup.id);
+            const delGrup = standings.filter((s) => s.groupId === grup.id);
             if (delGrup.length === 0) return null;
             return (
               <div key={grup.id}>
@@ -156,14 +173,14 @@ export default async function ClassificacioPage({
       ) : pestanya === 'general' ? (
         <TaulaClassificacio
           tournamentId={id}
-          standings={vista.standings}
+          standings={standings}
           metriques={metriquesRanquing}
           etiqueta={etiqueta}
         />
       ) : (
         <RanquingMetrica
           tournamentId={id}
-          standings={vista.standings}
+          standings={standings}
           metrica={pestanya}
           etiqueta={etiqueta(pestanya)}
           paraules={paraules}
