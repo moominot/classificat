@@ -158,9 +158,9 @@ export default async function RondaPage({
         </div>
       </div>
 
-      <div className="flex items-start justify-between gap-4">
+      <div className="space-y-3 sm:space-y-0 sm:flex sm:items-start sm:justify-between sm:gap-4">
         <div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <h2 className="font-display text-xl font-bold text-ink">Ronda {ronda.number}</h2>
             {tancada ? (
               <Badge color="green">Tancada</Badge>
@@ -182,7 +182,7 @@ export default async function RondaPage({
           )}
         </div>
         {totals > 0 && (
-          <div className="text-right w-40 flex-shrink-0">
+          <div className="sm:text-right sm:w-40 sm:flex-shrink-0">
             <p className="text-xs text-ink-3 mb-1.5 tabular-nums">
               {jugades} / {totals} jugades
             </p>
