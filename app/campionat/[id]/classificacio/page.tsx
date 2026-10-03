@@ -4,7 +4,7 @@ import { db } from '@/db';
 import { groups, phases, questionDefinitions, rounds } from '@/db/schema';
 import { Card } from '@/components/ui/Card';
 import { canManageTournament, getCurrentAccount } from '@/lib/authz';
-import { loadMetricHistory } from '@/lib/db-helpers';
+import { loadMetricHistory, loadVisibleRoundIds } from '@/lib/db-helpers';
 import { loadStandings } from '@/lib/standings-service';
 import { resolveTiebreaker } from '@/lib/pairing/tiebreakers';
 import RanquingMetrica from './RanquingMetrica';
@@ -53,7 +53,7 @@ export default async function ClassificacioPage({
     db.select().from(groups).where(eq(groups.tournamentId, id)).orderBy(asc(groups.order)),
     loadStandings(id, { canManage }),
     db
-      .select({ number: rounds.number, status: rounds.status })
+      .select({ id: rounds.id, number: rounds.number })
       .from(rounds)
       .where(eq(rounds.tournamentId, id))
       .orderBy(asc(rounds.number)),
@@ -106,17 +106,25 @@ export default async function ClassificacioPage({
   // L'historial (una fila per ronda jugada) només cal per a la pestanya
   // d'una mètrica concreta: és l'única que en treu profit (§15.3).
   const preguntaActiva = totesPreguntes.find((q) => q.key === pestanya) ?? null;
-  const historial = preguntaActiva ? await loadMetricHistory(id, pestanya) : new Map();
+  const historial = preguntaActiva
+    ? await loadMetricHistory(id, pestanya, { onlyClosedRounds: vista.mode === 'closed_rounds' })
+    : new Map();
 
   // Quines rondes alimenten la classificació que s'està veient — útil quan el
   // director manté la incògnita de resultats fins al final i la xifra de
-  // "només compten les tancades" per si sola no diu quines (docs/pla-rols.md §8.2).
-  const rondesTancades = totes_rondes.filter((r) => r.status === 'closed').map((r) => r.number);
+  // "només compten les tancades" per si sola no diu quines. Mateix criteri
+  // que les dades (tancada i amb resultats publicats), no només l'estat
+  // (docs/pla-rols.md §8.2) — si no, el missatge podia dir que una ronda
+  // compta quan el director l'havia amagat explícitament.
+  const rondesVisiblesIds = vista.mode === 'closed_rounds' ? await loadVisibleRoundIds(id) : null;
+  const rondesVisibles = rondesVisiblesIds
+    ? totes_rondes.filter((r) => rondesVisiblesIds.has(r.id)).map((r) => r.number)
+    : [];
   const avisRondes =
     vista.mode === 'closed_rounds'
-      ? rondesTancades.length === 0
+      ? rondesVisibles.length === 0
         ? 'Encara no hi ha cap ronda tancada.'
-        : `Compten les rondes: ${rondesTancades.join(', ')}.`
+        : `Compten les rondes: ${rondesVisibles.join(', ')}.`
       : null;
   const avis = MODE_NOTICE[vista.mode];
 

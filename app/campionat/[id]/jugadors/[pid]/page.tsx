@@ -6,7 +6,7 @@ import { groups, questionDefinitions } from '@/db/schema';
 import Badge from '@/components/ui/Badge';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import { canManageTournament, getCurrentAccount } from '@/lib/authz';
-import { loadEntrantsWithContact, loadEntryMatches, loadEntryWordAnswers } from '@/lib/db-helpers';
+import { loadEntrantsWithContact, loadEntryMatches, loadEntryWordAnswers, loadVisibleRoundIds } from '@/lib/db-helpers';
 import { loadStandings } from '@/lib/standings-service';
 
 export const dynamic = 'force-dynamic';
@@ -45,11 +45,21 @@ export default async function JugadorDetallPage({
   const grupNom = tots_grups.find((g) => g.id === jugador.groupId)?.name;
   const nomPerEntry = new Map(inscrits.map((e) => [e.id, e.displayName]));
 
-  const [vista, partides, paraulesDestacades] = await Promise.all([
+  const [vista, partidesReals, paraulesDestacades, visiblesIds] = await Promise.all([
     loadStandings(id, { canManage }),
     loadEntryMatches(id, pid),
-    loadEntryWordAnswers(id, pid),
+    loadEntryWordAnswers(id, pid, { onlyClosedRounds: !canManage }),
+    canManage ? null : loadVisibleRoundIds(id),
   ]);
+
+  // Una ronda sense resultats publicats és, per a qui no gestiona, com si no
+  // s'hagués jugat encara: el marcador es buida aquí, no al motor d'historial
+  // (mateix criteri que a la ronda i a la partida individuals, §8.2/§15.6).
+  const partides = partidesReals.map((p) =>
+    !canManage && !p.isBye && !visiblesIds?.has(p.roundId)
+      ? { ...p, me: { ...p.me, score: null, rank: null, outcome: null }, opponents: p.opponents.map((o) => ({ ...o, score: null, rank: null, outcome: null })) }
+      : p
+  );
 
   const myStanding = vista.standings.find((s) => s.entryId === pid);
 

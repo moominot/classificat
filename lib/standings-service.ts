@@ -74,7 +74,7 @@ export async function loadStandings(
   });
 
   const entrants = await loadEntrants(tournamentId);
-  const { metrics, answers } = await loadQuestionMetrics(tournamentId);
+  const { metrics, answers } = await loadQuestionMetrics(tournamentId, { onlyClosedRounds: mode === 'closed_rounds' });
 
   const standings = computeStandings({
     entryIds: entrants.map((e) => e.id),

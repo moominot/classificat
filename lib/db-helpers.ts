@@ -9,6 +9,7 @@ import {
   phases,
   questionDefinitions,
   rounds,
+  tournaments,
 } from '@/db/schema';
 import { DEFAULT_SCORING } from '@/db/types';
 import type { ScoringConfig } from '@/db/types';
@@ -70,6 +71,33 @@ async function loadRoundRows(tournamentId: string): Promise<RoundRow[]> {
     .where(eq(rounds.tournamentId, tournamentId));
 }
 
+/**
+ * Les rondes que compten per a tot el que és públic — classificació general,
+ * mètriques de preguntes i el seu historial: tancades i amb els resultats
+ * fets públics (§8.2, §15.6). `resultsVisible` ja existia per amagar el
+ * marcador d'una partida concreta; cal el mateix filtre aquí perquè una
+ * ronda amagada no es colés per la porta del darrere via les classificacions
+ * secundàries (Bingos, Millor jugada...), que no passaven per aquest sedàs.
+ */
+export async function loadVisibleRoundIds(tournamentId: string): Promise<Set<string>> {
+  const [tournament] = await db
+    .select({ visibility: tournaments.visibility })
+    .from(tournaments)
+    .where(eq(tournaments.id, tournamentId));
+  const defaultResultsVisible = tournament?.visibility?.resultsVisible ?? true;
+
+  const roundRows = await db
+    .select({ id: rounds.id, status: rounds.status, resultsVisible: rounds.resultsVisible })
+    .from(rounds)
+    .where(eq(rounds.tournamentId, tournamentId));
+
+  return new Set(
+    roundRows
+      .filter((r) => r.status === 'closed' && (r.resultsVisible ?? defaultResultsVisible))
+      .map((r) => r.id)
+  );
+}
+
 async function loadParticipants(roundIds: string[]) {
   if (roundIds.length === 0) return { matchRows: [], participantRows: [] };
 
@@ -122,9 +150,10 @@ export async function loadScoredMatches(
 ): Promise<ScoredMatch[]> {
   const roundRows = await loadRoundRows(tournamentId);
   const phaseFilter = opts.phaseIds ? new Set(opts.phaseIds) : null;
+  const visibleIds = opts.onlyClosedRounds ? await loadVisibleRoundIds(tournamentId) : null;
 
   const usable = roundRows.filter((r) => {
-    if (opts.onlyClosedRounds && r.status !== 'closed') return false;
+    if (visibleIds && !visibleIds.has(r.id)) return false;
     if (opts.upToRound !== undefined && r.number > opts.upToRound) return false;
     if (phaseFilter && !phaseFilter.has(r.phaseId)) return false;
     return true;
@@ -212,7 +241,10 @@ export async function loadEntryMatches(tournamentId: string, entryId: string) {
  * Aquesta és la peça que converteix "bingos" o "millor jugada" en columnes i
  * desempats sense codi específic.
  */
-export async function loadQuestionMetrics(tournamentId: string): Promise<{
+export async function loadQuestionMetrics(
+  tournamentId: string,
+  opts: { onlyClosedRounds?: boolean } = {}
+): Promise<{
   metrics: QuestionMetric[];
   answers: MetricAnswer[];
 }> {
@@ -234,19 +266,22 @@ export async function loadQuestionMetrics(tournamentId: string): Promise<{
   if (definitions.length === 0) return { metrics: [], answers: [] };
 
   const keyByQuestionId = new Map(definitions.map((d) => [d.id, d.key]));
+  const visibleIds = opts.onlyClosedRounds ? await loadVisibleRoundIds(tournamentId) : null;
 
   const rows = await db
     .select({
       questionId: matchAnswers.questionId,
       numberValue: matchAnswers.numberValue,
       entryId: matchParticipants.entryId,
+      roundId: matches.roundId,
     })
     .from(matchAnswers)
     .innerJoin(matchParticipants, eq(matchParticipants.id, matchAnswers.participantId))
+    .innerJoin(matches, eq(matches.id, matchParticipants.matchId))
     .where(inArray(matchAnswers.questionId, definitions.map((d) => d.id)));
 
   const answers: MetricAnswer[] = rows
-    .filter((r) => r.numberValue !== null)
+    .filter((r) => r.numberValue !== null && (!visibleIds || visibleIds.has(r.roundId)))
     .map((r) => ({
       entryId: r.entryId,
       key: keyByQuestionId.get(r.questionId)!,
@@ -271,7 +306,8 @@ export async function loadQuestionMetrics(tournamentId: string): Promise<{
  */
 async function loadWordAnswers(
   tournamentId: string,
-  entryId?: string
+  entryId: string,
+  opts: { onlyClosedRounds?: boolean } = {}
 ): Promise<Map<string, { value: number; text: string }>> {
   const wordQuestions = await db
     .select({ id: questionDefinitions.id, key: questionDefinitions.key })
@@ -281,18 +317,21 @@ async function loadWordAnswers(
     );
   if (wordQuestions.length === 0) return new Map();
 
+  const visibleIds = opts.onlyClosedRounds ? await loadVisibleRoundIds(tournamentId) : null;
+
   const rows = await db
     .select({
       questionId: matchAnswers.questionId,
       textValue: matchAnswers.textValue,
       numberValue: matchAnswers.numberValue,
-      entryId: matchParticipants.entryId,
+      roundId: matches.roundId,
     })
     .from(matchAnswers)
     .innerJoin(matchParticipants, eq(matchParticipants.id, matchAnswers.participantId))
+    .innerJoin(matches, eq(matches.id, matchParticipants.matchId))
     .where(
       and(
-        entryId ? eq(matchParticipants.entryId, entryId) : undefined,
+        eq(matchParticipants.entryId, entryId),
         inArray(matchAnswers.questionId, wordQuestions.map((q) => q.id))
       )
     );
@@ -301,12 +340,12 @@ async function loadWordAnswers(
   const best = new Map<string, { value: number; text: string }>();
   for (const row of rows) {
     if (!row.textValue) continue;
+    if (visibleIds && !visibleIds.has(row.roundId)) continue;
     const key = keyByQuestionId.get(row.questionId);
     if (!key) continue;
-    const mapKey = entryId ? key : `${row.entryId}|${key}`;
     const value = row.numberValue ?? 0;
-    const current = best.get(mapKey);
-    if (!current || value > current.value) best.set(mapKey, { value, text: row.textValue });
+    const current = best.get(key);
+    if (!current || value > current.value) best.set(key, { value, text: row.textValue });
   }
   return best;
 }
@@ -314,16 +353,11 @@ async function loadWordAnswers(
 /** La paraula de cada pregunta wordvalue d'un únic jugador (per als destacats). */
 export async function loadEntryWordAnswers(
   tournamentId: string,
-  entryId: string
+  entryId: string,
+  opts: { onlyClosedRounds?: boolean } = {}
 ): Promise<Map<string, string>> {
-  const best = await loadWordAnswers(tournamentId, entryId);
+  const best = await loadWordAnswers(tournamentId, entryId, opts);
   return new Map([...best].map(([key, v]) => [key, v.text]));
-}
-
-/** La paraula de cada pregunta wordvalue de tots els jugadors, per `entryId|key` (per a la classificació). */
-export async function loadTournamentWordAnswers(tournamentId: string): Promise<Map<string, string>> {
-  const best = await loadWordAnswers(tournamentId);
-  return new Map([...best].map(([mapKey, v]) => [mapKey, v.text]));
 }
 
 /**
@@ -370,7 +404,8 @@ export interface MetricHistoryRow {
  */
 export async function loadMetricHistory(
   tournamentId: string,
-  questionKey: string
+  questionKey: string,
+  opts: { onlyClosedRounds?: boolean } = {}
 ): Promise<Map<string, MetricHistoryRow[]>> {
   const result = new Map<string, MetricHistoryRow[]>();
 
@@ -380,10 +415,14 @@ export async function loadMetricHistory(
     .where(and(eq(questionDefinitions.tournamentId, tournamentId), eq(questionDefinitions.key, questionKey)));
   if (!question) return result;
 
-  const roundRows = await db
-    .select({ id: rounds.id, number: rounds.number })
-    .from(rounds)
-    .where(eq(rounds.tournamentId, tournamentId));
+  const visibleIds = opts.onlyClosedRounds ? await loadVisibleRoundIds(tournamentId) : null;
+
+  const roundRows = (
+    await db
+      .select({ id: rounds.id, number: rounds.number })
+      .from(rounds)
+      .where(eq(rounds.tournamentId, tournamentId))
+  ).filter((r) => !visibleIds || visibleIds.has(r.id));
   if (roundRows.length === 0) return result;
   const roundNumberById = new Map(roundRows.map((r) => [r.id, r.number]));
 
