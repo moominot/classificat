@@ -158,8 +158,8 @@ export default async function RondaPage({
         </div>
       </div>
 
-      <div className="space-y-3 sm:space-y-0 sm:flex sm:items-start sm:justify-between sm:gap-4">
-        <div>
+      <div>
+        <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex items-center gap-3 flex-wrap">
             <h2 className="font-display text-xl font-bold text-ink">Ronda {ronda.number}</h2>
             {tancada ? (
@@ -174,25 +174,16 @@ export default async function RondaPage({
               <Badge color="yellow">En curs</Badge>
             )}
           </div>
-          <p className="text-sm text-ink-3 mt-0.5">{fase?.name}</p>
-          {hideResults && totals > 0 && (
-            <p className="text-xs text-accent-ink bg-accent-tint rounded-lg px-2.5 py-1 mt-1.5 inline-block">
-              Els resultats d&apos;aquesta ronda encara no són públics.
-            </p>
+          {totals > 0 && (
+            <span className="text-xs text-ink-3 tabular-nums">
+              {jugades} / {totals} jugades
+            </span>
           )}
         </div>
-        {totals > 0 && (
-          <div className="sm:text-right sm:w-40 sm:flex-shrink-0">
-            <p className="text-xs text-ink-3 mb-1.5 tabular-nums">
-              {jugades} / {totals} jugades
-            </p>
-            <div className="h-1.5 rounded-full bg-surface-2 overflow-hidden">
-              <div
-                className="h-full bg-accent rounded-full transition-all"
-                style={{ width: `${totals > 0 ? Math.round((jugades / totals) * 100) : 0}%` }}
-              />
-            </div>
-          </div>
+        {hideResults && totals > 0 && (
+          <p className="text-xs text-accent-ink bg-accent-tint rounded-lg px-2.5 py-1 mt-1.5 inline-block">
+            Els resultats d&apos;aquesta ronda encara no són públics.
+          </p>
         )}
       </div>
 
