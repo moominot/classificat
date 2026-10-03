@@ -2,7 +2,8 @@ import { asc, eq } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { db } from '@/db';
-import { matchAnswers, matches, phases, questionDefinitions, rounds } from '@/db/schema';
+import { matchAnswers, matches, phases, questionDefinitions, rounds, tournaments } from '@/db/schema';
+import { DEFAULT_VISIBILITY } from '@/db/types';
 import Badge from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { canManageTournament, canReportResult, getCurrentAccount, getViewer } from '@/lib/authz';
@@ -28,6 +29,12 @@ export default async function PartidaDetallPage({
   const canManage = account ? await canManageTournament(account, id) : false;
   if (!canManage && round.status === 'draft') notFound();
 
+  const [tournament] = await db.select().from(tournaments).where(eq(tournaments.id, id));
+  const visibility = tournament?.visibility ?? DEFAULT_VISIBILITY;
+  const pairingsVisible = round.pairingsVisible ?? visibility.pairingsVisible;
+  if (!canManage && !pairingsVisible) notFound();
+  const hideResults = !canManage && !(round.resultsVisible ?? visibility.resultsVisible);
+
   const [phase] = await db.select().from(phases).where(eq(phases.id, round.phaseId));
 
   const [questions, answers, partides, inscrits] = await Promise.all([
@@ -45,12 +52,15 @@ export default async function PartidaDetallPage({
   if (!partida) notFound();
 
   const nomPerEntry = new Map(inscrits.map((e) => [e.id, e.displayName]));
+  const esBye = partida.participants.length === 1;
+  // El bye no amaga res; una taula de dos o més sí, mentre el director no
+  // n'hagi fet públics els resultats (§8.3).
   const participants = partida.participants.map((participant) => ({
     ...participant,
     displayName: nomPerEntry.get(participant.entryId) ?? '?',
+    score: hideResults && !esBye ? null : participant.score,
+    rank: hideResults && !esBye ? null : participant.rank,
   }));
-
-  const esBye = participants.length === 1;
   const teResultat = !esBye && participants.every((p) => p.rank !== null);
   const empat = teResultat && participants.filter((p) => p.rank === 1).length > 1;
 
@@ -86,7 +96,7 @@ export default async function PartidaDetallPage({
   };
 
   const visibles = questions.filter((q) => q.key !== 'score');
-  const teRespostes = visibles.some((q) =>
+  const teRespostes = !hideResults && visibles.some((q) =>
     (q.scope === 'participant' ? participants.map((p) => p.entryId) : [null]).some(
       (entryId) => answerText(q.id, entryId, q.type) !== null
     )

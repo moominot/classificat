@@ -12,6 +12,8 @@ interface AccionsRondaProps {
   estat: RoundStatus;
   teAparellaments: boolean;
   teResultats: boolean;
+  /** Sobreescriptura de la ronda: null = segueix la competició. */
+  resultatsPublics: boolean | null;
 }
 
 /**
@@ -27,6 +29,7 @@ export default function AccionsRonda({
   estat,
   teAparellaments,
   teResultats,
+  resultatsPublics,
 }: AccionsRondaProps) {
   const router = useRouter();
   const canManage = useCanManage();
@@ -46,6 +49,17 @@ export default function AccionsRonda({
     router.refresh();
   }
 
+  async function canviarResultatsPublics(value: boolean | null) {
+    setLoading('resultatsPublics');
+    await fetch(`/api/tournaments/${tournamentId}/rounds/${roundId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ resultsVisible: value }),
+    });
+    setLoading(null);
+    router.refresh();
+  }
+
   async function esborrarAparellaments() {
     setLoading('esborrar');
     await fetch(`/api/tournaments/${tournamentId}/rounds/${roundId}/import`, { method: 'DELETE' });
@@ -56,6 +70,24 @@ export default function AccionsRonda({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
+      {estat !== 'draft' && (
+        <label className="flex items-center gap-1.5 text-xs text-ink-3">
+          Resultats als jugadors:
+          <select
+            value={resultatsPublics === null ? 'auto' : resultatsPublics ? 'si' : 'no'}
+            onChange={(e) =>
+              canviarResultatsPublics(e.target.value === 'auto' ? null : e.target.value === 'si')
+            }
+            disabled={loading === 'resultatsPublics'}
+            className="border border-border rounded px-1.5 py-1 text-xs text-ink bg-surface"
+            title="Vols mantenir la incògnita dels resultats fins al final? Amaga'ls aquí sense esperar a tancar la ronda."
+          >
+            <option value="auto">Per defecte</option>
+            <option value="si">Visibles</option>
+            <option value="no">Amagats</option>
+          </select>
+        </label>
+      )}
       {estat === 'draft' && teAparellaments && (
         <Button
           size="sm"

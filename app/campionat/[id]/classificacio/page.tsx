@@ -1,7 +1,7 @@
 import { asc, eq } from 'drizzle-orm';
 import Link from 'next/link';
 import { db } from '@/db';
-import { groups, phases, questionDefinitions } from '@/db/schema';
+import { groups, phases, questionDefinitions, rounds } from '@/db/schema';
 import { Card } from '@/components/ui/Card';
 import { canManageTournament, getCurrentAccount } from '@/lib/authz';
 import { loadMetricHistory } from '@/lib/db-helpers';
@@ -28,7 +28,6 @@ const METRIC_LABELS: Record<string, string> = {
 };
 
 const MODE_NOTICE: Record<string, string> = {
-  closed_rounds: 'Només compten les rondes tancades.',
   frozen_at: 'La classificació està congelada: no inclou les últimes rondes.',
 };
 
@@ -44,7 +43,7 @@ export default async function ClassificacioPage({
   const account = await getCurrentAccount();
   const canManage = account ? await canManageTournament(account, id) : false;
 
-  const [totes_fases, totesPreguntes, tots_grups, vista] = await Promise.all([
+  const [totes_fases, totesPreguntes, tots_grups, vista, totes_rondes] = await Promise.all([
     db.select().from(phases).where(eq(phases.tournamentId, id)).orderBy(asc(phases.order)),
     db
       .select()
@@ -53,6 +52,11 @@ export default async function ClassificacioPage({
       .orderBy(asc(questionDefinitions.order)),
     db.select().from(groups).where(eq(groups.tournamentId, id)).orderBy(asc(groups.order)),
     loadStandings(id, { canManage }),
+    db
+      .select({ number: rounds.number, status: rounds.status })
+      .from(rounds)
+      .where(eq(rounds.tournamentId, id))
+      .orderBy(asc(rounds.number)),
   ]);
 
   if (!vista.visible) {
@@ -104,13 +108,23 @@ export default async function ClassificacioPage({
   const preguntaActiva = totesPreguntes.find((q) => q.key === pestanya) ?? null;
   const historial = preguntaActiva ? await loadMetricHistory(id, pestanya) : new Map();
 
+  // Quines rondes alimenten la classificació que s'està veient — útil quan el
+  // director manté la incògnita de resultats fins al final i la xifra de
+  // "només compten les tancades" per si sola no diu quines (docs/pla-rols.md §8.2).
+  const rondesTancades = totes_rondes.filter((r) => r.status === 'closed').map((r) => r.number);
+  const avisRondes =
+    vista.mode === 'closed_rounds'
+      ? rondesTancades.length === 0
+        ? 'Encara no hi ha cap ronda tancada.'
+        : `Compten les rondes: ${rondesTancades.join(', ')}.`
+      : null;
   const avis = MODE_NOTICE[vista.mode];
 
   return (
     <div className="space-y-4">
-      {avis && (
+      {(avis || avisRondes) && (
         <p className="text-xs text-ink-3 bg-surface-2 border border-border rounded-lg px-3 py-2">
-          {avis}
+          {avisRondes ?? avis}
           {vista.mode === 'frozen_at' && vista.frozenRound !== null && ` Última ronda inclosa: ${vista.frozenRound}.`}
         </p>
       )}

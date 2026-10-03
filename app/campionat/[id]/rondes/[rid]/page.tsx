@@ -2,7 +2,8 @@ import { and, asc, eq } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { db } from '@/db';
-import { groups, phases, roundAbsences, rounds } from '@/db/schema';
+import { groups, phases, roundAbsences, rounds, tournaments } from '@/db/schema';
+import { DEFAULT_VISIBILITY } from '@/db/types';
 import Badge from '@/components/ui/Badge';
 import { canManageTournament, getCurrentAccount } from '@/lib/authz';
 import { loadEntrants, loadRoundMatches } from '@/lib/db-helpers';
@@ -33,6 +34,19 @@ export default async function RondaPage({
 
   // Una ronda en esborrany no existeix per al jugador (docs/pla-rols.md §8.2).
   if (!canManage && ronda.status === 'draft') notFound();
+
+  const [tournament] = await db.select().from(tournaments).where(eq(tournaments.id, id));
+  const visibility = tournament?.visibility ?? DEFAULT_VISIBILITY;
+  const pairingsVisible = ronda.pairingsVisible ?? visibility.pairingsVisible;
+  const resultsVisible = ronda.resultsVisible ?? visibility.resultsVisible;
+
+  // Amb els aparellaments no publicats, per al jugador és com si la ronda no
+  // existís encara (mateix tractament que l'esborrany, §8.3).
+  if (!canManage && !pairingsVisible) notFound();
+
+  // Amb els resultats no publicats, el jugador veu qui juga contra qui però
+  // no els marcadors ni qui ha guanyat: es buiden aquí, no a la pantalla.
+  const hideResults = !canManage && !resultsVisible;
 
   const totes_rondes = await db
     .select()
@@ -67,14 +81,16 @@ export default async function RondaPage({
   const nomPerEntry = new Map(inscrits.map((e) => [e.id, e.displayName]));
   const grupPerEntry = new Map(inscrits.map((e) => [e.id, e.groupId ?? null]));
 
+  // El bye no amaga res (és un fet de calendari, no un resultat): només es
+  // buiden les taules amb més d'un jugador.
   const vistes: PartidaVista[] = partides.map((partida) => ({
     id: partida.id,
     tableNumber: partida.tableNumber,
     participants: partida.participants.map((participant) => ({
       entryId: participant.entryId,
       displayName: nomPerEntry.get(participant.entryId) ?? '?',
-      score: participant.score,
-      rank: participant.rank,
+      score: hideResults && partida.participants.length > 1 ? null : participant.score,
+      rank: hideResults && partida.participants.length > 1 ? null : participant.rank,
     })),
   }));
 
@@ -159,6 +175,11 @@ export default async function RondaPage({
             )}
           </div>
           <p className="text-sm text-ink-3 mt-0.5">{fase?.name}</p>
+          {hideResults && totals > 0 && (
+            <p className="text-xs text-accent-ink bg-accent-tint rounded-lg px-2.5 py-1 mt-1.5 inline-block">
+              Els resultats d&apos;aquesta ronda encara no són públics.
+            </p>
+          )}
         </div>
         {totals > 0 && (
           <div className="text-right w-40 flex-shrink-0">
@@ -190,6 +211,7 @@ export default async function RondaPage({
           estat={ronda.status}
           teAparellaments={totals > 0}
           teResultats={jugades > 0}
+          resultatsPublics={ronda.resultsVisible ?? null}
         />
       </div>
 
