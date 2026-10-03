@@ -3,7 +3,6 @@
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useCanManage } from '@/components/ViewerContext';
-import QrCompartir from '@/components/QrCompartir';
 import { CONFIG_LINKS } from './ConfigSidebar';
 
 /** Contingut que es consulta sovint: sempre a dalt, a totes les mides. */
@@ -13,7 +12,7 @@ const CONTENT_TABS = [
   { key: 'classificacio', label: 'Classificació' },
 ];
 
-export default function NavTabs({ id, name }: { id: string; name: string }) {
+export default function NavTabs({ id }: { id: string }) {
   const pathname = usePathname();
   const canManage = useCanManage();
   // Al mòbil no hi ha panell lateral: la configuració s'afegeix a la mateixa
@@ -23,34 +22,24 @@ export default function NavTabs({ id, name }: { id: string; name: string }) {
   const configKeys = new Set(CONFIG_LINKS.map((l) => l.key));
 
   return (
-    <div>
-      <div className="flex items-center gap-2 mb-3">
-        <h1 className="font-display text-xl font-bold text-ink truncate">{name}</h1>
-        {canManage && (
-          <div className="ml-auto flex-shrink-0">
-            <QrCompartir tournamentId={id} />
-          </div>
-        )}
-      </div>
-      <nav className="flex gap-6 border-b border-border overflow-x-auto">
-        {tabs.map((tab) => {
-          const href = `/campionat/${id}/${tab.key}`;
-          const active = pathname.startsWith(href);
-          return (
-            <Link
-              key={tab.key}
-              href={href}
-              className={`
-                py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors
-                ${configKeys.has(tab.key) ? 'lg:hidden' : ''}
-                ${active ? 'border-accent text-ink font-semibold' : 'border-transparent text-ink-3 hover:text-ink-2'}
-              `}
-            >
-              {tab.label}
-            </Link>
-          );
-        })}
-      </nav>
-    </div>
+    <nav className="flex gap-6 border-b border-border overflow-x-auto">
+      {tabs.map((tab) => {
+        const href = `/campionat/${id}/${tab.key}`;
+        const active = pathname.startsWith(href);
+        return (
+          <Link
+            key={tab.key}
+            href={href}
+            className={`
+              py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors
+              ${configKeys.has(tab.key) ? 'lg:hidden' : ''}
+              ${active ? 'border-accent text-ink font-semibold' : 'border-transparent text-ink-3 hover:text-ink-2'}
+            `}
+          >
+            {tab.label}
+          </Link>
+        );
+      })}
+    </nav>
   );
 }

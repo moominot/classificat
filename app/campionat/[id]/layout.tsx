@@ -4,6 +4,7 @@ import { db } from '@/db';
 import { tournaments } from '@/db/schema';
 import { canManageTournament, getCurrentAccount, getViewer } from '@/lib/authz';
 import { ViewerProvider } from '@/components/ViewerContext';
+import { SetHeaderTitle } from '@/components/HeaderTitleContext';
 import NavTabs from './NavTabs';
 import ConfigSidebar from './ConfigSidebar';
 
@@ -40,10 +41,11 @@ export default async function CampionatLayout({
         entryId: viewer.entryId,
       }}
     >
+      <SetHeaderTitle name={tournament.name} id={id} />
       <div className="lg:flex lg:gap-6 lg:items-start">
         {canManage && <ConfigSidebar id={id} />}
         <div className="flex-1 min-w-0 space-y-5">
-          <NavTabs id={id} name={tournament.name} />
+          <NavTabs id={id} />
           {children}
         </div>
       </div>
