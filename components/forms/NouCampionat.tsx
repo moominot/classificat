@@ -13,6 +13,12 @@ export default function NouCampionat() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  function tanca() {
+    setObert(false);
+    setNom('');
+    setError('');
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!nom.trim()) return;
@@ -34,34 +40,54 @@ export default function NouCampionat() {
     }
   }
 
-  if (!obert) {
-    return (
+  return (
+    <>
       <Button onClick={() => setObert(true)}>
         + Nou campionat
       </Button>
-    );
-  }
 
-  return (
-    <form onSubmit={handleSubmit} className="bg-surface border border-border rounded-xl p-4 flex gap-3 items-end shadow-sm">
-      <div className="flex-1">
-        <Input
-          label="Nom del campionat"
-          value={nom}
-          onChange={e => setNom(e.target.value)}
-          placeholder="ex. ManaCup 25-26"
-          error={error}
-          autoFocus
-        />
-      </div>
-      <div className="flex gap-2">
-        <Button type="submit" loading={loading} disabled={!nom.trim()}>
-          Crear
-        </Button>
-        <Button type="button" variant="ghost" onClick={() => { setObert(false); setNom(''); setError(''); }}>
-          Cancel·lar
-        </Button>
-      </div>
-    </form>
+      {obert && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center sm:p-4">
+          <div className="absolute inset-0 bg-black/40" onClick={tanca} />
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="nou-campionat-titol"
+            className="relative bg-surface w-full sm:max-w-md rounded-t-2xl sm:rounded-2xl shadow-xl p-5 sm:p-6 max-h-[92vh] sm:max-h-[85vh] overflow-y-auto"
+          >
+            <div className="flex items-center justify-between mb-5">
+              <h2 id="nou-campionat-titol" className="font-display text-lg font-bold text-ink">Nou campionat</h2>
+              <button
+                type="button"
+                onClick={tanca}
+                className="text-ink-3 hover:text-ink text-2xl leading-none cursor-pointer p-1 -m-1"
+                aria-label="Tanca"
+              >
+                ×
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <Input
+                label="Nom del campionat"
+                value={nom}
+                onChange={e => setNom(e.target.value)}
+                placeholder="ex. ManaCup 25-26"
+                error={error}
+                autoFocus
+              />
+              <div className="flex gap-2 pt-1">
+                <Button type="submit" loading={loading} disabled={!nom.trim()} className="flex-1 sm:flex-none">
+                  Crear
+                </Button>
+                <Button type="button" variant="ghost" onClick={tanca}>
+                  Cancel·lar
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </>
   );
 }
