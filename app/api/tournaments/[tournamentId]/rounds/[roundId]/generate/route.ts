@@ -7,7 +7,7 @@ import type { PhaseConfig } from '@/db/types';
 import { requireTournamentAccess } from '@/lib/authz';
 import { generatePairings } from '@/lib/pairing/engine';
 import { computeStandings } from '@/lib/pairing/standings';
-import type { Entrant, PairingContext, Phase as EnginePhase } from '@/lib/pairing/types';
+import type { CsvMatchRow, Entrant, PairingContext, Phase as EnginePhase } from '@/lib/pairing/types';
 import { loadEntrants, loadPreviousMatches, loadQuestionMetrics, loadScoredMatches } from '@/lib/db-helpers';
 
 type Params = { params: Promise<{ tournamentId: string; roundId: string }> };
@@ -41,6 +41,20 @@ export async function POST(req: Request, { params }: Params) {
   const absentEntryIds: string[] = Array.isArray(body.absentEntryIds)
     ? body.absentEntryIds.filter((x: unknown) => typeof x === 'string')
     : [];
+
+  // Aparellament manual: les taules ja vénen fetes (CSV o creades a l'app),
+  // no les decideix el motor (lib/pairing/methods/manual.ts).
+  const csvRows: CsvMatchRow[] | undefined = Array.isArray(body.rows)
+    ? body.rows
+        .map((r: unknown) => {
+          const row = r as { tableNumber?: unknown; entryIds?: unknown };
+          return {
+            tableNumber: Number(row.tableNumber),
+            entryIds: Array.isArray(row.entryIds) ? row.entryIds.filter((x: unknown) => typeof x === 'string') : [],
+          };
+        })
+        .filter((r: CsvMatchRow) => Number.isInteger(r.tableNumber) && r.entryIds.length > 0)
+    : undefined;
 
   if (absentEntryIds.length > 0) {
     await db
@@ -94,7 +108,7 @@ export async function POST(req: Request, { params }: Params) {
     previousMatches: await loadPreviousMatches(tournamentId),
   };
 
-  const result = generatePairings(ctx);
+  const result = generatePairings(ctx, csvRows);
 
   // L'equip es desa a cada participació: és una instantània del moment de
   // jugar, perquè un canvi d'equip no reescrigui la història (§12.9).

@@ -198,6 +198,8 @@ export default async function RondaPage({
           tournamentId={id}
           roundId={rid}
           roundNumber={ronda.number}
+          method={fase?.method ?? 'manual'}
+          participantsPerMatch={fase?.participantsPerMatch ?? 2}
           players={inscrits
             .filter((e) => e.isActive)
             .map((e) => ({ id: e.id, name: e.displayName, rating: e.rating ?? null }))}
