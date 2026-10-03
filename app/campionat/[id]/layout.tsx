@@ -4,9 +4,18 @@ import { db } from '@/db';
 import { tournaments } from '@/db/schema';
 import { canManageTournament, getCurrentAccount, getViewer } from '@/lib/authz';
 import { ViewerProvider } from '@/components/ViewerContext';
-import QrCompartir from '@/components/QrCompartir';
 import NavTabs from './NavTabs';
+import ConfigSidebar from './ConfigSidebar';
 
+/**
+ * Cada campionat s'ha de sentir com una aplicació pròpia: el nom del
+ * campionat és el títol principal, i tota la navegació hi viu a sota —
+ * no repartida entre una capçalera genèrica, un fil d'Ariadna i les
+ * pestanyes. Al mòbil tot va en una barra de pestanyes que llisca; a
+ * l'escriptori, el que és "configuració" (Grups, Fases, Preguntes, BARRUF)
+ * passa a un panell lateral i només queda a dalt el contingut que es
+ * consulta sovint (Jugadors, Rondes, Classificació).
+ */
 export default async function CampionatLayout({
   children,
   params,
@@ -31,27 +40,12 @@ export default async function CampionatLayout({
         entryId: viewer.entryId,
       }}
     >
-      <div className="space-y-5">
-        {/*
-          El nom de la competició surt un sol cop, a la barra de pestanyes:
-          abans es repetia al fil d'Ariadna i al títol (docs/pla-rols.md §15.1).
-        */}
-        <div className="flex items-center gap-2 text-sm text-ink-3">
-          {canManage && (
-            <>
-              <a href="/" className="hover:text-accent-ink">
-                Competicions
-              </a>
-              <div className="ml-auto">
-                <QrCompartir tournamentId={id} />
-              </div>
-            </>
-          )}
+      <div className="lg:flex lg:gap-6 lg:items-start">
+        {canManage && <ConfigSidebar id={id} />}
+        <div className="flex-1 min-w-0 space-y-5">
+          <NavTabs id={id} name={tournament.name} />
+          {children}
         </div>
-
-        <NavTabs id={id} name={tournament.name} />
-
-        {children}
       </div>
     </ViewerProvider>
   );

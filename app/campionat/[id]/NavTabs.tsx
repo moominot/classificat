@@ -3,29 +3,35 @@
 import { usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { useCanManage } from '@/components/ViewerContext';
+import QrCompartir from '@/components/QrCompartir';
+import { CONFIG_LINKS } from './ConfigSidebar';
 
-const TABS = [
+/** Contingut que es consulta sovint: sempre a dalt, a totes les mides. */
+const CONTENT_TABS = [
   { key: 'jugadors', label: 'Jugadors' },
-  { key: 'grups', label: 'Grups' },
-  { key: 'fases', label: 'Fases' },
   { key: 'rondes', label: 'Rondes' },
   { key: 'classificacio', label: 'Classificació' },
-];
-
-/** Seccions que només tenen sentit per a qui gestiona la competició. */
-const MANAGER_TABS = [
-  { key: 'preguntes', label: 'Preguntes' },
-  { key: 'barruf', label: 'BARRUF' },
 ];
 
 export default function NavTabs({ id, name }: { id: string; name: string }) {
   const pathname = usePathname();
   const canManage = useCanManage();
-  const tabs = canManage ? [...TABS, ...MANAGER_TABS] : TABS;
+  // Al mòbil no hi ha panell lateral: la configuració s'afegeix a la mateixa
+  // barra, que ja llisca. A partir de `lg` es pot amagar, perquè viu al
+  // ConfigSidebar (vegeu campionat/[id]/layout.tsx).
+  const tabs = canManage ? [...CONTENT_TABS, ...CONFIG_LINKS] : CONTENT_TABS;
+  const configKeys = new Set(CONFIG_LINKS.map((l) => l.key));
 
   return (
     <div>
-      <h1 className="font-display text-xl font-bold text-ink mb-3">{name}</h1>
+      <div className="flex items-center gap-2 mb-3">
+        <h1 className="font-display text-xl font-bold text-ink truncate">{name}</h1>
+        {canManage && (
+          <div className="ml-auto flex-shrink-0">
+            <QrCompartir tournamentId={id} />
+          </div>
+        )}
+      </div>
       <nav className="flex gap-6 border-b border-border overflow-x-auto">
         {tabs.map((tab) => {
           const href = `/campionat/${id}/${tab.key}`;
@@ -36,6 +42,7 @@ export default function NavTabs({ id, name }: { id: string; name: string }) {
               href={href}
               className={`
                 py-3 text-sm font-medium whitespace-nowrap border-b-2 transition-colors
+                ${configKeys.has(tab.key) ? 'lg:hidden' : ''}
                 ${active ? 'border-accent text-ink font-semibold' : 'border-transparent text-ink-3 hover:text-ink-2'}
               `}
             >
