@@ -5,6 +5,7 @@ import { groups, phases, questionDefinitions } from '@/db/schema';
 import { Card } from '@/components/ui/Card';
 import Badge from '@/components/ui/Badge';
 import { canManageTournament, getCurrentAccount } from '@/lib/authz';
+import { loadTournamentWordAnswers } from '@/lib/db-helpers';
 import { loadStandings } from '@/lib/standings-service';
 import type { StandingRow } from '@/lib/standings-service';
 
@@ -43,7 +44,7 @@ export default async function ClassificacioPage({
   const account = await getCurrentAccount();
   const canManage = account ? await canManageTournament(account, id) : false;
 
-  const [totes_fases, totesPreguntes, tots_grups, vista] = await Promise.all([
+  const [totes_fases, totesPreguntes, tots_grups, vista, paraules] = await Promise.all([
     db.select().from(phases).where(eq(phases.tournamentId, id)).orderBy(asc(phases.order)),
     db
       .select()
@@ -52,6 +53,7 @@ export default async function ClassificacioPage({
       .orderBy(asc(questionDefinitions.order)),
     db.select().from(groups).where(eq(groups.tournamentId, id)).orderBy(asc(groups.order)),
     loadStandings(id, { canManage }),
+    loadTournamentWordAnswers(id),
   ]);
 
   if (!vista.visible) {
@@ -71,9 +73,10 @@ export default async function ClassificacioPage({
   }
 
   // Mètriques que tenen columna pròpia: les preguntes marcades per al rànquing
-  // més l'spread, que és la que fa servir tothom.
+  // més spread i mitjana, que fa servir tothom encara que no siguin preguntes.
   const metriquesRanquing = [
     'spread',
+    'avg_score',
     ...totesPreguntes.filter((q) => q.showInRanking && q.aggregate !== 'none').map((q) => q.key),
   ].filter((key, i, all) => all.indexOf(key) === i);
 
@@ -163,6 +166,7 @@ export default async function ClassificacioPage({
           standings={vista.standings}
           metrica={pestanya}
           etiqueta={etiqueta(pestanya)}
+          paraules={paraules}
         />
       )}
     </div>
@@ -189,7 +193,7 @@ function TaulaClassificacio({
             <tr className="text-left text-[11px] uppercase tracking-wide text-ink-3 border-b border-border">
               <th className="px-3 py-2 font-semibold">#</th>
               <th className="px-2 py-2 font-semibold">Jugador</th>
-              <th className="px-2 py-2 font-semibold text-right">PJ</th>
+              <th className="px-2 py-2 font-semibold text-right whitespace-nowrap">Partides</th>
               <th className="px-2 py-2 font-semibold text-right">V-E-D</th>
               <th className="px-2 py-2 font-semibold text-right">Punts</th>
               {metriques.map((key) => (
@@ -238,11 +242,14 @@ function RanquingMetrica({
   standings,
   metrica,
   etiqueta,
+  paraules,
 }: {
   tournamentId: string;
   standings: StandingRow[];
   metrica: string;
   etiqueta: string;
+  /** Paraula de cada jugador per a aquesta mètrica, si és "paraula + valor" (§12.1). */
+  paraules: Map<string, string>;
 }) {
   const ordenat = [...standings]
     .filter((s) => (s.metrics[metrica] ?? 0) !== 0 || s.gamesPlayed > 0)
@@ -251,21 +258,35 @@ function RanquingMetrica({
   return (
     <Card padding={false}>
       <ul className="divide-y divide-border">
-        {ordenat.map((s, i) => (
-          <li key={s.entryId} className="flex items-center gap-3 px-4 py-3">
-            <span className="w-7 text-center font-display font-bold text-ink-2 tabular-nums">{i + 1}</span>
-            <Link
-              href={`/campionat/${tournamentId}/jugadors/${s.entryId}`}
-              className="flex-1 font-medium text-ink hover:text-accent-ink transition-colors truncate"
-            >
-              {s.displayName}
-            </Link>
-            {s.gamesPlayed > 0 && <Badge color="gray">{s.gamesPlayed} PJ</Badge>}
-            <span className="font-display font-bold text-ink tabular-nums">
-              {formatMetric(metrica, s.metrics[metrica] ?? 0)}
-            </span>
-          </li>
-        ))}
+        {ordenat.map((s, i) => {
+          const paraula = paraules.get(`${s.entryId}|${metrica}`);
+          return (
+            <li key={s.entryId} className="flex items-center gap-3 px-4 py-3">
+              <span className="w-7 text-center font-display font-bold text-ink-2 tabular-nums">{i + 1}</span>
+              <Link
+                href={`/campionat/${tournamentId}/jugadors/${s.entryId}`}
+                className="flex-1 font-medium text-ink hover:text-accent-ink transition-colors truncate"
+              >
+                {s.displayName}
+              </Link>
+              {s.gamesPlayed > 0 && <Badge color="gray">{s.gamesPlayed} partides</Badge>}
+              {paraula ? (
+                <div className="text-right flex-shrink-0">
+                  <div className="font-display font-black text-ink uppercase tracking-wide text-lg leading-tight">
+                    {paraula}
+                  </div>
+                  <div className="text-xs text-ink-3 tabular-nums mt-0.5">
+                    {formatMetric(metrica, s.metrics[metrica] ?? 0)} punts
+                  </div>
+                </div>
+              ) : (
+                <span className="font-display font-bold text-ink tabular-nums">
+                  {formatMetric(metrica, s.metrics[metrica] ?? 0)}
+                </span>
+              )}
+            </li>
+          );
+        })}
       </ul>
       {ordenat.length === 0 && (
         <p className="text-sm text-ink-3 text-center py-10">Encara no hi ha dades de {etiqueta.toLowerCase()}.</p>

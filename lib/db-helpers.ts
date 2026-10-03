@@ -263,16 +263,16 @@ export async function loadQuestionMetrics(tournamentId: string): Promise<{
 }
 
 /**
- * La paraula de la millor jugada (o qualsevol pregunta "paraula + valor") d'un
- * jugador, perquè els destacats puguin mostrar-la al costat del valor.
+ * Les paraules de les preguntes "paraula + valor" (type wordvalue), perquè
+ * els destacats i la classificació puguin mostrar-la al costat del valor.
  *
  * Un `sum`/`avg`/`count` no té "la" resposta — en són diverses sumades — però
  * `max` sí: la paraula que ha fet aquell punt és la que es mostra.
  */
-export async function loadEntryWordAnswers(
+async function loadWordAnswers(
   tournamentId: string,
-  entryId: string
-): Promise<Map<string, string>> {
+  entryId?: string
+): Promise<Map<string, { value: number; text: string }>> {
   const wordQuestions = await db
     .select({ id: questionDefinitions.id, key: questionDefinitions.key })
     .from(questionDefinitions)
@@ -286,12 +286,13 @@ export async function loadEntryWordAnswers(
       questionId: matchAnswers.questionId,
       textValue: matchAnswers.textValue,
       numberValue: matchAnswers.numberValue,
+      entryId: matchParticipants.entryId,
     })
     .from(matchAnswers)
     .innerJoin(matchParticipants, eq(matchParticipants.id, matchAnswers.participantId))
     .where(
       and(
-        eq(matchParticipants.entryId, entryId),
+        entryId ? eq(matchParticipants.entryId, entryId) : undefined,
         inArray(matchAnswers.questionId, wordQuestions.map((q) => q.id))
       )
     );
@@ -302,11 +303,27 @@ export async function loadEntryWordAnswers(
     if (!row.textValue) continue;
     const key = keyByQuestionId.get(row.questionId);
     if (!key) continue;
+    const mapKey = entryId ? key : `${row.entryId}|${key}`;
     const value = row.numberValue ?? 0;
-    const current = best.get(key);
-    if (!current || value > current.value) best.set(key, { value, text: row.textValue });
+    const current = best.get(mapKey);
+    if (!current || value > current.value) best.set(mapKey, { value, text: row.textValue });
   }
+  return best;
+}
+
+/** La paraula de cada pregunta wordvalue d'un únic jugador (per als destacats). */
+export async function loadEntryWordAnswers(
+  tournamentId: string,
+  entryId: string
+): Promise<Map<string, string>> {
+  const best = await loadWordAnswers(tournamentId, entryId);
   return new Map([...best].map(([key, v]) => [key, v.text]));
+}
+
+/** La paraula de cada pregunta wordvalue de tots els jugadors, per `entryId|key` (per a la classificació). */
+export async function loadTournamentWordAnswers(tournamentId: string): Promise<Map<string, string>> {
+  const best = await loadWordAnswers(tournamentId);
+  return new Map([...best].map(([mapKey, v]) => [mapKey, v.text]));
 }
 
 /**
