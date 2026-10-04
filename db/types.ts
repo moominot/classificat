@@ -98,6 +98,29 @@ export type SeedingCriterion = 'points' | 'elo' | 'rank' | 'name';
  * una altra); als altres tres, partir vol dir calcular-hi dins una
  * classificació independent per partició, no té sentit un "inter".
  */
+export type ExclusionMode = 'avoid' | 'forbid';
+
+/**
+ * Exclusió entre dues inscripcions concretes (Suís, Suís FIDE, Rei del
+ * turó): "evitar" és una restricció tova que es relaxa si cal (com ja fa
+ * avui l'evitar revanxes); "prohibir" és dura i pot deixar algú en bye.
+ */
+export interface EntryPairExclusion {
+  mode: ExclusionMode;
+  entryIds: [string, string];
+}
+
+/**
+ * Exclusió entre dues etiquetes, només té sentit a Round Robin
+ * interetiquetes (és l'únic mètode on dues etiquetes s'enfronten
+ * directament). Sense mode: aquí no hi ha cap cerca alternativa a
+ * relaxar, "evitar" i "prohibir" tindrien el mateix efecte, així que
+ * sempre és una prohibició.
+ */
+export interface TagPairExclusion {
+  tagIds: [string, string];
+}
+
 export interface SwissConfig {
   method: 'swiss';
   avoidRematches: boolean;
@@ -107,6 +130,7 @@ export interface SwissConfig {
   seedingCriteria: SeedingCriterion[];
   scope: 'all' | 'intra_tag';
   tagIds: string[];
+  entryExclusions: EntryPairExclusion[];
 }
 
 export interface SwissFideConfig {
@@ -115,6 +139,7 @@ export interface SwissFideConfig {
   tagIds: string[];
   carryStandingsFromPhaseIds: string[];
   expectedRounds?: number;
+  entryExclusions: EntryPairExclusion[];
 }
 
 export interface RoundRobinConfig {
@@ -122,6 +147,7 @@ export interface RoundRobinConfig {
   scope: 'all' | 'intra_tag' | 'inter_tag';
   tagIds: string[];
   doubleRound: boolean;
+  tagExclusions: TagPairExclusion[];
 }
 
 export interface KingOfTheHillConfig {
@@ -130,6 +156,7 @@ export interface KingOfTheHillConfig {
   carryStandingsFromPhaseIds: string[];
   scope: 'all' | 'intra_tag';
   tagIds: string[];
+  entryExclusions: EntryPairExclusion[];
 }
 
 export interface ManualConfig {

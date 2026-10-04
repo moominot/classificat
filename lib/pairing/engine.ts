@@ -28,6 +28,16 @@ export function generatePairings(
     };
   }
 
+  const result = dispatch(method, ctx, csvRows);
+  normalizeByeTableNumbers(result);
+  return result;
+}
+
+function dispatch(
+  method: PairingContext['phase']['method'],
+  ctx: PairingContext,
+  csvRows?: CsvMatchRow[]
+): PairingEngineResult {
   switch (method) {
     case 'swiss':
       return generateSwissPairings(ctx);
@@ -58,5 +68,20 @@ export function generatePairings(
 
     default:
       throw new Error(`Mètode d'aparellament desconegut: ${method}`);
+  }
+}
+
+/**
+ * Cada mètode marca els byes amb `tableNumber: -1` o `0` com a placeholder;
+ * (roundId, tableNumber) és únic a la base de dades, així que amb més d'un
+ * bye a la mateixa ronda (possible des que les exclusions "prohibir" poden
+ * forçar-ne diversos) calen números diferents abans de desar-los.
+ */
+function normalizeByeTableNumbers(result: PairingEngineResult): void {
+  const played = result.matches.filter((m) => m.entryIds.length > 1);
+  const maxPlayed = played.reduce((max, m) => Math.max(max, m.tableNumber), 0);
+  let nextByeTable = maxPlayed + 1;
+  for (const match of result.matches) {
+    if (match.entryIds.length === 1) match.tableNumber = nextByeTable++;
   }
 }

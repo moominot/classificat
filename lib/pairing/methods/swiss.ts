@@ -9,9 +9,10 @@ import type {
   SwissConfig,
 } from '../types';
 import { DEFAULT_SEEDING_CRITERIA } from '../types';
-import { buildRematchSet, hasPlayed } from '../utils/rematch';
+import { buildRematchSet, hasPlayed, unionSets } from '../utils/rematch';
 import { assignBye } from '../utils/bye';
 import { partitionByTags } from './tag-partition';
+import { buildEntryExclusionSets } from './exclusion-partition';
 
 /**
  * Sistema suís (holandès), adaptat.
@@ -41,6 +42,17 @@ export function generateSwissPairings(ctx: PairingContext): PairingEngineResult 
     const seedingOrder: string[] = [];
 
     for (const entryIds of partitions.values()) {
+      if (entryIds.length <= 1) {
+        if (entryIds.length === 1) {
+          warnings.push({
+            type: 'no_pairings_possible',
+            message: 'Una etiqueta té un sol jugador actiu: no hi ha cap aparellament possible.',
+            affectedEntryIds: entryIds,
+          });
+          matches.push({ tableNumber: -1, entryIds });
+        }
+        continue;
+      }
       const pool = entryIds.map((id) => entrantById.get(id)!);
       const poolIdSet = new Set(entryIds);
       const poolCtx: PairingContext = {
@@ -85,6 +97,8 @@ function pairSwissPool(ctx: PairingContext): PairingEngineResult {
   // darrer del sembrat.
   const allSorted = sortBySeeding(active, standingMap, ratingMap, nameMap, seedingCriteria);
   const rematchSet = buildRematchSet(ctx.previousMatches);
+  const { avoidSet, forbidSet } = buildEntryExclusionSets(config.entryExclusions);
+  const softSet = unionSets(rematchSet, avoidSet);
 
   const byes: GeneratedMatch[] = [];
   let sorted: Array<{ id: string }>;
@@ -108,25 +122,55 @@ function pairSwissPool(ctx: PairingContext): PairingEngineResult {
     sorted = allSorted;
   }
 
-  // Primer amb la restricció de revanxes; si no hi ha solució, es relaxa.
-  let result = tryPair(sorted, standingMap, rematchSet, false);
+  // Primer amb revanxes i exclusions "evitar"; si no hi ha solució, es
+  // relaxa (les exclusions "prohibir", a `forbidSet`, mai es relaxen).
+  let result = tryPair(sorted, standingMap, softSet, forbidSet, false);
 
   if (result === null) {
-    warnings.push({
-      type: 'rematch_forced',
-      message: "No s'ha pogut evitar una revanxa. S'ha permès excepcionalment.",
-      affectedEntryIds: [],
-    });
-    result = tryPair(sorted, standingMap, rematchSet, true);
+    const relaxed = tryPair(sorted, standingMap, softSet, forbidSet, true);
+    if (relaxed !== null) {
+      // Només si relaxar el softSet soluciona el bloqueig té sentit avisar
+      // d'una revanxa/exclusió "evitar" forçada; si no, el bloqueig és cosa
+      // del `forbidSet` i es gestiona més avall (bye en lloc d'avís enganyós).
+      const wouldSucceedWithoutAvoid = tryPair(sorted, standingMap, rematchSet, forbidSet, false) !== null;
+      warnings.push({
+        type: wouldSucceedWithoutAvoid ? 'pair_excluded' : 'rematch_forced',
+        message: wouldSucceedWithoutAvoid
+          ? 'No s\'ha pogut evitar una parella marcada com a "evitar". S\'ha permès excepcionalment.'
+          : "No s'ha pogut evitar una revanxa. S'ha permès excepcionalment.",
+        affectedEntryIds: [],
+      });
+      result = relaxed;
+    }
   }
 
   if (result === null) {
-    result = fallbackPair(sorted);
-    warnings.push({
-      type: 'rematch_forced',
-      message: 'Aparellament de fallback sense restriccions. Reviseu-lo manualment.',
-      affectedEntryIds: sorted.map((e) => e.id),
-    });
+    // Les exclusions "prohibir" fan impossible aparellar tothom: es treuen
+    // qui no té cap parella legal (bye) i es reintenta amb la resta.
+    const extracted = extractUnpairable(sorted, forbidSet);
+    const unpairable = extracted.unpairable;
+    let remaining = extracted.remaining;
+    if (remaining.length % 2 !== 0) {
+      // No es pot deixar un residu imparell: el darrer del sembrat restant també passa a bye.
+      unpairable.push(remaining[remaining.length - 1]);
+      remaining = remaining.slice(0, -1);
+    }
+    if (unpairable.length > 0) {
+      warnings.push({
+        type: 'forbidden_bye',
+        message: `${unpairable.length} jugador${unpairable.length !== 1 ? 's' : ''} sense cap parella permesa per una exclusió "prohibir": se li assigna bye.`,
+        affectedEntryIds: unpairable.map((e) => e.id),
+      });
+      byes.push(...unpairable.map((e) => ({ tableNumber: -1, entryIds: [e.id] })));
+    }
+    result = (remaining.length > 0 ? tryPair(remaining, standingMap, softSet, forbidSet, true) : []) ?? fallbackPair(remaining);
+    if (unpairable.length === 0) {
+      warnings.push({
+        type: 'rematch_forced',
+        message: 'Aparellament de fallback sense restriccions. Reviseu-lo manualment.',
+        affectedEntryIds: remaining.map((e) => e.id),
+      });
+    }
   }
 
   const matches: GeneratedMatch[] = [...result, ...byes];
@@ -173,12 +217,18 @@ interface Seed {
   id: string;
 }
 
-/** Retorna null si no hi ha solució amb les restriccions donades. */
+/**
+ * Retorna null si no hi ha solució amb les restriccions donades.
+ *
+ * `softSet` es relaxa quan `allowSoft` és cert (revanxes + exclusions
+ * "evitar"); `hardSet` (exclusions "prohibir") mai es relaxa.
+ */
 function tryPair(
   sorted: Seed[],
   standingMap: Map<string, Standing>,
-  rematchSet: Set<string>,
-  allowRematches: boolean
+  softSet: Set<string>,
+  hardSet: Set<string>,
+  allowSoft: boolean
 ): GeneratedMatch[] | null {
   const scoreGroups = buildScoreGroups(sorted, standingMap);
 
@@ -195,7 +245,7 @@ function tryPair(
 
     // Sistema holandès: meitat superior contra meitat inferior.
     const mid = Math.floor(available.length / 2);
-    const groupPairings = pairHalves(available.slice(0, mid), available.slice(mid), rematchSet, allowRematches);
+    const groupPairings = pairHalves(available.slice(0, mid), available.slice(mid), softSet, hardSet, allowSoft);
 
     if (groupPairings === null) {
       floaters.push(...available);
@@ -217,8 +267,9 @@ function tryPair(
 function pairHalves(
   s1: Seed[],
   s2: Seed[],
-  rematchSet: Set<string>,
-  allowRematches: boolean
+  softSet: Set<string>,
+  hardSet: Set<string>,
+  allowSoft: boolean
 ): { paired: Array<{ first: Seed; second: Seed }>; leftover: Seed | null } | null {
   if (s1.length === 0) {
     if (s2.length === 1) return { paired: [], leftover: s2[0] };
@@ -228,16 +279,18 @@ function pairHalves(
   for (const perm of generatePermutations(s2)) {
     const n = Math.min(s1.length, perm.length);
 
-    if (!allowRematches) {
-      let valid = true;
-      for (let i = 0; i < n; i++) {
-        if (hasPlayed(s1[i].id, perm[i].id, rematchSet)) {
-          valid = false;
-          break;
-        }
+    let valid = true;
+    for (let i = 0; i < n; i++) {
+      if (hasPlayed(s1[i].id, perm[i].id, hardSet)) {
+        valid = false;
+        break;
       }
-      if (!valid) continue;
+      if (!allowSoft && hasPlayed(s1[i].id, perm[i].id, softSet)) {
+        valid = false;
+        break;
+      }
     }
+    if (!valid) continue;
 
     const paired: Array<{ first: Seed; second: Seed }> = [];
     for (let i = 0; i < n; i++) paired.push({ first: s1[i], second: perm[i] });
@@ -304,6 +357,37 @@ function fallbackPair(entrants: Seed[]): GeneratedMatch[] {
   return result;
 }
 
+/**
+ * Treu, un a un, qui no té cap parella legal segons `hardSet` entre els
+ * qui queden — necessari quan les exclusions "prohibir" fan estructuralment
+ * impossible aparellar tothom (acaben en bye en lloc de forçar-los junts).
+ */
+function extractUnpairable(
+  sorted: Seed[],
+  hardSet: Set<string>
+): { unpairable: Seed[]; remaining: Seed[] } {
+  const unpairable: Seed[] = [];
+  let remaining = [...sorted];
+  let changed = true;
+
+  while (changed && remaining.length > 1) {
+    changed = false;
+    for (const seed of remaining) {
+      const hasLegalPartner = remaining.some(
+        (other) => other.id !== seed.id && !hasPlayed(seed.id, other.id, hardSet)
+      );
+      if (!hasLegalPartner) {
+        unpairable.push(seed);
+        remaining = remaining.filter((s) => s.id !== seed.id);
+        changed = true;
+        break;
+      }
+    }
+  }
+
+  return { unpairable, remaining };
+}
+
 // ─── Numeració de taules ──────────────────────────────────────────────────────
 
 /** Taula 1 per als capdavanters; el bye, a la darrera. */
@@ -328,9 +412,12 @@ function assignTableNumbers(
     match.tableNumber = i + 1;
   });
 
-  const lastTable = played.length + 1;
+  // Cada bye necessita una taula pròpia: amb exclusions "prohibir" hi pot
+  // haver més d'un bye a la mateixa ronda (abans només n'hi havia com a
+  // molt un, per nombre imparell de jugadors).
+  let nextByeTable = played.length + 1;
   for (const match of matches) {
-    if (match.entryIds.length === 1) match.tableNumber = lastTable;
+    if (match.entryIds.length === 1) match.tableNumber = nextByeTable++;
   }
 }
 

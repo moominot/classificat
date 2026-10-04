@@ -103,6 +103,7 @@ const SWISS_CONFIG: SwissConfig = {
   carryStandingsFromPhaseIds: [],
   scope: 'all',
   tagIds: [],
+  entryExclusions: [],
   seedingCriteria: ['points', 'elo', 'name'],
 };
 
@@ -213,6 +214,7 @@ console.log('\n=== Rei del turó ===');
     carryStandingsFromPhaseIds: [],
     scope: 'all',
     tagIds: [],
+    entryExclusions: [],
   };
   const result = generateKingOfTheHillPairings(makeCtx(makePhase('king_of_the_hill', config), entrants, standings));
 
@@ -227,7 +229,7 @@ console.log('\n=== Taules de quatre ===');
 {
   const entrants = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8'].map((id) => makeEntrant(id));
   const standings = entrants.map((e, i) => makeStanding(e.id, i + 1, 0));
-  const config: RoundRobinConfig = { method: 'round_robin', scope: 'all', tagIds: [], doubleRound: false };
+  const config: RoundRobinConfig = { method: 'round_robin', scope: 'all', tagIds: [], doubleRound: false, tagExclusions: [] };
   const result = generateRoundRobinPairings(makeCtx(makePhase('round_robin', config, 4), entrants, standings));
 
   check('8 jugadors → 2 taules de 4', result.matches.map((m) => m.entryIds.length), [4, 4]);
@@ -238,7 +240,7 @@ console.log('\n=== Taules de quatre amb residu ===');
 {
   const entrants = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'].map((id) => makeEntrant(id));
   const standings = entrants.map((e, i) => makeStanding(e.id, i + 1, 0));
-  const config: RoundRobinConfig = { method: 'round_robin', scope: 'all', tagIds: [], doubleRound: false };
+  const config: RoundRobinConfig = { method: 'round_robin', scope: 'all', tagIds: [], doubleRound: false, tagExclusions: [] };
   const result = generateRoundRobinPairings(makeCtx(makePhase('round_robin', config, 4), entrants, standings));
 
   check('6 jugadors → una taula de 4 i una de 2', result.matches.map((m) => m.entryIds.length), [4, 2]);

@@ -7,6 +7,7 @@ import type {
 } from '../types';
 import { buildRematchSet, countRematches, hasPlayed } from '../utils/rematch';
 import { partitionByTags } from './tag-partition';
+import { isTagPairExcluded } from './exclusion-partition';
 
 /**
  * Round robin.
@@ -180,17 +181,52 @@ function interTag(
 
   const result: GeneratedMatch[] = [];
   let tableNumber = 1;
+  const matched = new Set<string>();
 
   for (let i = 0; i < keys.length; i++) {
     for (let j = i + 1; j < keys.length; j++) {
+      if (isTagPairExcluded(config.tagExclusions, keys[i], keys[j])) continue;
+
       const first = partitions.get(keys[i])!;
       const second = partitions.get(keys[j])!;
       if (second.length === 0) continue;
 
       const rotated = rotateArray(second, (relativeRound - 1) % second.length);
       for (let k = 0; k < Math.min(first.length, rotated.length); k++) {
+        // Amb 3+ etiquetes triades, un jugador pot sortir en més d'una
+        // combinació de parelles aquesta ronda: un cop ja aparellat, no se'l
+        // torna a fer jugar una segona vegada la mateixa ronda.
+        if (matched.has(first[k]) || matched.has(rotated[k])) continue;
         result.push({ tableNumber: tableNumber++, entryIds: [first[k], rotated[k]] });
+        matched.add(first[k]);
+        matched.add(rotated[k]);
       }
+    }
+  }
+
+  // Una exclusió entre etiquetes pot deixar algú (o tota una etiqueta) sense
+  // cap aparellament aquesta ronda: no es deixa en silenci.
+  for (const key of keys) {
+    const ids = partitions.get(key)!;
+    if (ids.length === 0) continue;
+    const unmatched = ids.filter((id) => !matched.has(id));
+    if (unmatched.length === 0) continue;
+
+    if (unmatched.length === ids.length) {
+      warnings.push({
+        type: 'no_pairings_possible',
+        message:
+          'Cap aparellament possible per a aquesta etiqueta aquesta ronda: les combinacions amb les altres ' +
+          'etiquetes triades estan excloses.',
+        affectedEntryIds: ids,
+      });
+    } else {
+      result.push(...unmatched.map((id) => ({ tableNumber: -1, entryIds: [id] })));
+      warnings.push({
+        type: 'forbidden_bye',
+        message: `${unmatched.length} jugador${unmatched.length !== 1 ? 's' : ''} sense aparellament aquesta ronda per una exclusió entre etiquetes: se li assigna bye.`,
+        affectedEntryIds: unmatched,
+      });
     }
   }
 

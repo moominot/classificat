@@ -14,6 +14,7 @@ import type {
   PhaseConfig, SeedingCriterion, Tag,
   SwissConfig, SwissFideConfig, RoundRobinConfig, KingOfTheHillConfig,
 } from '@/lib/pairing/types';
+import type { EntryPairExclusion, TagPairExclusion } from '@/db/types';
 import { DEFAULT_SEEDING_CRITERIA } from '@/lib/pairing/types';
 import { availableTiebreakers } from '@/lib/pairing/tiebreakers';
 
@@ -28,6 +29,11 @@ interface Fase {
   participantsPerMatch: number;
   config: PhaseConfig;
   isComplete: boolean;
+}
+
+interface EntrantOption {
+  id: string;
+  displayName: string;
 }
 
 const METODES = [
@@ -52,6 +58,14 @@ function desempatsDisponibles(participantsPerMatch: number) {
 }
 
 const TOTS_ELS_DESEMPATS = desempatsDisponibles(2);
+
+/** Treu files incompletes o amb el mateix jugador/etiqueta a banda i banda abans d'enviar. */
+function cleanEntryExclusions(rules: EntryPairExclusion[]): EntryPairExclusion[] {
+  return rules.filter(r => r.entryIds[0] && r.entryIds[1] && r.entryIds[0] !== r.entryIds[1]);
+}
+function cleanTagExclusions(rules: TagPairExclusion[]): TagPairExclusion[] {
+  return rules.filter(r => r.tagIds[0] && r.tagIds[1] && r.tagIds[0] !== r.tagIds[1]);
+}
 
 /**
  * Tria i ordre de desempats, amb arrossegament.
@@ -198,10 +212,12 @@ export default function FasesClient({
   tournamentId,
   fases,
   tags,
+  entrants,
 }: {
   tournamentId: string;
   fases: Fase[];
   tags: Tag[];
+  entrants: EntrantOption[];
 }) {
   const router = useRouter();
   const canManage = useCanManage();
@@ -224,6 +240,7 @@ export default function FasesClient({
             tournamentId={tournamentId}
             fases={fases}
             tags={tags}
+            entrants={entrants}
             onDone={() => { setMostrarForm(false); router.refresh(); }}
             onCancel={() => setMostrarForm(false)}
           />
@@ -243,6 +260,7 @@ export default function FasesClient({
               key={fase.id}
               fase={fase}
               tags={tags}
+              entrants={entrants}
               tournamentId={tournamentId}
               fases={fases}
               onRefresh={() => router.refresh()}
@@ -257,10 +275,11 @@ export default function FasesClient({
 // ─── Targeta de fase ──────────────────────────────────────────────────────────
 
 function FaseCard({
-  fase, tags, tournamentId, fases, onRefresh,
+  fase, tags, entrants, tournamentId, fases, onRefresh,
 }: {
   fase: Fase;
   tags: Tag[];
+  entrants: EntrantOption[];
   tournamentId: string;
   fases: Fase[];
   onRefresh: () => void;
@@ -295,6 +314,7 @@ function FaseCard({
           fase={fase}
           fases={fases.filter(f => f.id !== fase.id)}
           tags={tags}
+          entrants={entrants}
           onDone={() => { setMode('view'); onRefresh(); }}
           onCancel={() => setMode('view')}
         />
@@ -392,6 +412,7 @@ function EditarFaseForm({
   fase,
   fases,
   tags,
+  entrants,
   onDone,
   onCancel,
 }: {
@@ -399,6 +420,7 @@ function EditarFaseForm({
   fase: Fase;
   fases: Fase[];
   tags: Tag[];
+  entrants: EntrantOption[];
   onDone: () => void;
   onCancel: () => void;
 }) {
@@ -418,6 +440,7 @@ function EditarFaseForm({
   );
   const [swissScope, setSwissScope] = useState<'all' | 'intra_tag'>(swissConfig?.scope ?? 'all');
   const [swissTagIds, setSwissTagIds] = useState<string[]>(swissConfig?.tagIds ?? []);
+  const [swissExclusions, setSwissExclusions] = useState<EntryPairExclusion[]>(swissConfig?.entryExclusions ?? []);
 
   const swissFideConfig = fase.method === 'swiss_fide' ? (fase.config as SwissFideConfig) : null;
   const [swissFideScope, setSwissFideScope] = useState<'all' | 'intra_tag'>(swissFideConfig?.scope ?? 'all');
@@ -426,17 +449,22 @@ function EditarFaseForm({
   const [swissFideExpectedRounds, setSwissFideExpectedRounds] = useState(
     swissFideConfig?.expectedRounds?.toString() ?? ''
   );
+  const [swissFideExclusions, setSwissFideExclusions] = useState<EntryPairExclusion[]>(
+    swissFideConfig?.entryExclusions ?? []
+  );
 
   const rrConfig = fase.method === 'round_robin' ? (fase.config as RoundRobinConfig) : null;
   const [rrScope, setRrScope] = useState<'all' | 'intra_tag' | 'inter_tag'>(rrConfig?.scope ?? 'all');
   const [rrTagIds, setRrTagIds] = useState<string[]>(rrConfig?.tagIds ?? []);
   const [rrDoble, setRrDoble] = useState(rrConfig?.doubleRound ?? false);
+  const [rrTagExclusions, setRrTagExclusions] = useState<TagPairExclusion[]>(rrConfig?.tagExclusions ?? []);
 
   const kothConfig = fase.method === 'king_of_the_hill' ? (fase.config as KingOfTheHillConfig) : null;
   const [kothTopN, setKothTopN] = useState(kothConfig?.topN?.toString() ?? '');
   const [kothScope, setKothScope] = useState<'all' | 'intra_tag'>(kothConfig?.scope ?? 'all');
   const [kothTagIds, setKothTagIds] = useState<string[]>(kothConfig?.tagIds ?? []);
   const [kothCarry, setKothCarry] = useState<string[]>(kothConfig?.carryStandingsFromPhaseIds ?? []);
+  const [kothExclusions, setKothExclusions] = useState<EntryPairExclusion[]>(kothConfig?.entryExclusions ?? []);
 
   function buildConfig(): PhaseConfig {
     if (fase.method === 'swiss_fide') {
@@ -446,6 +474,7 @@ function EditarFaseForm({
         tagIds: swissFideScope === 'all' ? [] : swissFideTagIds,
         carryStandingsFromPhaseIds: swissFideCarry,
         expectedRounds: swissFideExpectedRounds ? parseInt(swissFideExpectedRounds) : undefined,
+        entryExclusions: cleanEntryExclusions(swissFideExclusions),
       };
     }
     if (fase.method === 'swiss') {
@@ -458,10 +487,17 @@ function EditarFaseForm({
         seedingCriteria: swissSeedingCriteria,
         scope: swissScope,
         tagIds: swissScope === 'all' ? [] : swissTagIds,
+        entryExclusions: cleanEntryExclusions(swissExclusions),
       };
     }
     if (fase.method === 'round_robin') {
-      return { method: 'round_robin', scope: rrScope, tagIds: rrScope === 'all' ? [] : rrTagIds, doubleRound: rrDoble };
+      return {
+        method: 'round_robin',
+        scope: rrScope,
+        tagIds: rrScope === 'all' ? [] : rrTagIds,
+        doubleRound: rrDoble,
+        tagExclusions: rrScope === 'inter_tag' ? cleanTagExclusions(rrTagExclusions) : [],
+      };
     }
     if (fase.method === 'king_of_the_hill') {
       return {
@@ -470,6 +506,7 @@ function EditarFaseForm({
         carryStandingsFromPhaseIds: kothCarry,
         scope: kothScope,
         tagIds: kothScope === 'all' ? [] : kothTagIds,
+        entryExclusions: cleanEntryExclusions(kothExclusions),
       };
     }
     return { method: 'manual', allowCsvImport: true };
@@ -564,6 +601,9 @@ function EditarFaseForm({
           setExpectedRounds={setSwissFideExpectedRounds}
           fases={fases}
           tags={tags}
+          entrants={entrants}
+          exclusions={swissFideExclusions}
+          setExclusions={setSwissFideExclusions}
         />
       )}
       {fase.method === 'swiss' && (
@@ -580,6 +620,9 @@ function EditarFaseForm({
           setTagIds={setSwissTagIds}
           fases={fases}
           tags={tags}
+          entrants={entrants}
+          exclusions={swissExclusions}
+          setExclusions={setSwissExclusions}
         />
       )}
       {fase.method === 'round_robin' && (
@@ -591,6 +634,8 @@ function EditarFaseForm({
           doble={rrDoble}
           setDoble={setRrDoble}
           tags={tags}
+          tagExclusions={rrTagExclusions}
+          setTagExclusions={setRrTagExclusions}
         />
       )}
       {fase.method === 'king_of_the_hill' && (
@@ -605,6 +650,9 @@ function EditarFaseForm({
           setCarry={setKothCarry}
           fases={fases}
           tags={tags}
+          entrants={entrants}
+          exclusions={kothExclusions}
+          setExclusions={setKothExclusions}
         />
       )}
 
@@ -628,12 +676,14 @@ function NovaFaseForm({
   tournamentId,
   fases,
   tags,
+  entrants,
   onDone,
   onCancel,
 }: {
   tournamentId: string;
   fases: Fase[];
   tags: Tag[];
+  entrants: EntrantOption[];
   onDone: () => void;
   onCancel: () => void;
 }) {
@@ -649,19 +699,23 @@ function NovaFaseForm({
   const [rrScope, setRrScope] = useState<'all' | 'intra_tag' | 'inter_tag'>('all');
   const [rrTagIds, setRrTagIds] = useState<string[]>([]);
   const [rrDoble, setRrDoble] = useState(false);
+  const [rrTagExclusions, setRrTagExclusions] = useState<TagPairExclusion[]>([]);
   const [swissAvoidRematches, setSwissAvoidRematches] = useState(true);
   const [swissCarry, setSwissCarry] = useState<string[]>([]);
   const [swissSeedingCriteria, setSwissSeedingCriteria] = useState<SeedingCriterion[]>([...DEFAULT_SEEDING_CRITERIA]);
   const [swissScope, setSwissScope] = useState<'all' | 'intra_tag'>('all');
   const [swissTagIds, setSwissTagIds] = useState<string[]>([]);
+  const [swissExclusions, setSwissExclusions] = useState<EntryPairExclusion[]>([]);
   const [swissFideScope, setSwissFideScope] = useState<'all' | 'intra_tag'>('all');
   const [swissFideTagIds, setSwissFideTagIds] = useState<string[]>([]);
   const [swissFideCarry, setSwissFideCarry] = useState<string[]>([]);
   const [swissFideExpectedRounds, setSwissFideExpectedRounds] = useState('');
+  const [swissFideExclusions, setSwissFideExclusions] = useState<EntryPairExclusion[]>([]);
   const [kothTopN, setKothTopN] = useState('');
   const [kothScope, setKothScope] = useState<'all' | 'intra_tag'>('all');
   const [kothTagIds, setKothTagIds] = useState<string[]>([]);
   const [kothCarry, setKothCarry] = useState<string[]>([]);
+  const [kothExclusions, setKothExclusions] = useState<EntryPairExclusion[]>([]);
 
   const nextStart = fases.length > 0
     ? Math.max(...fases.map(f => f.endRound)) + 1
@@ -675,6 +729,7 @@ function NovaFaseForm({
         tagIds: swissFideScope === 'all' ? [] : swissFideTagIds,
         carryStandingsFromPhaseIds: swissFideCarry,
         expectedRounds: swissFideExpectedRounds ? parseInt(swissFideExpectedRounds) : undefined,
+        entryExclusions: cleanEntryExclusions(swissFideExclusions),
       };
     }
     if (metode === 'swiss') {
@@ -687,10 +742,17 @@ function NovaFaseForm({
         seedingCriteria: swissSeedingCriteria,
         scope: swissScope,
         tagIds: swissScope === 'all' ? [] : swissTagIds,
+        entryExclusions: cleanEntryExclusions(swissExclusions),
       };
     }
     if (metode === 'round_robin') {
-      return { method: 'round_robin', scope: rrScope, tagIds: rrScope === 'all' ? [] : rrTagIds, doubleRound: rrDoble };
+      return {
+        method: 'round_robin',
+        scope: rrScope,
+        tagIds: rrScope === 'all' ? [] : rrTagIds,
+        doubleRound: rrDoble,
+        tagExclusions: rrScope === 'inter_tag' ? cleanTagExclusions(rrTagExclusions) : [],
+      };
     }
     if (metode === 'king_of_the_hill') {
       return {
@@ -699,6 +761,7 @@ function NovaFaseForm({
         carryStandingsFromPhaseIds: kothCarry,
         scope: kothScope,
         tagIds: kothScope === 'all' ? [] : kothTagIds,
+        entryExclusions: cleanEntryExclusions(kothExclusions),
       };
     }
     return { method: 'manual', allowCsvImport: true };
@@ -793,6 +856,9 @@ function NovaFaseForm({
           setExpectedRounds={setSwissFideExpectedRounds}
           fases={fases}
           tags={tags}
+          entrants={entrants}
+          exclusions={swissFideExclusions}
+          setExclusions={setSwissFideExclusions}
         />
       )}
       {metode === 'swiss' && (
@@ -809,6 +875,9 @@ function NovaFaseForm({
           setTagIds={setSwissTagIds}
           fases={fases}
           tags={tags}
+          entrants={entrants}
+          exclusions={swissExclusions}
+          setExclusions={setSwissExclusions}
         />
       )}
       {metode === 'round_robin' && (
@@ -820,6 +889,8 @@ function NovaFaseForm({
           doble={rrDoble}
           setDoble={setRrDoble}
           tags={tags}
+          tagExclusions={rrTagExclusions}
+          setTagExclusions={setRrTagExclusions}
         />
       )}
       {metode === 'king_of_the_hill' && (
@@ -834,6 +905,9 @@ function NovaFaseForm({
           setCarry={setKothCarry}
           fases={fases}
           tags={tags}
+          entrants={entrants}
+          exclusions={kothExclusions}
+          setExclusions={setKothExclusions}
         />
       )}
 
@@ -930,6 +1004,167 @@ function TagScopePicker<S extends 'all' | 'intra_tag' | 'inter_tag'>({
   );
 }
 
+/**
+ * Exclusió de parella concreta (dos jugadors), amb evitar/prohibir: "evitar"
+ * és una restricció tova que el motor relaxa si cal (mai deixa ningú sense
+ * jugar); "prohibir" és dura i pot deixar algú en bye. Disponible a Suís,
+ * Suís FIDE i Rei del turó (docs/pla-rols.md, avisos i exclusions
+ * d'aparellament).
+ */
+function EntryExclusionsEditor({
+  entrants, rules, setRules,
+}: {
+  entrants: EntrantOption[];
+  rules: EntryPairExclusion[];
+  setRules: (v: EntryPairExclusion[]) => void;
+}) {
+  function updateRow(i: number, patch: Partial<EntryPairExclusion>) {
+    setRules(rules.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  }
+  function updateEntry(i: number, slot: 0 | 1, entryId: string) {
+    const next: [string, string] = [...rules[i].entryIds] as [string, string];
+    next[slot] = entryId;
+    updateRow(i, { entryIds: next });
+  }
+
+  return (
+    <div>
+      <p className="text-sm font-medium text-ink-2 mb-1">Exclusions de parella concreta</p>
+      <div className="space-y-1.5">
+        {rules.map((r, i) => (
+          <div key={i} className="flex items-center gap-1.5 flex-wrap">
+            <select
+              value={r.entryIds[0]}
+              onChange={e => updateEntry(i, 0, e.target.value)}
+              className="text-sm border border-border rounded-lg px-2 py-1.5 bg-surface flex-1 min-w-[8rem]"
+            >
+              <option value="">Jugador…</option>
+              {entrants.filter(p => p.id !== r.entryIds[1]).map(p => (
+                <option key={p.id} value={p.id}>{p.displayName}</option>
+              ))}
+            </select>
+            <span className="text-xs text-ink-3">vs</span>
+            <select
+              value={r.entryIds[1]}
+              onChange={e => updateEntry(i, 1, e.target.value)}
+              className="text-sm border border-border rounded-lg px-2 py-1.5 bg-surface flex-1 min-w-[8rem]"
+            >
+              <option value="">Jugador…</option>
+              {entrants.filter(p => p.id !== r.entryIds[0]).map(p => (
+                <option key={p.id} value={p.id}>{p.displayName}</option>
+              ))}
+            </select>
+            <div className="flex rounded-lg border border-border overflow-hidden text-xs font-semibold flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => updateRow(i, { mode: 'avoid' })}
+                className={`px-2 py-1.5 cursor-pointer ${r.mode === 'avoid' ? 'bg-accent-tint text-accent-ink' : 'text-ink-3'}`}
+              >
+                Evitar
+              </button>
+              <button
+                type="button"
+                onClick={() => updateRow(i, { mode: 'forbid' })}
+                className={`px-2 py-1.5 cursor-pointer ${r.mode === 'forbid' ? 'bg-loss-tint text-loss' : 'text-ink-3'}`}
+              >
+                Prohibir
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setRules(rules.filter((_, idx) => idx !== i))}
+              className="text-loss text-sm px-1.5 cursor-pointer flex-shrink-0"
+              aria-label="Treure exclusió"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => setRules([...rules, { mode: 'avoid', entryIds: ['', ''] }])}
+        className="text-sm text-accent-ink font-medium mt-1.5 cursor-pointer"
+      >
+        + Afegeix exclusió
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Exclusió entre dues etiquetes, només a Round Robin interetiquetes: és
+ * l'únic mètode on dues etiquetes s'enfronten directament. Sense
+ * commutador evitar/prohibir — aquí no hi ha cap cerca alternativa a
+ * relaxar, així que sempre és una prohibició.
+ */
+function TagExclusionsEditor({
+  tags, chosenTagIds, rules, setRules,
+}: {
+  tags: Tag[];
+  chosenTagIds: string[];
+  rules: TagPairExclusion[];
+  setRules: (v: TagPairExclusion[]) => void;
+}) {
+  const disponibles = tags.filter(t => chosenTagIds.includes(t.id));
+
+  function updateTag(i: number, slot: 0 | 1, tagId: string) {
+    const next: [string, string] = [...rules[i].tagIds] as [string, string];
+    next[slot] = tagId;
+    setRules(rules.map((r, idx) => (idx === i ? { ...r, tagIds: next } : r)));
+  }
+
+  if (disponibles.length < 2) return null;
+
+  return (
+    <div>
+      <p className="text-sm font-medium text-ink-2 mb-1">Exclou aquesta parella d&apos;etiquetes</p>
+      <div className="space-y-1.5">
+        {rules.map((r, i) => (
+          <div key={i} className="flex items-center gap-1.5 flex-wrap">
+            <select
+              value={r.tagIds[0]}
+              onChange={e => updateTag(i, 0, e.target.value)}
+              className="text-sm border border-border rounded-lg px-2 py-1.5 bg-surface flex-1 min-w-[8rem]"
+            >
+              <option value="">Etiqueta…</option>
+              {disponibles.filter(t => t.id !== r.tagIds[1]).map(t => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+            <span className="text-xs text-ink-3">vs</span>
+            <select
+              value={r.tagIds[1]}
+              onChange={e => updateTag(i, 1, e.target.value)}
+              className="text-sm border border-border rounded-lg px-2 py-1.5 bg-surface flex-1 min-w-[8rem]"
+            >
+              <option value="">Etiqueta…</option>
+              {disponibles.filter(t => t.id !== r.tagIds[0]).map(t => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => setRules(rules.filter((_, idx) => idx !== i))}
+              className="text-loss text-sm px-1.5 cursor-pointer flex-shrink-0"
+              aria-label="Treure exclusió"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => setRules([...rules, { tagIds: ['', ''] }])}
+        className="text-sm text-win font-medium mt-1.5 cursor-pointer"
+      >
+        + Afegeix exclusió
+      </button>
+    </div>
+  );
+}
+
 const SEEDING_CRITERION_LABELS: Record<SeedingCriterion, string> = {
   points: 'Punts',
   elo:    'BARRUF',
@@ -941,6 +1176,7 @@ const ALL_SEEDING_CRITERIA: SeedingCriterion[] = ['points', 'elo', 'rank', 'name
 function ConfigSwiss({
   avoidRematches, setAvoidRematches, carry, setCarry,
   seedingCriteria, setSeedingCriteria, scope, setScope, tagIds, setTagIds, fases, tags,
+  entrants, exclusions, setExclusions,
 }: {
   avoidRematches: boolean;
   setAvoidRematches: (v: boolean) => void;
@@ -954,6 +1190,9 @@ function ConfigSwiss({
   setTagIds: (v: string[]) => void;
   fases: Fase[];
   tags: Tag[];
+  entrants: EntrantOption[];
+  exclusions: EntryPairExclusion[];
+  setExclusions: (v: EntryPairExclusion[]) => void;
 }) {
   function toggleCriterion(c: SeedingCriterion) {
     setSeedingCriteria(
@@ -982,6 +1221,8 @@ function ConfigSwiss({
       </label>
 
       <TagScopePicker scope={scope} setScope={setScope} tagIds={tagIds} setTagIds={setTagIds} tags={tags} />
+
+      <EntryExclusionsEditor entrants={entrants} rules={exclusions} setRules={setExclusions} />
 
       <div>
         <p className="text-sm font-medium text-ink-2 mb-1">Ordre de seeding</p>
@@ -1037,6 +1278,7 @@ function ConfigSwiss({
 
 function ConfigSwissFide({
   scope, setScope, tagIds, setTagIds, carry, setCarry, expectedRounds, setExpectedRounds, fases, tags,
+  entrants, exclusions, setExclusions,
 }: {
   scope: 'all' | 'intra_tag';
   setScope: (v: 'all' | 'intra_tag') => void;
@@ -1048,6 +1290,9 @@ function ConfigSwissFide({
   setExpectedRounds: (v: string) => void;
   fases: Fase[];
   tags: Tag[];
+  entrants: EntrantOption[];
+  exclusions: EntryPairExclusion[];
+  setExclusions: (v: EntryPairExclusion[]) => void;
 }) {
   return (
     <div className="bg-accent-tint rounded-lg p-4 space-y-3">
@@ -1056,6 +1301,7 @@ function ConfigSwissFide({
         Usa l&apos;algorisme holandès FIDE amb matching global òptim (blossom). Gestiona automàticament revanxes, floats i bye.
       </p>
       <TagScopePicker scope={scope} setScope={setScope} tagIds={tagIds} setTagIds={setTagIds} tags={tags} />
+      <EntryExclusionsEditor entrants={entrants} rules={exclusions} setRules={setExclusions} />
       <Input
         label="Total de rondes previstes (opcional)"
         type="number"
@@ -1088,7 +1334,7 @@ function ConfigSwissFide({
 }
 
 function ConfigRoundRobin({
-  scope, setScope, tagIds, setTagIds, doble, setDoble, tags,
+  scope, setScope, tagIds, setTagIds, doble, setDoble, tags, tagExclusions, setTagExclusions,
 }: {
   scope: 'all' | 'intra_tag' | 'inter_tag';
   setScope: (v: 'all' | 'intra_tag' | 'inter_tag') => void;
@@ -1097,6 +1343,8 @@ function ConfigRoundRobin({
   doble: boolean;
   setDoble: (v: boolean) => void;
   tags: Tag[];
+  tagExclusions: TagPairExclusion[];
+  setTagExclusions: (v: TagPairExclusion[]) => void;
 }) {
   return (
     <div className="bg-win-tint rounded-lg p-4 space-y-3">
@@ -1110,6 +1358,14 @@ function ConfigRoundRobin({
         allowInter
         color="win"
       />
+      {scope === 'inter_tag' && (
+        <TagExclusionsEditor
+          tags={tags}
+          chosenTagIds={tagIds}
+          rules={tagExclusions}
+          setRules={setTagExclusions}
+        />
+      )}
       <label className="flex items-center gap-2 text-sm text-ink-2">
         <input type="checkbox" checked={doble} onChange={e => setDoble(e.target.checked)} className="accent-current text-win" />
         Doble volta (cada parella juga dos cops)
@@ -1120,6 +1376,7 @@ function ConfigRoundRobin({
 
 function ConfigKotH({
   topN, setTopN, scope, setScope, tagIds, setTagIds, carry, setCarry, fases, tags,
+  entrants, exclusions, setExclusions,
 }: {
   topN: string;
   setTopN: (v: string) => void;
@@ -1131,6 +1388,9 @@ function ConfigKotH({
   setCarry: (v: string[]) => void;
   fases: Fase[];
   tags: Tag[];
+  entrants: EntrantOption[];
+  exclusions: EntryPairExclusion[];
+  setExclusions: (v: EntryPairExclusion[]) => void;
 }) {
   return (
     <div className="bg-accent-tint rounded-lg p-4 space-y-3">
@@ -1144,6 +1404,7 @@ function ConfigKotH({
         placeholder="ex. 8"
       />
       <TagScopePicker scope={scope} setScope={setScope} tagIds={tagIds} setTagIds={setTagIds} tags={tags} />
+      <EntryExclusionsEditor entrants={entrants} rules={exclusions} setRules={setExclusions} />
       {fases.length > 0 && (
         <div>
           <p className="text-sm font-medium text-ink-2 mb-1">Heretar classificació de:</p>

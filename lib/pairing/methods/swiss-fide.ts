@@ -11,6 +11,9 @@ import type {
   SwissFideConfig,
 } from '../types';
 import { partitionByTags } from './tag-partition';
+import { buildEntryExclusionSets } from './exclusion-partition';
+import { hasPlayed } from '../utils/rematch';
+import type { EntryPairExclusion } from '@/db/types';
 
 /**
  * Sistema suís holandès FIDE, delegat a `@echecs/swiss`.
@@ -44,6 +47,19 @@ function pairAll(
   ctx: PairingContext,
   config: SwissFideConfig
 ): PairingEngineResult {
+  const warnings: PairingWarning[] = [];
+  if (active.length <= 1) {
+    if (active.length === 1) {
+      warnings.push({
+        type: 'no_pairings_possible',
+        message: 'Un sol jugador actiu: no hi ha cap aparellament possible.',
+        affectedEntryIds: [active[0].id],
+      });
+      return { matches: [{ tableNumber: -1, entryIds: [active[0].id] }], warnings };
+    }
+    return { matches: [], warnings };
+  }
+
   const standingMap = new Map(ctx.standings.map((s) => [s.entryId, s]));
   const result = pair(
     active.map((e) => ({ id: e.id, rating: e.rating ?? undefined })),
@@ -51,13 +67,17 @@ function pairAll(
     { expectedRounds: config.expectedRounds }
   );
 
-  const matches = sortAndNumber(
-    result.pairings.map((p) => [p.white, p.black]),
-    standingMap
+  const { pairings, byes } = resolveExclusions(
+    result.pairings.map((p) => [p.white, p.black] as [string, string]),
+    result.byes.map((b) => b.player),
+    config.entryExclusions,
+    warnings
   );
-  const byes: GeneratedMatch[] = result.byes.map((b) => ({ tableNumber: -1, entryIds: [b.player] }));
 
-  return { matches: [...matches, ...byes], warnings: [] };
+  const matches = sortAndNumber(pairings, standingMap);
+  const byeMatches: GeneratedMatch[] = byes.map((id) => ({ tableNumber: -1, entryIds: [id] }));
+
+  return { matches: [...matches, ...byeMatches], warnings };
 }
 
 function pairByTags(
@@ -71,9 +91,21 @@ function pairByTags(
   const { partitions, warnings } = partitionByTags(active, config.tagIds ?? []);
 
   const allPairings: Array<[string, string]> = [];
-  const allByes: GeneratedMatch[] = [];
+  const allByes: string[] = [];
 
   for (const entryIds of partitions.values()) {
+    if (entryIds.length <= 1) {
+      if (entryIds.length === 1) {
+        warnings.push({
+          type: 'no_pairings_possible',
+          message: 'Una etiqueta té un sol jugador actiu: no hi ha cap aparellament possible.',
+          affectedEntryIds: entryIds,
+        });
+        allByes.push(entryIds[0]);
+      }
+      continue;
+    }
+
     const tagEntrants = entryIds.map((id) => entrantById.get(id)!);
     const tagIdSet = new Set(entryIds);
     const tagHistory = ctx.previousMatches.filter((m) => m.entryIds.every((id) => tagIdSet.has(id)));
@@ -84,11 +116,108 @@ function pairByTags(
       { expectedRounds: config.expectedRounds }
     );
 
-    allPairings.push(...result.pairings.map((p) => [p.white, p.black] as [string, string]));
-    allByes.push(...result.byes.map((b) => ({ tableNumber: -1, entryIds: [b.player] })));
+    const { pairings, byes } = resolveExclusions(
+      result.pairings.map((p) => [p.white, p.black] as [string, string]),
+      result.byes.map((b) => b.player),
+      config.entryExclusions,
+      warnings
+    );
+
+    allPairings.push(...pairings);
+    allByes.push(...byes);
   }
 
-  return { matches: [...sortAndNumber(allPairings, standingMap), ...allByes], warnings };
+  const byeMatches: GeneratedMatch[] = allByes.map((id) => ({ tableNumber: -1, entryIds: [id] }));
+  return { matches: [...sortAndNumber(allPairings, standingMap), ...byeMatches], warnings };
+}
+
+/**
+ * Post-procés per a les exclusions de parella: la llibreria externa no
+ * exposa cap paràmetre d'exclusió (només l'historial de partides), i
+ * injectar-hi una partida fictícia contaminaria la puntuació real amb
+ * punts fantasma. Per això es corregeix el resultat ja calculat: s'intenta
+ * un intercanvi local amb una altra parella; si no n'hi ha cap de legal,
+ * "evitar" es deixa estar (avisa però mai deixa ningú sense jugar) i
+ * "prohibir" converteix els dos jugadors en bye (mai es permet l'aparellament).
+ */
+function resolveExclusions(
+  pairings: Array<[string, string]>,
+  byes: string[],
+  entryExclusions: EntryPairExclusion[] | undefined,
+  warnings: PairingWarning[]
+): { pairings: Array<[string, string]>; byes: string[] } {
+  const { avoidSet, forbidSet } = buildEntryExclusionSets(entryExclusions);
+  if (avoidSet.size === 0 && forbidSet.size === 0) return { pairings, byes };
+
+  let result = [...pairings];
+  let outByes = [...byes];
+
+  const fix = (set: Set<string>, mustResolve: boolean, warnType: 'pair_excluded' | 'forbidden_bye') => {
+    for (let i = 0; i < result.length; i++) {
+      const [a, b] = result[i];
+      if (!hasPlayed(a, b, set)) continue;
+
+      const swap = findLegalSwap(result, i, set);
+      if (swap !== null) {
+        result[swap.j] = swap.pairJ;
+        result[i] = swap.pairI;
+        warnings.push({
+          type: warnType,
+          message:
+            warnType === 'forbidden_bye'
+              ? 'Una exclusió "prohibir" s\'ha evitat intercanviant un aparellament.'
+              : 'Una exclusió "evitar" s\'ha evitat intercanviant un aparellament.',
+          affectedEntryIds: [a, b],
+        });
+        continue;
+      }
+
+      if (mustResolve) {
+        result.splice(i, 1);
+        i--;
+        outByes.push(a, b);
+        warnings.push({
+          type: 'forbidden_bye',
+          message: 'Sense cap intercanvi legal per respectar una exclusió "prohibir": ambdós passen a bye.',
+          affectedEntryIds: [a, b],
+        });
+      } else {
+        warnings.push({
+          type: 'pair_excluded',
+          message: 'No s\'ha pogut evitar una parella marcada com a "evitar". S\'ha permès excepcionalment.',
+          affectedEntryIds: [a, b],
+        });
+      }
+    }
+  };
+
+  fix(forbidSet, true, 'forbidden_bye');
+  fix(avoidSet, false, 'pair_excluded');
+
+  return { pairings: result, byes: outByes };
+}
+
+/** Cerca una altra parella amb qui intercanviar per desfer una col·lisió amb `set`. */
+function findLegalSwap(
+  pairings: Array<[string, string]>,
+  i: number,
+  set: Set<string>
+): { j: number; pairI: [string, string]; pairJ: [string, string] } | null {
+  const [a, b] = pairings[i];
+  for (let j = 0; j < pairings.length; j++) {
+    if (j === i) continue;
+    const [c, d] = pairings[j];
+
+    // Intercanvia b amb c: (a,c) i (b,d).
+    if (!hasPlayed(a, c, set) && !hasPlayed(b, d, set)) {
+      return { j, pairI: [a, c], pairJ: [b, d] };
+    }
+    // Intercanvia b amb d: (a,d) i (c,b).
+    if (!hasPlayed(a, d, set) && !hasPlayed(c, b, set)) {
+      return { j, pairI: [a, d], pairJ: [c, b] };
+    }
+  }
+  return null;
 }
 
 function sortAndNumber(

@@ -8,8 +8,15 @@ import type { PreviousMatch } from '../types';
  */
 
 /** Clau canònica d'una parella, perquè (A,B) i (B,A) siguin la mateixa. */
-function pairKey(a: string, b: string): string {
+export function pairKey(a: string, b: string): string {
   return a < b ? `${a}:${b}` : `${b}:${a}`;
+}
+
+/** Unió de diversos sets de parelles (p. ex. revanxes + exclusions "evitar"). */
+export function unionSets(...sets: Set<string>[]): Set<string> {
+  const result = new Set<string>();
+  for (const set of sets) for (const key of set) result.add(key);
+  return result;
 }
 
 /** Totes les parelles que han coincidit en alguna partida. */

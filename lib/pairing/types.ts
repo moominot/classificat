@@ -243,7 +243,10 @@ export interface PairingWarning {
     | 'cross_group_pair'
     | 'incomplete_round_robin'
     | 'uneven_table'
-    | 'multiple_tag_match';
+    | 'multiple_tag_match'
+    | 'pair_excluded'
+    | 'forbidden_bye'
+    | 'no_pairings_possible';
   message: string;
   affectedEntryIds: string[];
 }

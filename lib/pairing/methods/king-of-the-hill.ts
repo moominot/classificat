@@ -9,6 +9,8 @@ import type {
 } from '../types';
 import { buildRematchSet, hasPlayed } from '../utils/rematch';
 import { partitionByTags } from './tag-partition';
+import { buildEntryExclusionSets } from './exclusion-partition';
+import type { EntryPairExclusion } from '@/db/types';
 
 /**
  * Rei del turó: 1r contra 2n, 3r contra 4t, etc.
@@ -33,9 +35,20 @@ export function generateKingOfTheHillPairings(ctx: PairingContext): PairingEngin
     const warnings: PairingWarning[] = [...tagWarnings];
 
     for (const entryIds of partitions.values()) {
+      if (entryIds.length <= 1) {
+        if (entryIds.length === 1) {
+          warnings.push({
+            type: 'no_pairings_possible',
+            message: 'Una etiqueta té un sol jugador actiu: no hi ha cap aparellament possible.',
+            affectedEntryIds: entryIds,
+          });
+          matches.push({ tableNumber: -1, entryIds });
+        }
+        continue;
+      }
       const idSet = new Set(entryIds);
       const poolStandings = ctx.standings.filter((s) => idSet.has(s.entryId));
-      const result = pairPool(poolStandings, ctx.previousMatches, config.topN);
+      const result = pairPool(poolStandings, ctx.previousMatches, config.topN, config.entryExclusions);
       matches.push(...result.matches);
       warnings.push(...result.warnings);
     }
@@ -44,16 +57,18 @@ export function generateKingOfTheHillPairings(ctx: PairingContext): PairingEngin
     return { matches, warnings };
   }
 
-  return pairPool(ctx.standings, ctx.previousMatches, config.topN);
+  return pairPool(ctx.standings, ctx.previousMatches, config.topN, config.entryExclusions);
 }
 
 function pairPool(
   standings: Standing[],
   previousMatches: PreviousMatch[],
-  topN: number | null | undefined
+  topN: number | null | undefined,
+  entryExclusions: EntryPairExclusion[] | undefined
 ): PairingEngineResult {
   const warnings: PairingWarning[] = [];
   const rematchSet = buildRematchSet(previousMatches);
+  const { avoidSet, forbidSet } = buildEntryExclusionSets(entryExclusions);
 
   // Les classificacions ja arriben ordenades i amb `rank` assignat: aquí només
   // cal respectar-ne l'ordre (abans es reordenava amb un comparador propi).
@@ -61,6 +76,18 @@ function pairPool(
 
   if (topN != null && topN > 0) {
     ordered = ordered.slice(0, topN);
+  }
+
+  if (ordered.length <= 1) {
+    if (ordered.length === 1) {
+      warnings.push({
+        type: 'no_pairings_possible',
+        message: 'Un sol jugador actiu: no hi ha cap aparellament possible.',
+        affectedEntryIds: ordered,
+      });
+      return { matches: [{ tableNumber: -1, entryIds: ordered }], warnings };
+    }
+    return { matches: [], warnings };
   }
 
   const matches: GeneratedMatch[] = [];
@@ -78,13 +105,35 @@ function pairPool(
       continue;
     }
 
-    let second = candidates.find((id) => !hasPlayed(first, id, rematchSet));
+    // Primer, cap col·lisió (revanxa, "evitar" o "prohibir").
+    let second = candidates.find(
+      (id) => !hasPlayed(first, id, rematchSet) && !hasPlayed(first, id, avoidSet) && !hasPlayed(first, id, forbidSet)
+    );
 
     if (second === undefined) {
-      second = candidates[0];
+      // Es relaxen revanxa/"evitar", però "prohibir" mai es relaxa.
+      second = candidates.find((id) => !hasPlayed(first, id, forbidSet));
+    }
+
+    if (second === undefined) {
+      // Tots els restants estan prohibits amb `first`: queda en bye.
       warnings.push({
-        type: 'rematch_forced',
-        message: 'Revanxa inevitable en aquest aparellament.',
+        type: 'forbidden_bye',
+        message: 'Sense cap parella permesa per una exclusió "prohibir": se li assigna bye.',
+        affectedEntryIds: [first],
+      });
+      matches.push({ tableNumber: 0, entryIds: [first] });
+      paired.add(first);
+      continue;
+    }
+
+    if (hasPlayed(first, second, rematchSet) || hasPlayed(first, second, avoidSet)) {
+      const isAvoid = !hasPlayed(first, second, rematchSet) && hasPlayed(first, second, avoidSet);
+      warnings.push({
+        type: isAvoid ? 'pair_excluded' : 'rematch_forced',
+        message: isAvoid
+          ? 'No s\'ha pogut evitar una parella marcada com a "evitar". S\'ha permès excepcionalment.'
+          : 'Revanxa inevitable en aquest aparellament.',
         affectedEntryIds: [first, second],
       });
     }
@@ -94,10 +143,11 @@ function pairPool(
     paired.add(second);
   }
 
-  // El bye va a l'última taula.
-  const lastTable = tableNumber;
+  // Cada bye necessita una taula pròpia: amb exclusions "prohibir" hi pot
+  // haver més d'un bye a la mateixa ronda.
+  let nextByeTable = tableNumber;
   for (const match of matches) {
-    if (match.entryIds.length === 1) match.tableNumber = lastTable;
+    if (match.entryIds.length === 1) match.tableNumber = nextByeTable++;
   }
 
   return { matches, warnings };
@@ -109,8 +159,8 @@ function renumberTables(matches: GeneratedMatch[]): void {
   for (const match of matches) {
     if (match.entryIds.length > 1) match.tableNumber = tableNumber++;
   }
-  const lastTable = tableNumber;
+  let nextByeTable = tableNumber;
   for (const match of matches) {
-    if (match.entryIds.length === 1) match.tableNumber = lastTable;
+    if (match.entryIds.length === 1) match.tableNumber = nextByeTable++;
   }
 }
