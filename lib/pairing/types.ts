@@ -36,12 +36,21 @@ export interface Entrant {
   rating?: number | null;
   groupId?: string | null;
   teamId?: string | null;
+  /** Etiquetes d'aquest jugador: substitueixen el grup com a mecanisme de
+   *  categorització obert (un jugador en pot tenir qualsevol nombre). */
+  tagIds?: string[];
   isActive: boolean;
 }
 
 export interface Group {
   id: string;
   tournamentId: string;
+  name: string;
+}
+
+/** Forma mínima reaprofitada arreu (abans es redeclarava a mig dotzena de fitxers). */
+export interface Tag {
+  id: string;
   name: string;
 }
 

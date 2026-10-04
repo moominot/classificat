@@ -1,8 +1,8 @@
 import { NextResponse } from 'next/server';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { v4 as uuid } from 'uuid';
 import { db } from '@/db';
-import { entries, groups, people, teams, tournaments } from '@/db/schema';
+import { entries, entryTags, groups, people, tags, teams, tournaments } from '@/db/schema';
 import { requireTournamentAccess } from '@/lib/authz';
 import { loadEntrants } from '@/lib/db-helpers';
 
@@ -35,7 +35,7 @@ export async function POST(req: Request, { params }: Params) {
   if (guard.error) return guard.error;
 
   const body = await req.json().catch(() => ({}));
-  const { personId, displayName, club, phone, email, rating, groupId, teamId, barrufNumero } = body;
+  const { personId, displayName, club, phone, email, rating, groupId, teamId, barrufNumero, tagIds } = body;
 
   const [tournament] = await db.select().from(tournaments).where(eq(tournaments.id, tournamentId));
   if (!tournament) return NextResponse.json({ error: 'Competició no trobada' }, { status: 404 });
@@ -53,6 +53,16 @@ export async function POST(req: Request, { params }: Params) {
       .from(teams)
       .where(and(eq(teams.id, teamId), eq(teams.tournamentId, tournamentId)));
     if (!team) return NextResponse.json({ error: 'Equip no trobat' }, { status: 404 });
+  }
+  const tagIdsNetes: string[] = Array.isArray(tagIds) ? [...new Set(tagIds as string[])] : [];
+  if (tagIdsNetes.length > 0) {
+    const trobades = await db
+      .select({ id: tags.id })
+      .from(tags)
+      .where(and(eq(tags.tournamentId, tournamentId), inArray(tags.id, tagIdsNetes)));
+    if (trobades.length !== tagIdsNetes.length) {
+      return NextResponse.json({ error: 'Alguna etiqueta no existeix en aquesta competició' }, { status: 404 });
+    }
   }
 
   let person;
@@ -104,6 +114,9 @@ export async function POST(req: Request, { params }: Params) {
   };
 
   await db.insert(entries).values(entry);
+  if (tagIdsNetes.length > 0) {
+    await db.insert(entryTags).values(tagIdsNetes.map((tagId) => ({ entryId: entry.id, tagId })));
+  }
 
-  return NextResponse.json({ ...entry, displayName: person.displayName }, { status: 201 });
+  return NextResponse.json({ ...entry, displayName: person.displayName, tagIds: tagIdsNetes }, { status: 201 });
 }

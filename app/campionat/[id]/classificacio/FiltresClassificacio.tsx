@@ -4,11 +4,12 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import Modal from '@/components/ui/Modal';
+import type { Tag } from '@/lib/pairing/types';
 
 /**
- * Filtres de nom/club i BARRUF, centralitzats en un modal darrere una icona
- * — abans el formulari sempre hi era, ocupant espai encara que ningú els fes
- * servir la majoria de cops que es consulta la classificació.
+ * Filtres de nom/club, BARRUF i etiquetes, centralitzats en un modal darrere
+ * una icona — abans el formulari sempre hi era, ocupant espai encara que
+ * ningú els fes servir la majoria de cops que es consulta la classificació.
  */
 export default function FiltresClassificacio({
   tournamentId,
@@ -17,6 +18,8 @@ export default function FiltresClassificacio({
   q,
   br,
   bv,
+  tags,
+  tagsSeleccionades,
 }: {
   tournamentId: string;
   pestanya: string;
@@ -24,10 +27,12 @@ export default function FiltresClassificacio({
   q: string;
   br: string;
   bv: string;
+  tags: Tag[];
+  tagsSeleccionades: string[];
 }) {
   const router = useRouter();
   const [obert, setObert] = useState(false);
-  const hiHaFiltre = q.length > 0 || (br.length > 0 && bv.length > 0);
+  const hiHaFiltre = q.length > 0 || (br.length > 0 && bv.length > 0) || tagsSeleccionades.length > 0;
 
   function baseParams() {
     const params = new URLSearchParams();
@@ -48,11 +53,13 @@ export default function FiltresClassificacio({
     const qVal = (form.get('q') as string | null)?.trim();
     const brVal = form.get('br') as string | null;
     const bvVal = (form.get('bv') as string | null)?.trim();
+    const tagsVal = form.getAll('tags') as string[];
     if (qVal) params.set('q', qVal);
     if (brVal && bvVal) {
       params.set('br', brVal);
       params.set('bv', bvVal);
     }
+    if (tagsVal.length > 0) params.set('tags', tagsVal.join(','));
     navega(params);
   }
 
@@ -111,6 +118,30 @@ export default function FiltresClassificacio({
               />
             </div>
           </div>
+          {tags.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-ink-2 mb-1">
+                Etiquetes <span className="font-normal text-ink-3">(ha de tenir-les totes)</span>
+              </label>
+              <div className="flex flex-wrap gap-1.5">
+                {tags.map((t) => (
+                  <label
+                    key={t.id}
+                    className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border border-border text-sm text-ink-2 cursor-pointer has-[:checked]:bg-accent-tint has-[:checked]:border-accent has-[:checked]:text-accent-ink"
+                  >
+                    <input
+                      type="checkbox"
+                      name="tags"
+                      value={t.id}
+                      defaultChecked={tagsSeleccionades.includes(t.id)}
+                      className="accent-accent"
+                    />
+                    {t.name}
+                  </label>
+                ))}
+              </div>
+            </div>
+          )}
           <div className="flex gap-2 pt-1">
             <Button type="submit" className="flex-1 sm:flex-none">
               Filtra

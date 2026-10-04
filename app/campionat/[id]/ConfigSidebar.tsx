@@ -5,7 +5,7 @@ import Link from 'next/link';
 
 /** Seccions de configuració: es toquen un cop i prou, no cal que ocupin la barra de dalt a l'escriptori. */
 export const CONFIG_LINKS = [
-  { key: 'grups', label: 'Grups' },
+  { key: 'etiquetes', label: 'Etiquetes' },
   { key: 'fases', label: 'Fases' },
   { key: 'preguntes', label: 'Preguntes' },
   { key: 'barruf', label: 'BARRUF' },

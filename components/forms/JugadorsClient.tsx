@@ -11,13 +11,13 @@ import ImportarJugadors from './ImportarJugadors';
 import NomBarrufInput, { type BarrufResultat } from './NomBarrufInput';
 import { useCanManage } from '@/components/ViewerContext';
 import { readError } from '@/lib/http';
+import type { Tag } from '@/lib/pairing/types';
 
-interface Grup { id: string; name: string }
 interface Jugador {
   id: string;
   name: string;
   rating: number | null;
-  groupId: string | null;
+  tagIds: string[];
   phone: string | null;
   club: string | null;
   barrufNumero: number | null;
@@ -27,11 +27,11 @@ interface Jugador {
 export default function JugadorsClient({
   tournamentId,
   jugadors,
-  grups,
+  tags,
 }: {
   tournamentId: string;
   jugadors: Jugador[];
-  grups: Grup[];
+  tags: Tag[];
 }) {
   const router = useRouter();
   const canManage = useCanManage();
@@ -39,7 +39,7 @@ export default function JugadorsClient({
   const [editant, setEditant] = useState<string | null>(null);
   const [ordre, setOrdre] = useState<'nom' | 'elo'>('nom');
 
-  const grupMap = new Map(grups.map(g => [g.id, g.name]));
+  const tagMap = new Map(tags.map(t => [t.id, t.name]));
 
   function sortJugadors(jj: Jugador[]) {
     if (ordre === 'elo') {
@@ -105,7 +105,7 @@ export default function JugadorsClient({
       {mode === 'importar' && (
         <Card>
           <CardHeader><CardTitle>Importar jugadors</CardTitle></CardHeader>
-          <ImportarJugadors tournamentId={tournamentId} grups={grups} />
+          <ImportarJugadors tournamentId={tournamentId} />
         </Card>
       )}
 
@@ -119,9 +119,9 @@ export default function JugadorsClient({
           <Card padding={false}>
             <JugadorsLlista
               jugadors={sortJugadors(jugadors)}
-              grupMap={grupMap}
+              tagMap={tagMap}
               tournamentId={tournamentId}
-              grups={grups}
+              tags={tags}
               editant={editant}
               setEditant={setEditant}
               toggleActiu={toggleActiu}
@@ -223,17 +223,17 @@ function AfegeixRapid({ tournamentId }: { tournamentId: string }) {
 
 function JugadorsLlista({
   jugadors,
-  grupMap,
+  tagMap,
   tournamentId,
-  grups,
+  tags,
   editant,
   setEditant,
   toggleActiu,
 }: {
   jugadors: Jugador[];
-  grupMap: Map<string, string>;
+  tagMap: Map<string, string>;
   tournamentId: string;
-  grups: Grup[];
+  tags: Tag[];
   editant: string | null;
   setEditant: (id: string | null) => void;
   toggleActiu: (j: Jugador) => void;
@@ -244,9 +244,9 @@ function JugadorsLlista({
         <JugadorRow
           key={j.id}
           jugador={j}
-          grupMap={grupMap}
+          tagMap={tagMap}
           tournamentId={tournamentId}
-          grups={grups}
+          tags={tags}
           editant={editant}
           setEditant={setEditant}
           toggleActiu={toggleActiu}
@@ -258,17 +258,17 @@ function JugadorsLlista({
 
 function JugadorRow({
   jugador: j,
-  grupMap,
+  tagMap,
   tournamentId,
-  grups,
+  tags,
   editant,
   setEditant,
   toggleActiu,
 }: {
   jugador: Jugador;
-  grupMap: Map<string, string>;
+  tagMap: Map<string, string>;
   tournamentId: string;
-  grups: Grup[];
+  tags: Tag[];
   editant: string | null;
   setEditant: (id: string | null) => void;
   toggleActiu: (j: Jugador) => void;
@@ -297,7 +297,7 @@ function JugadorRow({
       <li className="p-4">
         <JugadorForm
           tournamentId={tournamentId}
-          grups={grups}
+          tags={tags}
           jugador={j}
           onDone={() => setEditant(null)}
         />
@@ -324,7 +324,11 @@ function JugadorRow({
           <div className="flex gap-3 text-xs text-ink-3 mt-0.5 flex-wrap">
             {j.rating && <span>BARRUF {j.rating}</span>}
             {j.barrufNumero && <span className="text-accent-ink font-medium">#{j.barrufNumero}</span>}
-            {j.groupId && <span>Grup {grupMap.get(j.groupId)}</span>}
+            {j.tagIds.map((id) => (
+              <span key={id} className="px-1.5 py-0.5 rounded bg-accent-tint text-accent-ink">
+                {tagMap.get(id) ?? '?'}
+              </span>
+            ))}
             {j.club && <span>{j.club}</span>}
             {j.phone && <span>{j.phone}</span>}
           </div>

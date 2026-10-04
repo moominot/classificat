@@ -132,6 +132,31 @@ export const groups = sqliteTable('groups', {
 ]);
 
 /**
+ * Etiquetes d'una competició: substitueixen els grups per a tot el que
+ * calgui filtrar/aparellar/mostrar per categoria. A diferència d'un grup,
+ * un jugador en pot tenir qualsevol nombre (`entry_tags`), club inclòs
+ * ("el club no deixa de ser una etiqueta més"). `groups`/`entries.groupId`
+ * es mantenen per ara (migració no destructiva, docs/pla-rols.md pendent).
+ */
+export const tags = sqliteTable('tags', {
+  id:           text('id').primaryKey(),
+  tournamentId: text('tournament_id').notNull().references(() => tournaments.id, { onDelete: 'cascade' }),
+  name:         text('name').notNull(),
+  createdAt:    integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (t) => [
+  index('tags_tournament_idx').on(t.tournamentId),
+]);
+
+export const entryTags = sqliteTable('entry_tags', {
+  entryId: text('entry_id').notNull().references(() => entries.id, { onDelete: 'cascade' }),
+  tagId:   text('tag_id').notNull().references(() => tags.id, { onDelete: 'cascade' }),
+}, (t) => [
+  uniqueIndex('entry_tags_uniq').on(t.entryId, t.tagId),
+  index('entry_tags_entry_idx').on(t.entryId),
+  index('entry_tags_tag_idx').on(t.tagId),
+]);
+
+/**
  * Equips d'una competició. No hi ha taula de membres: la pertinença viu a
  * `entries.teamId`, perquè un jugador té un sol equip per competició (§13.1 #5).
  */
@@ -415,6 +440,8 @@ export type NewTournament = typeof tournaments.$inferInsert;
 export type TournamentAdmin = typeof tournamentAdmins.$inferSelect;
 export type Group = typeof groups.$inferSelect;
 export type NewGroup = typeof groups.$inferInsert;
+export type Tag = typeof tags.$inferSelect;
+export type NewTag = typeof tags.$inferInsert;
 export type Team = typeof teams.$inferSelect;
 export type NewTeam = typeof teams.$inferInsert;
 export type Entry = typeof entries.$inferSelect;

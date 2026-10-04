@@ -19,6 +19,7 @@ export interface StandingRow extends Standing {
   displayName: string;
   groupId: string | null;
   teamId: string | null;
+  tagIds: string[];
 }
 
 export interface TeamStandingRow extends TeamStanding {
@@ -93,6 +94,7 @@ export async function loadStandings(
     displayName: entrantById.get(standing.entryId)?.displayName ?? 'Desconegut',
     groupId: entrantById.get(standing.entryId)?.groupId ?? null,
     teamId: entrantById.get(standing.entryId)?.teamId ?? null,
+    tagIds: entrantById.get(standing.entryId)?.tagIds ?? [],
   }));
 
   return {

@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '@/db';
-import { entries, groups, matchParticipants, people, teams } from '@/db/schema';
+import { entries, entryTags, groups, matchParticipants, people, tags, teams } from '@/db/schema';
 import { requireTournamentAccess } from '@/lib/authz';
 
 type Params = { params: Promise<{ tournamentId: string; entryId: string }> };
@@ -70,6 +70,20 @@ export async function PATCH(req: Request, { params }: Params) {
       .where(and(eq(teams.id, body.teamId), eq(teams.tournamentId, tournamentId)));
     if (!team) return NextResponse.json({ error: 'Equip no trobat' }, { status: 404 });
   }
+  if (body.tagIds !== undefined) {
+    if (!Array.isArray(body.tagIds)) {
+      return NextResponse.json({ error: 'tagIds ha de ser una llista' }, { status: 400 });
+    }
+    if (body.tagIds.length > 0) {
+      const trobades = await db
+        .select({ id: tags.id })
+        .from(tags)
+        .where(and(eq(tags.tournamentId, tournamentId), inArray(tags.id, body.tagIds)));
+      if (trobades.length !== new Set(body.tagIds).size) {
+        return NextResponse.json({ error: 'Alguna etiqueta no existeix en aquesta competició' }, { status: 404 });
+      }
+    }
+  }
 
   const entryUpdates: Partial<typeof entry> = {};
   if (body.rating !== undefined) entryUpdates.rating = body.rating;
@@ -90,6 +104,15 @@ export async function PATCH(req: Request, { params }: Params) {
   }
   if (Object.keys(personUpdates).length > 0) {
     await db.update(people).set(personUpdates).where(eq(people.id, entry.personId));
+  }
+  // tagIds substitueix la llista sencera d'etiquetes d'aquest jugador.
+  if (body.tagIds !== undefined) {
+    await db.delete(entryTags).where(eq(entryTags.entryId, entryId));
+    if (body.tagIds.length > 0) {
+      await db.insert(entryTags).values(
+        [...new Set(body.tagIds as string[])].map((tagId) => ({ entryId, tagId }))
+      );
+    }
   }
 
   return NextResponse.json({ ...entry, ...entryUpdates, ...personUpdates });

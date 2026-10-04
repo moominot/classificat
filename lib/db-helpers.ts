@@ -1,7 +1,8 @@
-import { and, eq, inArray } from 'drizzle-orm';
+import { and, asc, eq, inArray } from 'drizzle-orm';
 import { db } from '@/db';
 import {
   entries,
+  entryTags,
   matchAnswers,
   matchParticipants,
   matches,
@@ -9,11 +10,12 @@ import {
   phases,
   questionDefinitions,
   rounds,
+  tags,
   tournaments,
 } from '@/db/schema';
 import { DEFAULT_SCORING } from '@/db/types';
 import type { ScoringConfig } from '@/db/types';
-import type { Entrant, Match, PreviousMatch, RoundStatus } from '@/lib/pairing/types';
+import type { Entrant, Match, PreviousMatch, RoundStatus, Tag } from '@/lib/pairing/types';
 import type { MetricAnswer, QuestionMetric, ScoredMatch } from '@/lib/pairing/standings';
 
 /**
@@ -22,6 +24,35 @@ import type { MetricAnswer, QuestionMetric, ScoredMatch } from '@/lib/pairing/st
  * Tot el que surt d'aquí parla d'inscripcions (`entries`), no de persones: el
  * motor no sap qui hi ha al darrere (docs/pla-rols.md §12.3).
  */
+
+/**
+ * Les etiquetes de cada inscripció, com a mapa — una consulta a part perquè
+ * Drizzle no fa arrays en un sol `select()` (§ etiquetes, substitueixen els
+ * grups com a mecanisme de categorització).
+ */
+async function loadTagIdsByEntry(entryIds: string[]): Promise<Map<string, string[]>> {
+  const result = new Map<string, string[]>();
+  if (entryIds.length === 0) return result;
+
+  const rows = await db
+    .select({ entryId: entryTags.entryId, tagId: entryTags.tagId })
+    .from(entryTags)
+    .where(inArray(entryTags.entryId, entryIds));
+
+  for (const row of rows) {
+    result.set(row.entryId, [...(result.get(row.entryId) ?? []), row.tagId]);
+  }
+  return result;
+}
+
+/** Les etiquetes d'una competició. */
+export async function loadTags(tournamentId: string): Promise<Tag[]> {
+  return db
+    .select({ id: tags.id, name: tags.name })
+    .from(tags)
+    .where(eq(tags.tournamentId, tournamentId))
+    .orderBy(asc(tags.name));
+}
 
 /** Les inscripcions d'una competició, amb el nom que es mostra. */
 export async function loadEntrants(tournamentId: string): Promise<Entrant[]> {
@@ -40,7 +71,8 @@ export async function loadEntrants(tournamentId: string): Promise<Entrant[]> {
     .innerJoin(people, eq(people.id, entries.personId))
     .where(eq(entries.tournamentId, tournamentId));
 
-  return rows;
+  const tagIdsByEntry = await loadTagIdsByEntry(rows.map((r) => r.id));
+  return rows.map((r) => ({ ...r, tagIds: tagIdsByEntry.get(r.id) ?? [] }));
 }
 
 interface RoundRow {
@@ -375,7 +407,7 @@ export async function loadEntryWordAnswers(
  * l'admin té aquella persona en una competició seva (docs/pla-rols.md §14.4).
  */
 export async function loadEntrantsWithContact(tournamentId: string) {
-  return db
+  const rows = await db
     .select({
       id: entries.id,
       tournamentId: entries.tournamentId,
@@ -392,6 +424,9 @@ export async function loadEntrantsWithContact(tournamentId: string) {
     .from(entries)
     .innerJoin(people, eq(people.id, entries.personId))
     .where(eq(entries.tournamentId, tournamentId));
+
+  const tagIdsByEntry = await loadTagIdsByEntry(rows.map((r) => r.id));
+  return rows.map((r) => ({ ...r, tagIds: tagIdsByEntry.get(r.id) ?? [] }));
 }
 
 // ─── Historial d'una mètrica ───────────────────────────────────────────────────

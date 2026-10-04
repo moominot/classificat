@@ -1,8 +1,5 @@
-import { asc, eq } from 'drizzle-orm';
-import { db } from '@/db';
-import { groups } from '@/db/schema';
 import { canManageTournament, getCurrentAccount } from '@/lib/authz';
-import { loadEntrantsWithContact } from '@/lib/db-helpers';
+import { loadEntrantsWithContact, loadTags } from '@/lib/db-helpers';
 import JugadorsClient from '@/components/forms/JugadorsClient';
 
 export const dynamic = 'force-dynamic';
@@ -13,9 +10,9 @@ export default async function JugadorsPage({ params }: { params: Promise<{ id: s
   const account = await getCurrentAccount();
   const canManage = account ? await canManageTournament(account, id) : false;
 
-  const [inscrits, grups] = await Promise.all([
+  const [inscrits, tags] = await Promise.all([
     loadEntrantsWithContact(id),
-    db.select().from(groups).where(eq(groups.tournamentId, id)).orderBy(asc(groups.order)),
+    loadTags(id),
   ]);
 
   return (
@@ -27,7 +24,7 @@ export default async function JugadorsPage({ params }: { params: Promise<{ id: s
           name: entrant.displayName,
           rating: entrant.rating ?? null,
           barrufNumero: entrant.barrufNumero ?? null,
-          groupId: entrant.groupId ?? null,
+          tagIds: entrant.tagIds,
           // El contacte no surt del servidor si qui mira no gestiona la
           // competició (docs/pla-rols.md §14.4).
           club: canManage ? entrant.club : null,
@@ -35,7 +32,7 @@ export default async function JugadorsPage({ params }: { params: Promise<{ id: s
           isActive: entrant.isActive,
         }))
         .sort((a, b) => a.name.localeCompare(b.name))}
-      grups={grups}
+      tags={tags}
     />
   );
 }

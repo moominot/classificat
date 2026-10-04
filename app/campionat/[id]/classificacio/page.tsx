@@ -1,10 +1,10 @@
 import { asc, eq } from 'drizzle-orm';
 import Link from 'next/link';
 import { db } from '@/db';
-import { groups, phases, questionDefinitions, rounds } from '@/db/schema';
+import { phases, questionDefinitions, rounds } from '@/db/schema';
 import { Card } from '@/components/ui/Card';
 import { canManageTournament, getCurrentAccount } from '@/lib/authz';
-import { loadEntrantsWithContact, loadMetricHistory, loadVisibleRoundIds } from '@/lib/db-helpers';
+import { loadEntrantsWithContact, loadMetricHistory, loadTags, loadVisibleRoundIds } from '@/lib/db-helpers';
 import { loadStandings } from '@/lib/standings-service';
 import { resolveTiebreaker } from '@/lib/pairing/tiebreakers';
 import RanquingMetrica from './RanquingMetrica';
@@ -44,14 +44,14 @@ export default async function ClassificacioPage({
   const account = await getCurrentAccount();
   const canManage = account ? await canManageTournament(account, id) : false;
 
-  const [totes_fases, totesPreguntes, tots_grups, vistaCompleta, totes_rondes, entrants] = await Promise.all([
+  const [totes_fases, totesPreguntes, totesEtiquetes, vistaCompleta, totes_rondes, entrants] = await Promise.all([
     db.select().from(phases).where(eq(phases.tournamentId, id)).orderBy(asc(phases.order)),
     db
       .select()
       .from(questionDefinitions)
       .where(eq(questionDefinitions.tournamentId, id))
       .orderBy(asc(questionDefinitions.order)),
-    db.select().from(groups).where(eq(groups.tournamentId, id)).orderBy(asc(groups.order)),
+    loadTags(id),
     loadStandings(id, { canManage }),
     db
       .select({ id: rounds.id, number: rounds.number, phaseId: rounds.phaseId })
@@ -89,15 +89,17 @@ export default async function ClassificacioPage({
     );
   }
 
-  // Cercador per nom/club i per BARRUF (menys de X o més de X — una franja de
-  // nivell, no un número exacte). Tot per querystring: cap component client
+  // Cercador per nom/club, per BARRUF (menys de X o més de X — una franja de
+  // nivell, no un número exacte) i per etiquetes (ha de tenir-les totes, no
+  // n'hi ha prou amb una). Tot per querystring: cap component client
   // necessari i els enllaços de pestanya/fase el poden arrossegar igual.
   const cerca = (sp.q ?? '').trim().toLowerCase();
   const barrufComparador = sp.br === 'lt' || sp.br === 'gt' ? sp.br : null;
   const barrufValor = barrufComparador && sp.bv && !Number.isNaN(Number(sp.bv)) ? Number(sp.bv) : null;
-  const hiHaFiltre = cerca.length > 0 || barrufValor !== null;
+  const tagsSeleccionades = (sp.tags ?? '').split(',').filter(Boolean);
+  const hiHaFiltre = cerca.length > 0 || barrufValor !== null || tagsSeleccionades.length > 0;
 
-  function passaFiltre(entryId: string, displayName: string): boolean {
+  function passaFiltre(entryId: string, displayName: string, tagIds: string[]): boolean {
     const info = infoPerEntry.get(entryId);
     if (cerca && !`${displayName} ${info?.club ?? ''}`.toLowerCase().includes(cerca)) return false;
     if (barrufValor !== null) {
@@ -105,11 +107,12 @@ export default async function ClassificacioPage({
       if (barrufComparador === 'lt' && !(info.rating < barrufValor)) return false;
       if (barrufComparador === 'gt' && !(info.rating > barrufValor)) return false;
     }
+    if (tagsSeleccionades.length > 0 && !tagsSeleccionades.every((t) => tagIds.includes(t))) return false;
     return true;
   }
 
   const standingsFiltrats = hiHaFiltre
-    ? vista.standings.filter((s) => passaFiltre(s.entryId, s.displayName))
+    ? vista.standings.filter((s) => passaFiltre(s.entryId, s.displayName, s.tagIds))
     : vista.standings;
 
   // Mètriques que tenen pestanya pròpia: les preguntes marcades per al
@@ -138,7 +141,6 @@ export default async function ClassificacioPage({
     { id: 'general', label: 'General' },
     ...metriquesRanquing.map((key) => ({ id: key, label: etiqueta(key) })),
     ...(vista.teamStandings ? [{ id: 'equips', label: 'Equips' }] : []),
-    ...(tots_grups.length > 0 ? [{ id: 'grups', label: 'Per grups' }] : []),
   ];
   const pestanya = PESTANYES.some((p) => p.id === sp.t) ? sp.t : 'general';
 
@@ -182,6 +184,7 @@ export default async function ClassificacioPage({
       if (sp.q) params.set('q', sp.q);
       if (sp.br) params.set('br', sp.br);
       if (sp.bv) params.set('bv', sp.bv);
+      if (sp.tags) params.set('tags', sp.tags);
     }
     const qs = params.toString();
     return `/campionat/${id}/classificacio${qs ? `?${qs}` : ''}`;
@@ -235,6 +238,8 @@ export default async function ClassificacioPage({
           q={sp.q ?? ''}
           br={barrufComparador ?? ''}
           bv={sp.bv ?? ''}
+          tags={totesEtiquetes}
+          tagsSeleccionades={tagsSeleccionades}
         />
       </div>
 
@@ -251,25 +256,6 @@ export default async function ClassificacioPage({
             ))}
           </ul>
         </Card>
-      ) : pestanya === 'grups' ? (
-        <div className="space-y-4">
-          {tots_grups.map((grup) => {
-            const delGrup = standingsFiltrats.filter((s) => s.groupId === grup.id);
-            if (delGrup.length === 0) return null;
-            return (
-              <div key={grup.id}>
-                <h3 className="text-xs font-semibold text-ink-3 uppercase tracking-wide px-1 mb-2">
-                  Grup {grup.name}
-                </h3>
-                <ClassificacioGeneral
-                  tournamentId={id}
-                  standings={delGrup.map((s, i) => ({ ...s, rank: i + 1 }))}
-                  desempats={desempatsGeneral}
-                />
-              </div>
-            );
-          })}
-        </div>
       ) : pestanya === 'general' ? (
         <ClassificacioGeneral tournamentId={id} standings={standingsFiltrats} desempats={desempatsGeneral} />
       ) : (

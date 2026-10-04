@@ -6,7 +6,7 @@ import { groups, phases, rounds, tournaments } from '@/db/schema';
 import Badge from '@/components/ui/Badge';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import { canManageTournament, getCurrentAccount } from '@/lib/authz';
-import { loadEntrants } from '@/lib/db-helpers';
+import { loadEntrants, loadTags } from '@/lib/db-helpers';
 import { loadStandings } from '@/lib/standings-service';
 import { resolveTiebreaker } from '@/lib/pairing/tiebreakers';
 import type { PhaseConfig } from '@/lib/pairing/types';
@@ -42,9 +42,12 @@ export default async function CampionatInici({ params }: { params: Promise<{ id:
   const account = await getCurrentAccount();
   const canManage = account ? await canManageTournament(account, id) : false;
 
-  const [totesFases, totesRondes, totsGrups, jugadors, vista] = await Promise.all([
+  const [totesFases, totesRondes, totesEtiquetes, totsGrups, jugadors, vista] = await Promise.all([
     db.select().from(phases).where(eq(phases.tournamentId, id)).orderBy(asc(phases.order)),
     db.select().from(rounds).where(eq(rounds.tournamentId, id)).orderBy(asc(rounds.number)),
+    loadTags(id),
+    // Encara usat per describeScope() (Round Robin/Swiss FIDE intra/inter
+    // grup): aquesta part del motor encara no s'ha migrat a etiquetes.
     db.select().from(groups).where(eq(groups.tournamentId, id)),
     loadEntrants(id),
     loadStandings(id, { canManage }),
@@ -60,7 +63,7 @@ export default async function CampionatInici({ params }: { params: Promise<{ id:
         <Badge color={statusBadge.color}>{statusBadge.label}</Badge>
         <span className="text-sm text-ink-3">
           {jugadors.length} jugador{jugadors.length !== 1 ? 's' : ''}
-          {totsGrups.length > 0 && ` · ${totsGrups.length} grups`}
+          {totesEtiquetes.length > 0 && ` · ${totesEtiquetes.length} etiquetes`}
           {totesRondes.length > 0 && ` · ${rondesTancades}/${totesRondes.length} rondes tancades`}
         </span>
       </div>

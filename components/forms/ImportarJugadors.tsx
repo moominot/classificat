@@ -5,12 +5,10 @@ import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import { readError } from '@/lib/http';
 
-interface Grup { id: string; name: string }
-
 interface FilaCSV {
   nom: string;
   elo: number | null;
-  grupNom: string | null;
+  etiquetes: string[];
   club: string | null;
   phone: string | null;
 }
@@ -42,18 +40,20 @@ function parseCSV(text: string): FilaCSV[] {
     if (!nom) return [];
     const eloRaw = parseInt(cols[1]?.trim() ?? '');
     const elo = isNaN(eloRaw) ? null : eloRaw;
-    const grupNom = cols[2]?.trim() || null;
+    // Diverses etiquetes en una cel·la, separades per ";" (el club no deixa
+    // de ser-ne una més: "Club Nord;Sub-16" hi encaixa igual).
+    const etiquetes = (cols[2] ?? '').split(';').map(e => e.trim()).filter(Boolean);
     const club = cols[3]?.trim() || null;
     const phone = cols[4]?.trim() || null;
-    return [{ nom, elo, grupNom, club, phone }];
+    return [{ nom, elo, etiquetes, club, phone }];
   });
 }
 
-export default function ImportarJugadors({ tournamentId, grups }: { tournamentId: string; grups: Grup[] }) {
+export default function ImportarJugadors({ tournamentId }: { tournamentId: string }) {
   const router = useRouter();
   const [text, setText] = useState('');
   const [files, setFiles] = useState<FilaCSV[]>([]);
-  const [resultat, setResultat] = useState<{ ok: string[]; errors: string[]; grupsCreats: string[] } | null>(null);
+  const [resultat, setResultat] = useState<{ ok: string[]; errors: string[]; tagsCreades: string[] } | null>(null);
   const [loading, setLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -76,17 +76,13 @@ export default function ImportarJugadors({ tournamentId, grups }: { tournamentId
     reader.readAsText(file, 'UTF-8');
   }
 
-  // Returns the unique group names in the CSV that don't already exist
-  function newGroupNames(): string[] {
-    const existingNames = new Set(grups.map(g => g.name.toLowerCase().trim()));
+  function totesLesEtiquetes(): string[] {
     const seen = new Set<string>();
     const result: string[] = [];
     for (const f of files) {
-      if (!f.grupNom) continue;
-      const key = f.grupNom.toLowerCase().trim();
-      if (!existingNames.has(key) && !seen.has(key)) {
-        seen.add(key);
-        result.push(f.grupNom.trim());
+      for (const nom of f.etiquetes) {
+        const key = nom.toLowerCase();
+        if (!seen.has(key)) { seen.add(key); result.push(nom); }
       }
     }
     return result;
@@ -99,37 +95,35 @@ export default function ImportarJugadors({ tournamentId, grups }: { tournamentId
 
     const ok: string[] = [];
     const errors: string[] = [];
-    const grupsCreats: string[] = [];
+    const tagsCreades: string[] = [];
 
-    // Build a working map of group name → id from existing groups
-    const grupMap = new Map<string, string>(grups.map(g => [g.name.toLowerCase().trim(), g.id]));
-
-    // Create missing groups first
-    for (const nom of newGroupNames()) {
-      const res = await fetch(`/api/tournaments/${tournamentId}/groups`, {
+    // L'API ja és idempotent (torna l'etiqueta existent si el nom coincideix),
+    // així que no cal saber d'entrada quines ja existien.
+    const tagMap = new Map<string, string>();
+    for (const nom of totesLesEtiquetes()) {
+      const res = await fetch(`/api/tournaments/${tournamentId}/tags`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: nom }),
       });
       if (res.ok) {
-        const g = await res.json();
-        grupMap.set(nom.toLowerCase().trim(), g.id);
-        grupsCreats.push(nom);
+        const t = await res.json();
+        tagMap.set(nom.toLowerCase(), t.id);
+        if (res.status === 201) tagsCreades.push(nom);
       } else {
-        errors.push(`Grup "${nom}": no s'ha pogut crear`);
+        errors.push(`Etiqueta "${nom}": no s'ha pogut crear`);
       }
     }
 
-    // Import players
     for (const fila of files) {
-      const grupId = fila.grupNom ? (grupMap.get(fila.grupNom.toLowerCase().trim()) ?? null) : null;
+      const tagIds = fila.etiquetes.map(nom => tagMap.get(nom.toLowerCase())).filter((id): id is string => !!id);
       const res = await fetch(`/api/tournaments/${tournamentId}/entries`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           displayName: fila.nom,
           rating: fila.elo,
-          groupId: grupId,
+          tagIds,
           club: fila.club,
           phone: fila.phone,
         }),
@@ -140,27 +134,24 @@ export default function ImportarJugadors({ tournamentId, grups }: { tournamentId
       }
     }
 
-    setResultat({ ok, errors, grupsCreats });
+    setResultat({ ok, errors, tagsCreades });
     setLoading(false);
-    if (ok.length > 0 || grupsCreats.length > 0) router.refresh();
+    if (ok.length > 0 || tagsCreades.length > 0) router.refresh();
   }
 
-  const nouGrups = newGroupNames();
+  const novesEtiquetes = totesLesEtiquetes();
 
   return (
     <div className="space-y-4">
       <div className="rounded-lg bg-accent-tint border border-accent p-3 text-sm text-accent-ink">
         <p className="font-medium mb-1">Format CSV esperat:</p>
-        <code className="block text-xs font-mono mt-1 text-accent-ink">nom,barruf,grup,club,telèfon</code>
-        <code className="block text-xs font-mono text-accent-ink">Anna Garcia,1500,A,Club BCN,612345678</code>
-        <code className="block text-xs font-mono text-accent-ink">Pere Mas,,B,,</code>
+        <code className="block text-xs font-mono mt-1 text-accent-ink">nom,barruf,etiquetes,club,telèfon</code>
+        <code className="block text-xs font-mono text-accent-ink">Anna Garcia,1500,Club Nord;Sub-16,Club BCN,612345678</code>
+        <code className="block text-xs font-mono text-accent-ink">Pere Mas,,Club Sud,,</code>
         <code className="block text-xs font-mono text-accent-ink">Maria Llull,1200,,,</code>
         <p className="mt-2 text-xs text-accent-ink">
           Totes les columnes excepte <em>nom</em> són opcionals. La capçalera és opcional.
-          Els grups nous es creen automàticament.
-          {grups.length > 0 && (
-            <> Grups existents: {grups.map(g => g.name).join(', ')}.</>
-          )}
+          Diverses etiquetes en una cel·la se separen amb &quot;;&quot;. Les etiquetes noves es creen automàticament.
         </p>
       </div>
 
@@ -182,7 +173,7 @@ export default function ImportarJugadors({ tournamentId, grups }: { tournamentId
       <textarea
         value={text}
         onChange={e => handleText(e.target.value)}
-        placeholder={"nom,barruf,grup,club,telèfon\nAnna Garcia,1500,A,Club BCN,612345678\nPere Mas,,B,,\nMaria Llull,1200,,,"}
+        placeholder={"nom,barruf,etiquetes,club,telèfon\nAnna Garcia,1500,Club Nord;Sub-16,Club BCN,612345678\nPere Mas,,Club Sud,,\nMaria Llull,1200,,,"}
         rows={6}
         className="w-full rounded-lg border border-border px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-accent"
       />
@@ -191,9 +182,9 @@ export default function ImportarJugadors({ tournamentId, grups }: { tournamentId
         <div className="rounded-lg border border-border overflow-hidden text-sm">
           <div className="px-3 py-2 bg-surface-2 border-b border-border text-xs font-medium text-ink-3 flex items-center gap-2">
             <span>{files.length} jugador{files.length !== 1 ? 's' : ''} detectat{files.length !== 1 ? 's' : ''}</span>
-            {nouGrups.length > 0 && (
+            {novesEtiquetes.length > 0 && (
               <span className="text-accent-ink bg-accent-tint border border-accent rounded px-2 py-0.5">
-                Grups nous: {nouGrups.join(', ')}
+                Etiquetes: {novesEtiquetes.join(', ')}
               </span>
             )}
           </div>
@@ -202,11 +193,9 @@ export default function ImportarJugadors({ tournamentId, grups }: { tournamentId
               <li key={i} className="flex gap-3 px-3 py-2 text-xs text-ink-2 flex-wrap">
                 <span className="font-medium text-ink flex-1 min-w-0">{f.nom}</span>
                 {f.elo != null && <span className="text-ink-3">BARRUF {f.elo}</span>}
-                {f.grupNom && (
-                  <span className={nouGrups.includes(f.grupNom) ? 'text-accent-ink font-medium' : 'text-ink-3'}>
-                    Grup {f.grupNom}{nouGrups.includes(f.grupNom) ? ' (nou)' : ''}
-                  </span>
-                )}
+                {f.etiquetes.map(nom => (
+                  <span key={nom} className="text-accent-ink">{nom}</span>
+                ))}
                 {f.club && <span className="text-ink-3">{f.club}</span>}
                 {f.phone && <span className="text-ink-3">{f.phone}</span>}
               </li>
@@ -217,18 +206,17 @@ export default function ImportarJugadors({ tournamentId, grups }: { tournamentId
 
       <Button onClick={handleImport} loading={loading} disabled={files.length === 0}>
         Importar {files.length > 0 ? `${files.length} jugador${files.length !== 1 ? 's' : ''}` : 'jugadors'}
-        {nouGrups.length > 0 && ` + ${nouGrups.length} grup${nouGrups.length !== 1 ? 's' : ''}`}
       </Button>
 
       {resultat && (
         <div className="space-y-2">
-          {resultat.grupsCreats.length > 0 && (
+          {resultat.tagsCreades.length > 0 && (
             <div className="rounded-lg bg-accent-tint border border-accent p-3">
               <p className="text-sm font-medium text-accent-ink mb-1">
-                {resultat.grupsCreats.length} grup{resultat.grupsCreats.length !== 1 ? 's' : ''} creat{resultat.grupsCreats.length !== 1 ? 's' : ''}:
+                {resultat.tagsCreades.length} etiqueta{resultat.tagsCreades.length !== 1 ? 'es' : ''} creada{resultat.tagsCreades.length !== 1 ? 'es' : ''}:
               </p>
               <ul className="text-sm text-accent-ink space-y-0.5">
-                {resultat.grupsCreats.map(n => <li key={n}>+ {n}</li>)}
+                {resultat.tagsCreades.map(n => <li key={n}>+ {n}</li>)}
               </ul>
             </div>
           )}

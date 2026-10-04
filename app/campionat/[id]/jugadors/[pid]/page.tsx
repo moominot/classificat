@@ -2,11 +2,11 @@ import { asc, eq } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { db } from '@/db';
-import { groups, questionDefinitions } from '@/db/schema';
+import { questionDefinitions } from '@/db/schema';
 import Badge from '@/components/ui/Badge';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import { canManageTournament, getCurrentAccount } from '@/lib/authz';
-import { loadEntrantsWithContact, loadEntryMatches, loadEntryWordAnswers, loadVisibleRoundIds } from '@/lib/db-helpers';
+import { loadEntrantsWithContact, loadEntryMatches, loadEntryWordAnswers, loadTags, loadVisibleRoundIds } from '@/lib/db-helpers';
 import { loadStandings } from '@/lib/standings-service';
 
 export const dynamic = 'force-dynamic';
@@ -29,9 +29,9 @@ export default async function JugadorDetallPage({
   const account = await getCurrentAccount();
   const canManage = account ? await canManageTournament(account, id) : false;
 
-  const [inscrits, tots_grups, questions] = await Promise.all([
+  const [inscrits, tots_tags, questions] = await Promise.all([
     loadEntrantsWithContact(id),
-    db.select().from(groups).where(eq(groups.tournamentId, id)),
+    loadTags(id),
     db
       .select()
       .from(questionDefinitions)
@@ -42,7 +42,7 @@ export default async function JugadorDetallPage({
   const jugador = inscrits.find((e) => e.id === pid);
   if (!jugador) notFound();
 
-  const grupNom = tots_grups.find((g) => g.id === jugador.groupId)?.name;
+  const tagMap = new Map(tots_tags.map((t) => [t.id, t.name]));
   const nomPerEntry = new Map(inscrits.map((e) => [e.id, e.displayName]));
 
   const [vista, partidesReals, paraulesDestacades, visiblesIds] = await Promise.all([
@@ -90,7 +90,9 @@ export default async function JugadorDetallPage({
         <div>
           <div className="flex items-center gap-2 flex-wrap">
             <h2 className="font-display text-2xl font-bold text-ink">{jugador.displayName}</h2>
-            {grupNom && <Badge color="gray">Grup {grupNom}</Badge>}
+            {jugador.tagIds.map((tid) => (
+              <Badge key={tid} color="gray">{tagMap.get(tid) ?? '?'}</Badge>
+            ))}
             {jugador.rating != null && <Badge color="blue">BARRUF {jugador.rating}</Badge>}
             {!jugador.isActive && <Badge color="gray">Inactiu</Badge>}
           </div>
