@@ -4,11 +4,29 @@ import {
   clearPresence,
   entryBelongsTo,
   lastPlannedRound,
+  loadPresence,
+  roundAwaitingPresence,
   roundIsPaired,
   setPresence,
 } from '@/lib/presence';
 
 type Params = { params: Promise<{ tournamentId: string }> };
+
+/**
+ * GET — Què li toca respondre a qui mira: la ronda que espera confirmació i el
+ * seu estat. És el que consulten els mòbils cada pocs segons (no exposa res
+ * més que l'estat propi).
+ */
+export async function GET(_req: Request, { params }: Params) {
+  const { tournamentId } = await params;
+  const viewer = await getViewer(tournamentId);
+  const roundNumber = await roundAwaitingPresence(tournamentId);
+  if (roundNumber === null || !viewer.entryId) {
+    return NextResponse.json({ roundNumber, status: 'pending' });
+  }
+  const row = (await loadPresence(tournamentId, roundNumber)).get(viewer.entryId);
+  return NextResponse.json({ roundNumber, status: row?.status ?? 'pending' });
+}
 
 /**
  * POST { roundNumber, status: 'present' | 'absent' | 'pending', entryId? }

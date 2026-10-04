@@ -114,8 +114,10 @@ export default function FormulariResultatWizard({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const totalSteps = questions.length + 1; // +1 = pas de confirmació
-  const confirmStepIndex = questions.length;
+  // Pas de «continueu?» (si en queden de rondes) i pas de confirmació, al final.
+  const continuacioStepIndex = properaRonda !== null ? questions.length : -1;
+  const totalSteps = questions.length + (properaRonda !== null ? 1 : 0) + 1;
+  const confirmStepIndex = totalSteps - 1;
 
   function setSlot(questionId: string, entryId: string | null, patch: Partial<Slot>) {
     const key = slotKey(questionId, entryId);
@@ -235,7 +237,11 @@ export default function FormulariResultatWizard({
   }
 
   const currentQuestion = step < questions.length ? questions[step] : null;
-  const stepTitle = currentQuestion ? currentQuestion.label : 'Confirma';
+  const stepTitle = currentQuestion
+    ? currentQuestion.label
+    : step === continuacioStepIndex
+      ? `Ronda ${properaRonda}`
+      : 'Confirma';
   const progressPct = Math.round(((step + 1) / totalSteps) * 100);
 
   return (
@@ -266,17 +272,21 @@ export default function FormulariResultatWizard({
         )}
 
         {step === confirmStepIndex && (
-          <>
-            <ConfirmStep questions={questions} participants={participants} values={values} />
-            {properaRonda !== null && (
-              <ContinuacioStep
-                properaRonda={properaRonda}
-                participants={participants}
-                value={continuen}
-                onChange={setContinuen}
-              />
-            )}
-          </>
+          <ConfirmStep
+            questions={questions}
+            participants={participants}
+            values={values}
+            continuacio={properaRonda !== null ? { properaRonda, value: continuen } : null}
+          />
+        )}
+
+        {step === continuacioStepIndex && properaRonda !== null && (
+          <ContinuacioStep
+            properaRonda={properaRonda}
+            participants={participants}
+            value={continuen}
+            onChange={setContinuen}
+          />
         )}
 
         {error && <p className="text-sm text-loss mt-4">{error}</p>}
@@ -476,10 +486,12 @@ function ConfirmStep({
   questions,
   participants,
   values,
+  continuacio,
 }: {
   questions: QuestionDef[];
   participants: ParticipantVista[];
   values: Values;
+  continuacio: { properaRonda: number; value: Record<string, boolean> } | null;
 }) {
   const scoreQ = questions.find((q) => q.key === 'score');
   const participantQuestions = questions.filter((q) => q.scope === 'participant' && q.id !== scoreQ?.id);
@@ -499,6 +511,14 @@ function ConfirmStep({
                 </span>
               )}
             </div>
+            {continuacio && (
+              <div className="mb-1">
+                <ConfirmRow
+                  label={`Ronda ${continuacio.properaRonda}`}
+                  value={(continuacio.value[participant.entryId] ?? true) ? 'continua' : 'marxa'}
+                />
+              </div>
+            )}
             {participantQuestions.length > 0 && (
               <div className="space-y-1">
                 {participantQuestions.map((q) => (
@@ -526,9 +546,9 @@ function ConfirmStep({
 }
 
 /**
- * Pregunta final: continuen a la ronda següent? Sí per defecte, perquè el
- * cas habitual és que sí. Si algú marxa, desmarcar-lo evita haver de refer
- * els aparellaments quan ja estan fets.
+ * Pas propi, com les preguntes del formulari: continueu a la ronda següent?
+ * Sí per defecte, perquè és el cas habitual. Si algú marxa, dir-ho aquí
+ * evita haver de refer els aparellaments quan ja estan fets.
  */
 function ContinuacioStep({
   properaRonda,
@@ -542,23 +562,38 @@ function ContinuacioStep({
   onChange: (v: Record<string, boolean>) => void;
 }) {
   return (
-    <div className="rounded-2xl border border-border p-3.5 mt-3 space-y-2">
-      <div>
-        <p className="text-sm font-semibold text-ink">Continueu a la ronda {properaRonda}?</p>
-        <p className="text-xs text-ink-3">Desmarca qui marxa o no jugarà, perquè no l&apos;aparellem.</p>
+    <div className="space-y-3">
+      <div className="text-center mb-1">
+        <div className="font-display font-bold text-xl text-ink">Continueu a la ronda {properaRonda}?</div>
+        <div className="text-sm text-ink-3 mt-0.5">Si algú marxa, no el posarem en cap taula</div>
       </div>
-      {participants.map((p) => (
-        <label key={p.entryId} className="flex items-center gap-2.5 text-sm cursor-pointer">
-          <input
-            type="checkbox"
-            checked={value[p.entryId] ?? true}
-            onChange={(e) => onChange({ ...value, [p.entryId]: e.target.checked })}
-            className="accent-current text-accent w-4 h-4"
-          />
-          <span className="text-ink">{p.displayName}</span>
-          <span className="text-xs text-ink-3 ml-auto">{value[p.entryId] ?? true ? 'continua' : 'marxa'}</span>
-        </label>
-      ))}
+      {participants.map((p, i) => {
+        const continua = value[p.entryId] ?? true;
+        return (
+          <ParticipantCard key={p.entryId} seat={i} name={p.displayName}>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => onChange({ ...value, [p.entryId]: true })}
+                className={`rounded-xl py-4 font-display font-bold text-xl transition-colors ${
+                  continua ? 'bg-win text-surface' : 'bg-surface text-ink-3 border border-border'
+                }`}
+              >
+                Sí
+              </button>
+              <button
+                type="button"
+                onClick={() => onChange({ ...value, [p.entryId]: false })}
+                className={`rounded-xl py-4 font-display font-bold text-xl transition-colors ${
+                  !continua ? 'bg-loss text-surface' : 'bg-surface text-ink-3 border border-border'
+                }`}
+              >
+                No
+              </button>
+            </div>
+          </ParticipantCard>
+        );
+      })}
     </div>
   );
 }

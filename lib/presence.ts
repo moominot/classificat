@@ -1,4 +1,4 @@
-import { and, eq, max } from 'drizzle-orm';
+import { and, desc, eq, max } from 'drizzle-orm';
 import { db } from '@/db';
 import { entries, matches, phases, roundPresence, rounds, tournaments } from '@/db/schema';
 import type { PresencePendingAs, PresenceSource, PresenceStatus } from '@/db/types';
@@ -25,6 +25,22 @@ export async function lastPlannedRound(tournamentId: string): Promise<number> {
     .from(phases)
     .where(eq(phases.tournamentId, tournamentId));
   return row?.last ?? 0;
+}
+
+/**
+ * La ronda que el director acaba de crear i encara no té aparellaments: és el
+ * moment de preguntar als jugadors si hi seran. `null` si no n'hi ha cap.
+ */
+export async function roundAwaitingPresence(tournamentId: string): Promise<number | null> {
+  const [round] = await db
+    .select({ id: rounds.id, number: rounds.number })
+    .from(rounds)
+    .where(and(eq(rounds.tournamentId, tournamentId), eq(rounds.status, 'draft')))
+    .orderBy(desc(rounds.number))
+    .limit(1);
+  if (!round) return null;
+  const [match] = await db.select({ id: matches.id }).from(matches).where(eq(matches.roundId, round.id)).limit(1);
+  return match ? null : round.number;
 }
 
 export async function loadPresence(tournamentId: string, roundNumber: number): Promise<Map<string, PresenceRow>> {

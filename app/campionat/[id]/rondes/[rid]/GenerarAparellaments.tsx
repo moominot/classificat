@@ -53,15 +53,17 @@ export default function GenerarAparellaments({
 }) {
   const router = useRouter();
   const canManage = useCanManage();
-  // Absents de partida: els que han dit que no hi seran, els pendents si la
-  // política ho vol, i els de la ronda anterior que no han confirmat que tornen.
-  const [absentIds, setAbsentIds] = useState<Set<string>>(
-    () =>
-      new Set([
-        ...previousAbsentIds.filter((id) => presencia[id] !== 'present'),
-        ...players.filter((p) => (presencia[p.id] ? presencia[p.id] === 'absent' : pendentsCompten === 'absent')).map((p) => p.id),
-      ])
-  );
+  // Absents per defecte: els que han dit que no hi seran, els pendents si la
+  // política ho vol, i els de la ronda anterior que no han confirmat que
+  // tornen. Es calcula a cada render perquè les respostes dels jugadors
+  // arriben mentre el director té la pantalla oberta; el que el director toca
+  // a mà (`manual`) mana sobre el que digui la presència.
+  const [manual, setManual] = useState<Map<string, boolean>>(new Map());
+  const absentPerDefecte = (id: string) =>
+    presencia[id]
+      ? presencia[id] === 'absent'
+      : pendentsCompten === 'absent' || previousAbsentIds.includes(id);
+  const absentIds = new Set(players.filter((p) => manual.get(p.id) ?? absentPerDefecte(p.id)).map((p) => p.id));
   const confirmats = players.filter((p) => presencia[p.id] === 'present').length;
   const noHiSeran = players.filter((p) => presencia[p.id] === 'absent').length;
   const pendents = players.length - confirmats - noHiSeran;
@@ -69,12 +71,7 @@ export default function GenerarAparellaments({
   if (!canManage) return null;
 
   function toggleAbsent(id: string) {
-    setAbsentIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
+    setManual(prev => new Map(prev).set(id, !absentIds.has(id)));
   }
 
   const playing = players.filter(p => !absentIds.has(p.id));
