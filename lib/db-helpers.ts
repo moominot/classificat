@@ -505,7 +505,7 @@ export interface MetricHistoryRow {
 export async function loadMetricHistory(
   tournamentId: string,
   questionKey: string,
-  opts: { onlyClosedRounds?: boolean; phaseIds?: string[] } = {}
+  opts: { onlyClosedRounds?: boolean; upToRound?: number; phaseIds?: string[] } = {}
 ): Promise<Map<string, MetricHistoryRow[]>> {
   const result = new Map<string, MetricHistoryRow[]>();
 
@@ -523,7 +523,12 @@ export async function loadMetricHistory(
       .select({ id: rounds.id, number: rounds.number, phaseId: rounds.phaseId })
       .from(rounds)
       .where(eq(rounds.tournamentId, tournamentId))
-  ).filter((r) => (!visibleIds || visibleIds.has(r.id)) && (!phaseFilter || phaseFilter.has(r.phaseId)));
+  ).filter(
+    (r) =>
+      (!visibleIds || visibleIds.has(r.id)) &&
+      (opts.upToRound === undefined || r.number <= opts.upToRound) &&
+      (!phaseFilter || phaseFilter.has(r.phaseId))
+  );
   if (roundRows.length === 0) return result;
   const roundNumberById = new Map(roundRows.map((r) => [r.id, r.number]));
 

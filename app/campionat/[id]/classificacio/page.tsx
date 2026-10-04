@@ -74,11 +74,42 @@ export default async function ClassificacioPage({
 
   // Filtre per fase: només té sentit oferir-lo quan n'hi ha més d'una i ja
   // s'ha jugat alguna cosa visible — amb una de sola, "per fases" i "general"
-  // dirien el mateix, i sense partides és una pestanya buida.
+  // dirien el mateix, i sense partides és una pestanya buida. Viu al modal de
+  // filtres, no en un selector propi.
   const mostrarFasesFiltre = totes_fases.length > 1 && vistaCompleta.standings.some((s) => s.gamesPlayed > 0);
   const faseSeleccionada =
     mostrarFasesFiltre && totes_fases.some((f) => f.id === sp.f) ? (sp.f as string) : null;
-  const vista = faseSeleccionada ? await loadStandings(id, { canManage, phaseId: faseSeleccionada }) : vistaCompleta;
+
+  // Classificació ronda a ronda: les rondes navegables són les que ja
+  // alimenten la classificació vista (mateix criteri de visibilitat que
+  // `vistaCompleta`, que no depèn de la fase/ronda triades). "Sense triar"
+  // equival a la darrera ronda disponible — no hi ha un estat "general"
+  // separat, perquè seria exactament el mateix que la darrera ronda.
+  const rondesVisiblesIds = vistaCompleta.mode === 'closed_rounds' ? await loadVisibleRoundIds(id) : null;
+  const rondesDisponibles = (
+    rondesVisiblesIds
+      ? totes_rondes.filter((r) => rondesVisiblesIds.has(r.id))
+      : vistaCompleta.mode === 'frozen_at' && vistaCompleta.frozenRound !== null
+        ? totes_rondes.filter((r) => r.number <= vistaCompleta.frozenRound!)
+        : totes_rondes
+  )
+    .map((r) => r.number)
+    .sort((a, b) => a - b);
+  const maxRonda = rondesDisponibles.length > 0 ? rondesDisponibles[rondesDisponibles.length - 1] : 0;
+  const rondaSeleccionadaRaw = sp.r ? parseInt(sp.r, 10) : null;
+  const rondaSeleccionada =
+    rondaSeleccionadaRaw !== null && rondesDisponibles.includes(rondaSeleccionadaRaw) ? rondaSeleccionadaRaw : null;
+  const rondaEfectiva = rondaSeleccionada ?? maxRonda;
+  const mostrarRondaNav = rondesDisponibles.length > 1;
+
+  const vista =
+    faseSeleccionada !== null || rondaSeleccionada !== null
+      ? await loadStandings(id, {
+          canManage,
+          phaseId: faseSeleccionada ?? undefined,
+          upToRound: rondaSeleccionada ?? undefined,
+        })
+      : vistaCompleta;
 
   if (!vista.visible) {
     return (
@@ -165,6 +196,7 @@ export default async function ClassificacioPage({
   const historial = preguntaActiva
     ? await loadMetricHistory(id, pestanya, {
         onlyClosedRounds: vista.mode === 'closed_rounds',
+        upToRound: rondaSeleccionada ?? undefined,
         phaseIds: faseSeleccionada ? [faseSeleccionada] : undefined,
       })
     : new Map();
@@ -176,7 +208,9 @@ export default async function ClassificacioPage({
     pestanya === 'partida-conjunta'
       ? await loadCombinedMatchRanking(id, {
           onlyClosedRounds: vista.mode === 'closed_rounds',
-          upToRound: vista.mode === 'frozen_at' && vista.frozenRound !== null ? vista.frozenRound : undefined,
+          upToRound:
+            rondaSeleccionada ??
+            (vista.mode === 'frozen_at' && vista.frozenRound !== null ? vista.frozenRound : undefined),
           phaseIds: faseSeleccionada ? [faseSeleccionada] : undefined,
         })
       : [];
@@ -187,9 +221,8 @@ export default async function ClassificacioPage({
   // que les dades (tancada i amb resultats publicats), no només l'estat
   // (docs/pla-rols.md §8.2) — si no, el missatge podia dir que una ronda
   // compta quan el director l'havia amagat explícitament.
-  const rondesVisiblesIds = vista.mode === 'closed_rounds' ? await loadVisibleRoundIds(id) : null;
   const rondesVisibles = rondesVisiblesIds
-    ? totes_rondes.filter((r) => rondesVisiblesIds.has(r.id)).map((r) => r.number)
+    ? totes_rondes.filter((r) => rondesVisiblesIds.has(r.id) && (rondaSeleccionada === null || r.number <= rondaSeleccionada)).map((r) => r.number)
     : [];
   const avisRondes =
     vista.mode === 'closed_rounds'
@@ -199,14 +232,16 @@ export default async function ClassificacioPage({
       : null;
   const avis = MODE_NOTICE[vista.mode];
 
-  // Un únic constructor d'enllaç perquè pestanya/fase/cerca es puguin
+  // Un únic constructor d'enllaç perquè pestanya/ronda/fase/cerca es puguin
   // combinar sense que triar-ne un esborri els altres.
-  function hrefFor(overrides: { t?: string; f?: string | null; clearFilters?: boolean }) {
+  function hrefFor(overrides: { t?: string; f?: string | null; r?: number | null; clearFilters?: boolean }) {
     const params = new URLSearchParams();
     const t = overrides.t ?? pestanya;
-    const f = overrides.f !== undefined ? overrides.f : faseSeleccionada;
+    const f = overrides.f !== undefined ? overrides.f : overrides.clearFilters ? null : faseSeleccionada;
+    const r = overrides.r !== undefined ? overrides.r : rondaSeleccionada;
     if (t && t !== 'general') params.set('t', t);
     if (f) params.set('f', f);
+    if (r !== null && r !== maxRonda) params.set('r', String(r));
     if (!overrides.clearFilters) {
       if (sp.q) params.set('q', sp.q);
       if (sp.br) params.set('br', sp.br);
@@ -234,18 +269,41 @@ export default async function ClassificacioPage({
 
       <div className="flex items-center gap-2">
         <div className="flex-1 min-w-0 overflow-hidden space-y-2">
-          {mostrarFasesFiltre && (
-            <nav className="flex gap-1.5 overflow-x-auto pb-1">
-              <Link href={hrefFor({ f: null })} className={pillClass(faseSeleccionada === null)}>
-                Totes les fases
-              </Link>
-              {totes_fases.map((f) => (
-                <Link key={f.id} href={hrefFor({ f: f.id })} className={pillClass(faseSeleccionada === f.id)}>
-                  {f.name}
+          {mostrarRondaNav && (() => {
+            const anterior = rondesAnterior(rondesDisponibles, rondaEfectiva);
+            const seguent = rondesSeguent(rondesDisponibles, rondaEfectiva);
+            return (
+              <div className="flex items-center gap-2">
+                <Link
+                  href={hrefFor({ r: anterior })}
+                  aria-disabled={anterior === null}
+                  className={`flex-shrink-0 p-1.5 rounded-lg border border-border transition-colors ${
+                    anterior === null ? 'opacity-30 pointer-events-none' : 'text-ink-2 hover:bg-surface-2 hover:text-ink'
+                  }`}
+                  aria-label="Ronda anterior"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                  </svg>
                 </Link>
-              ))}
-            </nav>
-          )}
+                <span className="flex-1 text-center text-sm font-semibold text-ink tabular-nums">
+                  Ronda {rondaEfectiva}
+                </span>
+                <Link
+                  href={hrefFor({ r: seguent })}
+                  aria-disabled={seguent === null}
+                  className={`flex-shrink-0 p-1.5 rounded-lg border border-border transition-colors ${
+                    seguent === null ? 'opacity-30 pointer-events-none' : 'text-ink-2 hover:bg-surface-2 hover:text-ink'
+                  }`}
+                  aria-label="Ronda següent"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                  </svg>
+                </Link>
+              </div>
+            );
+          })()}
 
           {PESTANYES.length > 1 && (
             <nav className="flex gap-1.5 overflow-x-auto pb-1">
@@ -261,6 +319,8 @@ export default async function ClassificacioPage({
         <FiltresClassificacio
           tournamentId={id}
           pestanya={pestanya}
+          rondaSeleccionada={rondaSeleccionada}
+          fases={mostrarFasesFiltre ? totes_fases.map((f) => ({ id: f.id, name: f.name })) : []}
           faseSeleccionada={faseSeleccionada}
           q={sp.q ?? ''}
           br={barrufComparador ?? ''}
@@ -308,4 +368,17 @@ export default async function ClassificacioPage({
 /** Punts poden tenir decimals (§12.10); es mostren sense soroll. */
 function formatNumber(value: number): string {
   return Number.isInteger(value) ? value.toString() : value.toFixed(1);
+}
+
+/**
+ * Ronda anterior/següent dins les disponibles (ordenades ascendent) — no es
+ * pot assumir que siguin consecutives (una ronda amagada pel director hi
+ * deixaria un forat).
+ */
+function rondesAnterior(disponibles: number[], actual: number): number | null {
+  const menors = disponibles.filter((n) => n < actual);
+  return menors.length > 0 ? menors[menors.length - 1] : null;
+}
+function rondesSeguent(disponibles: number[], actual: number): number | null {
+  return disponibles.find((n) => n > actual) ?? null;
 }

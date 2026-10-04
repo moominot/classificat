@@ -14,6 +14,8 @@ import type { Tag } from '@/lib/pairing/types';
 export default function FiltresClassificacio({
   tournamentId,
   pestanya,
+  rondaSeleccionada,
+  fases,
   faseSeleccionada,
   q,
   br,
@@ -23,6 +25,9 @@ export default function FiltresClassificacio({
 }: {
   tournamentId: string;
   pestanya: string;
+  /** Navegació, no filtre: es conserva igual que la pestanya. */
+  rondaSeleccionada: number | null;
+  fases: { id: string; name: string }[];
   faseSeleccionada: string | null;
   q: string;
   br: string;
@@ -32,12 +37,13 @@ export default function FiltresClassificacio({
 }) {
   const router = useRouter();
   const [obert, setObert] = useState(false);
-  const hiHaFiltre = q.length > 0 || (br.length > 0 && bv.length > 0) || tagsSeleccionades.length > 0;
+  const hiHaFiltre =
+    q.length > 0 || (br.length > 0 && bv.length > 0) || tagsSeleccionades.length > 0 || faseSeleccionada !== null;
 
   function baseParams() {
     const params = new URLSearchParams();
     if (pestanya !== 'general') params.set('t', pestanya);
-    if (faseSeleccionada) params.set('f', faseSeleccionada);
+    if (rondaSeleccionada !== null) params.set('r', String(rondaSeleccionada));
     return params;
   }
 
@@ -53,12 +59,14 @@ export default function FiltresClassificacio({
     const qVal = (form.get('q') as string | null)?.trim();
     const brVal = form.get('br') as string | null;
     const bvVal = (form.get('bv') as string | null)?.trim();
+    const faseVal = form.get('f') as string | null;
     const tagsVal = form.getAll('tags') as string[];
     if (qVal) params.set('q', qVal);
     if (brVal && bvVal) {
       params.set('br', brVal);
       params.set('bv', bvVal);
     }
+    if (faseVal) params.set('f', faseVal);
     if (tagsVal.length > 0) params.set('tags', tagsVal.join(','));
     navega(params);
   }
@@ -86,6 +94,21 @@ export default function FiltresClassificacio({
 
       <Modal open={obert} onClose={() => setObert(false)} title="Filtres">
         <form onSubmit={handleSubmit} className="space-y-4">
+          {fases.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-ink-2 mb-1">Fase</label>
+              <select
+                name="f"
+                defaultValue={faseSeleccionada ?? ''}
+                className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-surface text-ink"
+              >
+                <option value="">Totes les fases</option>
+                {fases.map((f) => (
+                  <option key={f.id} value={f.id}>{f.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <label className="block text-sm font-medium text-ink-2 mb-1">Nom o club</label>
             <input
