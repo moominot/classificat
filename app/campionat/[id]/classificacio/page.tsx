@@ -144,10 +144,17 @@ export default async function ClassificacioPage({
     .filter((d) => d.def?.compute)
     .map((d) => ({ key: d.key, label: d.def!.label }));
 
+  // "Millor partida conjunta" va just després de "Millor jugada" (best_word)
+  // si existeix com a pestanya; si no, al final de les mètriques — mai abans
+  // de General ni enmig d'elles arbitràriament.
+  const metriquesPestanyes = metriquesRanquing.map((key) => ({ id: key, label: etiqueta(key) }));
+  const indexMillorJugada = metriquesPestanyes.findIndex((p) => p.id === 'best_word');
+  const posicioPartidaConjunta = indexMillorJugada >= 0 ? indexMillorJugada + 1 : metriquesPestanyes.length;
+  metriquesPestanyes.splice(posicioPartidaConjunta, 0, { id: 'partida-conjunta', label: 'Millor partida conjunta' });
+
   const PESTANYES: { id: string; label: string }[] = [
     { id: 'general', label: 'General' },
-    { id: 'partida-conjunta', label: 'Millor partida conjunta' },
-    ...metriquesRanquing.map((key) => ({ id: key, label: etiqueta(key) })),
+    ...metriquesPestanyes,
     ...(vista.teamStandings ? [{ id: 'equips', label: 'Equips' }] : []),
   ];
   const pestanya = PESTANYES.some((p) => p.id === sp.t) ? sp.t : 'general';

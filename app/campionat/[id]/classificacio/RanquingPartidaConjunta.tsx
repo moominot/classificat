@@ -33,16 +33,22 @@ export default function RanquingPartidaConjunta({
               {i + 1}
             </span>
             <span className="flex-1 text-lg font-display font-bold text-ink truncate">
-              {row.participants.map((p) => nomPerEntry[p.entryId] ?? '?').join(' – ')}
+              Suma de punts: {formatValue(row.combinedScore)}
             </span>
-            <span className="flex-shrink-0 px-2.5 py-1 rounded-full bg-accent text-surface text-sm font-bold tabular-nums">
-              {formatValue(row.combinedScore)}
+            <span
+              title={`Ronda ${row.roundNumber}`}
+              className="flex-shrink-0 px-2.5 py-1 rounded-full bg-surface-2 text-ink-2 text-xs font-bold tabular-nums"
+            >
+              Ronda {row.roundNumber}
             </span>
           </div>
-          <div className="pl-12 mt-1.5 text-sm text-ink-3">
-            Ronda {row.roundNumber}
-            {' · '}
-            {row.participants.map((p) => `${nomPerEntry[p.entryId] ?? '?'}: ${formatValue(p.score)}`).join(' · ')}
+          <div className="pl-12 mt-1.5 space-y-0.5">
+            {row.participants.map((p) => (
+              <div key={p.entryId} className="text-sm text-ink-2">
+                {nomPerEntry[p.entryId] ?? '?'}:{' '}
+                <span className="font-semibold text-ink tabular-nums">{formatValue(p.score)} punts</span>
+              </div>
+            ))}
           </div>
         </Link>
       ))}
