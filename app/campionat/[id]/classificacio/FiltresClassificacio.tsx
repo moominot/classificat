@@ -23,6 +23,8 @@ export default function FiltresClassificacio({
   tags,
   tagsSeleccionades,
   vistaJugador = false,
+  equips = [],
+  equipSeleccionat = null,
 }: {
   tournamentId: string;
   pestanya: string;
@@ -37,11 +39,13 @@ export default function FiltresClassificacio({
   tagsSeleccionades: string[];
   /** Vista de jugador per a l'admin: es conserva com la pestanya. */
   vistaJugador?: boolean;
+  equips?: { id: string; name: string }[];
+  equipSeleccionat?: string | null;
 }) {
   const router = useRouter();
   const [obert, setObert] = useState(false);
   const hiHaFiltre =
-    q.length > 0 || (br.length > 0 && bv.length > 0) || tagsSeleccionades.length > 0 || faseSeleccionada !== null;
+    q.length > 0 || (br.length > 0 && bv.length > 0) || tagsSeleccionades.length > 0 || faseSeleccionada !== null || equipSeleccionat !== null;
 
   function baseParams() {
     const params = new URLSearchParams();
@@ -65,6 +69,8 @@ export default function FiltresClassificacio({
     const bvVal = (form.get('bv') as string | null)?.trim();
     const faseVal = form.get('f') as string | null;
     const tagsVal = form.getAll('tags') as string[];
+    const equipVal = form.get('eq') as string | null;
+    if (equipVal) params.set('eq', equipVal);
     if (qVal) params.set('q', qVal);
     if (brVal && bvVal) {
       params.set('br', brVal);
@@ -145,6 +151,21 @@ export default function FiltresClassificacio({
               />
             </div>
           </div>
+          {equips.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-ink-2 mb-1">Equip</label>
+              <select
+                name="eq"
+                defaultValue={equipSeleccionat ?? ''}
+                className="w-full text-sm border border-border rounded-lg px-3 py-2 bg-surface text-ink"
+              >
+                <option value="">Tots els equips</option>
+                {equips.map((e) => (
+                  <option key={e.id} value={e.id}>{e.name}</option>
+                ))}
+              </select>
+            </div>
+          )}
           {tags.length > 0 && (
             <div>
               <label className="block text-sm font-medium text-ink-2 mb-1">

@@ -38,6 +38,9 @@ export async function POST(req: Request, { params }: Params) {
   if (!tournament) return NextResponse.json({ error: 'Competició no trobada' }, { status: 404 });
 
   const existing = await db.select().from(teams).where(eq(teams.tournamentId, tournamentId));
+  const trobat = existing.find((t) => t.name.toLowerCase() === String(name).trim().toLowerCase());
+  if (trobat) return NextResponse.json(trobat, { status: 200 });
+
   const newTeam = {
     id: uuid(),
     tournamentId,

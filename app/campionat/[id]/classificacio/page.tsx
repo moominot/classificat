@@ -1,7 +1,7 @@
 import { asc, eq } from 'drizzle-orm';
 import Link from 'next/link';
 import { db } from '@/db';
-import { phases, questionDefinitions, rounds } from '@/db/schema';
+import { phases, questionDefinitions, rounds, teams } from '@/db/schema';
 import { Card } from '@/components/ui/Card';
 import { canManageTournament, getCurrentAccount } from '@/lib/authz';
 import {
@@ -62,7 +62,7 @@ export default async function ClassificacioPage({
   const veureComJugador = esAdmin && sp.v === 'jugador';
   const canManage = esAdmin && !veureComJugador;
 
-  const [totes_fases, totesPreguntes, totesEtiquetes, vistaCompleta, totes_rondes, entrants] = await Promise.all([
+  const [totes_fases, totesPreguntes, totesEtiquetes, vistaCompleta, totes_rondes, entrants, totsEquips] = await Promise.all([
     db.select().from(phases).where(eq(phases.tournamentId, id)).orderBy(asc(phases.order)),
     db
       .select()
@@ -77,10 +77,12 @@ export default async function ClassificacioPage({
       .where(eq(rounds.tournamentId, id))
       .orderBy(asc(rounds.number)),
     loadEntrantsWithContact(id),
+    db.select({ id: teams.id, name: teams.name }).from(teams).where(eq(teams.tournamentId, id)).orderBy(asc(teams.name)),
   ]);
 
   // Club i BARRUF per jugador, per al cercador — són públics (ja es veuen a
   // la fitxa de cada jugador), no cal gestionar-los perquè apareguin aquí.
+  const nomPerEntry = new Map(entrants.map((e) => [e.id, e.displayName]));
   const infoPerEntry = new Map(entrants.map((e) => [e.id, { club: e.club, rating: e.rating }]));
 
   // Filtre per fase: només té sentit oferir-lo quan n'hi ha més d'una i ja
@@ -146,9 +148,11 @@ export default async function ClassificacioPage({
   const barrufComparador = sp.br === 'lt' || sp.br === 'gt' ? sp.br : null;
   const barrufValor = barrufComparador && sp.bv && !Number.isNaN(Number(sp.bv)) ? Number(sp.bv) : null;
   const tagsSeleccionades = (sp.tags ?? '').split(',').filter(Boolean);
-  const hiHaFiltre = cerca.length > 0 || barrufValor !== null || tagsSeleccionades.length > 0;
+  const equipSeleccionat = totsEquips.some((e) => e.id === sp.eq) ? (sp.eq as string) : null;
+  const hiHaFiltre = equipSeleccionat !== null || cerca.length > 0 || barrufValor !== null || tagsSeleccionades.length > 0;
 
-  function passaFiltre(entryId: string, displayName: string, tagIds: string[]): boolean {
+  function passaFiltre(entryId: string, displayName: string, tagIds: string[], teamId: string | null): boolean {
+    if (equipSeleccionat && teamId !== equipSeleccionat) return false;
     const info = infoPerEntry.get(entryId);
     if (cerca && !`${displayName} ${info?.club ?? ''}`.toLowerCase().includes(cerca)) return false;
     if (barrufValor !== null) {
@@ -161,7 +165,7 @@ export default async function ClassificacioPage({
   }
 
   const standingsFiltrats = hiHaFiltre
-    ? vista.standings.filter((s) => passaFiltre(s.entryId, s.displayName, s.tagIds))
+    ? vista.standings.filter((s) => passaFiltre(s.entryId, s.displayName, s.tagIds, s.teamId))
     : vista.standings;
 
   // Mètriques que tenen pestanya pròpia: les preguntes marcades per al
@@ -276,6 +280,7 @@ export default async function ClassificacioPage({
       if (sp.br) params.set('br', sp.br);
       if (sp.bv) params.set('bv', sp.bv);
       if (sp.tags) params.set('tags', sp.tags);
+      if (sp.eq) params.set('eq', sp.eq);
     }
     const qs = params.toString();
     return `/campionat/${id}/classificacio${qs ? `?${qs}` : ''}`;
@@ -370,22 +375,58 @@ export default async function ClassificacioPage({
           tags={totesEtiquetes}
           tagsSeleccionades={tagsSeleccionades}
           vistaJugador={veureComJugador}
+          equips={totsEquips}
+          equipSeleccionat={equipSeleccionat}
         />
       </div>
 
       {pestanya === 'equips' && vista.teamStandings ? (
-        <Card padding={false}>
-          <ul className="divide-y divide-border">
-            {vista.teamStandings.map((equip) => (
-              <li key={equip.teamId} className="flex items-center gap-3 px-4 py-3">
-                <span className="w-7 text-center font-display font-bold text-ink-2 tabular-nums">{equip.rank}</span>
-                <span className="flex-1 font-medium text-ink truncate">{equip.name}</span>
-                <span className="text-xs text-ink-3">{equip.countedEntryIds.length} membres</span>
-                <span className="font-display font-bold text-ink tabular-nums">{formatNumber(equip.points)}</span>
-              </li>
-            ))}
-          </ul>
-        </Card>
+        <>
+          {vista.teamStandings.length === 0 ? (
+            <p className="text-sm text-ink-3 text-center py-10">
+              Encara no hi ha cap equip amb partides jugades.
+            </p>
+          ) : (
+            <>
+              <Card padding={false} className="hidden sm:block">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-left text-[11px] uppercase tracking-wide text-ink-3 border-b border-border">
+                      <th className="px-3 py-2 font-semibold">#</th>
+                      <th className="px-2 py-2 font-semibold">Equip</th>
+                      <th className="px-2 py-2 font-semibold">Membres</th>
+                      <th className="px-3 py-2 font-semibold text-right">Punts</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {vista.teamStandings.map((equip) => (
+                      <tr key={equip.teamId} className="hover:bg-surface-2 transition-colors">
+                        <td className="px-3 py-2.5 font-display font-bold text-ink-2 tabular-nums">{equip.rank}</td>
+                        <td className="px-2 py-2.5 font-medium text-ink">{equip.name}</td>
+                        <td className="px-2 py-2.5 text-ink-3">
+                          {equip.memberEntryIds.map((m) => (nomPerEntry.get(m) ?? '?') + (equip.countedEntryIds.includes(m) ? '' : ' (no compta)')).join(', ')}
+                        </td>
+                        <td className="px-3 py-2.5 text-right font-display font-bold text-ink tabular-nums">{formatNumber(equip.points)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </Card>
+              <Card padding={false} className="sm:hidden">
+                <ul className="divide-y divide-border">
+                  {vista.teamStandings.map((equip) => (
+                    <li key={equip.teamId} className="flex items-center gap-3 px-4 py-3">
+                      <span className="w-7 text-center font-display font-bold text-ink-2 tabular-nums">{equip.rank}</span>
+                      <span className="flex-1 font-medium text-ink truncate">{equip.name}</span>
+                      <span className="text-xs text-ink-3">{equip.countedEntryIds.length} membres</span>
+                      <span className="font-display font-bold text-ink tabular-nums">{formatNumber(equip.points)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </Card>
+            </>
+          )}
+        </>
       ) : pestanya === 'general' ? (
         <ClassificacioGeneral tournamentId={id} standings={standingsFiltrats} desempats={desempatsGeneral} />
       ) : pestanya === 'partida-conjunta' ? (

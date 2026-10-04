@@ -3,6 +3,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '@/db';
 import { entries, entryTags, groups, matchParticipants, people, tags, teams } from '@/db/schema';
 import { requireTournamentAccess } from '@/lib/authz';
+import { assignTeam } from '@/lib/team-assignment';
 
 type Params = { params: Promise<{ tournamentId: string; entryId: string }> };
 
@@ -88,7 +89,6 @@ export async function PATCH(req: Request, { params }: Params) {
   const entryUpdates: Partial<typeof entry> = {};
   if (body.rating !== undefined) entryUpdates.rating = body.rating;
   if (body.groupId !== undefined) entryUpdates.groupId = body.groupId;
-  if (body.teamId !== undefined) entryUpdates.teamId = body.teamId;
   if (body.isActive !== undefined) entryUpdates.isActive = !!body.isActive;
 
   const personUpdates: Record<string, unknown> = {};
@@ -105,6 +105,7 @@ export async function PATCH(req: Request, { params }: Params) {
   if (Object.keys(personUpdates).length > 0) {
     await db.update(people).set(personUpdates).where(eq(people.id, entry.personId));
   }
+  if (body.teamId !== undefined) await assignTeam([entryId], body.teamId || null);
   // tagIds substitueix la llista sencera d'etiquetes d'aquest jugador.
   if (body.tagIds !== undefined) {
     await db.delete(entryTags).where(eq(entryTags.entryId, entryId));
@@ -115,7 +116,7 @@ export async function PATCH(req: Request, { params }: Params) {
     }
   }
 
-  return NextResponse.json({ ...entry, ...entryUpdates, ...personUpdates });
+  return NextResponse.json({ ...entry, ...entryUpdates, ...personUpdates, ...(body.teamId !== undefined ? { teamId: body.teamId || null } : {}) });
 }
 
 /**
