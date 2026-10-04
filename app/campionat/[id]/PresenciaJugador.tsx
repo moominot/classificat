@@ -4,7 +4,6 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import Select from '@/components/ui/Select';
-import { Card } from '@/components/ui/Card';
 import { readError } from '@/lib/http';
 
 interface Jugador { id: string; name: string }
@@ -55,9 +54,16 @@ export default function PresenciaJugador({
 
   const jo = jugadors.find((j) => j.id === entryId);
 
+  // Amb una ronda esperant resposta, la targeta es destaca amb fons de color:
+  // és l'únic que s'ha de fer en entrar. Fora d'això, discreta.
+  const urgent = roundNumber !== null;
+  const targeta = `rounded-2xl border p-4 space-y-3 ${
+    urgent ? 'bg-accent-tint border-accent shadow-sm' : 'bg-surface border-border'
+  }`;
+
   if (!jo) {
     return (
-      <Card className="space-y-3">
+      <div className={targeta}>
         <div>
           <h3 className="font-display font-bold text-ink">Qui ets?</h3>
           <p className="text-sm text-ink-3">
@@ -76,12 +82,12 @@ export default function PresenciaJugador({
           <Button disabled={!triat} loading={loading} onClick={identifica}>Sóc jo</Button>
         </div>
         {error && <p className="text-sm text-loss">{error}</p>}
-      </Card>
+      </div>
     );
   }
 
   return (
-    <Card className="space-y-3">
+    <div className={targeta}>
       {roundNumber !== null && (
         <div className="space-y-2">
           <div>
@@ -126,6 +132,6 @@ export default function PresenciaJugador({
         </button>
       </div>
       {error && <p className="text-sm text-loss">{error}</p>}
-    </Card>
+    </div>
   );
 }
