@@ -242,7 +242,8 @@ export interface PairingWarning {
     | 'bye_reassigned'
     | 'cross_group_pair'
     | 'incomplete_round_robin'
-    | 'uneven_table';
+    | 'uneven_table'
+    | 'multiple_tag_match';
   message: string;
   affectedEntryIds: string[];
 }

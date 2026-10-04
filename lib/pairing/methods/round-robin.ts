@@ -1,5 +1,4 @@
 import type {
-  Entrant,
   GeneratedMatch,
   PairingContext,
   PairingEngineResult,
@@ -7,6 +6,7 @@ import type {
   RoundRobinConfig,
 } from '../types';
 import { buildRematchSet, countRematches, hasPlayed } from '../utils/rematch';
+import { partitionByTags } from './tag-partition';
 
 /**
  * Round robin.
@@ -29,10 +29,10 @@ export function generateRoundRobinPairings(ctx: PairingContext): PairingEngineRe
 
   let matches: GeneratedMatch[];
 
-  if (config.scope === 'intra_group') {
-    matches = intraGroup(ctx, relativeRound, config, warnings);
-  } else if (config.scope === 'inter_group') {
-    matches = interGroup(ctx, relativeRound, warnings);
+  if (config.scope === 'intra_tag') {
+    matches = intraTag(ctx, relativeRound, config, warnings);
+  } else if (config.scope === 'inter_tag') {
+    matches = interTag(ctx, relativeRound, config, warnings);
   } else {
     const active = ctx.entrants.filter((e) => e.isActive);
     const schedule = bergerSchedule(active.map((e) => e.id), relativeRound, config.doubleRound);
@@ -123,9 +123,9 @@ function generateMultiTables(ctx: PairingContext, warnings: PairingWarning[]): P
   return { matches, warnings };
 }
 
-// ─── Round robin dins de cada grup ────────────────────────────────────────────
+// ─── Round robin dins de cada etiqueta ────────────────────────────────────────
 
-function intraGroup(
+function intraTag(
   ctx: PairingContext,
   relativeRound: number,
   config: RoundRobinConfig,
@@ -134,18 +134,15 @@ function intraGroup(
   const result: GeneratedMatch[] = [];
   let tableNumber = 1;
 
-  const groups = groupEntrants(ctx.entrants);
-  const targetGroupIds =
-    config.groupIds && config.groupIds.length > 0 ? new Set(config.groupIds) : null;
+  const { partitions, warnings: tagWarnings } = partitionByTags(ctx.entrants, config.tagIds ?? []);
+  warnings.push(...tagWarnings);
 
-  for (const [groupId, entryIds] of groups) {
-    if (targetGroupIds && !targetGroupIds.has(groupId)) continue;
-
+  for (const [tagId, entryIds] of partitions) {
     const schedule = bergerSchedule(entryIds, relativeRound, config.doubleRound);
     if (schedule === null) {
       warnings.push({
         type: 'incomplete_round_robin',
-        message: `Grup ${groupId}: la ronda ${relativeRound} supera el nombre de rondes possibles.`,
+        message: `Etiqueta ${tagId}: la ronda ${relativeRound} supera el nombre de rondes possibles.`,
         affectedEntryIds: entryIds,
       });
       continue;
@@ -159,20 +156,23 @@ function intraGroup(
   return result;
 }
 
-// ─── Round robin entre grups ──────────────────────────────────────────────────
+// ─── Round robin entre etiquetes ──────────────────────────────────────────────
 
-function interGroup(
+function interTag(
   ctx: PairingContext,
   relativeRound: number,
+  config: RoundRobinConfig,
   warnings: PairingWarning[]
 ): GeneratedMatch[] {
-  const groups = groupEntrants(ctx.entrants);
-  const groupNames = [...groups.keys()].sort();
+  const { partitions, warnings: tagWarnings } = partitionByTags(ctx.entrants, config.tagIds ?? []);
+  warnings.push(...tagWarnings);
+  // Ordre determinista: el que ha triat el director, no l'alfabètic.
+  const keys = (config.tagIds ?? []).filter((t) => partitions.has(t));
 
-  if (groupNames.length < 2) {
+  if (keys.length < 2) {
     warnings.push({
       type: 'incomplete_round_robin',
-      message: 'Cal com a mínim 2 grups per a un round robin intergrupal.',
+      message: 'Cal triar com a mínim 2 etiquetes per a un round robin interetiquetes.',
       affectedEntryIds: [],
     });
     return [];
@@ -181,10 +181,10 @@ function interGroup(
   const result: GeneratedMatch[] = [];
   let tableNumber = 1;
 
-  for (let i = 0; i < groupNames.length; i++) {
-    for (let j = i + 1; j < groupNames.length; j++) {
-      const first = groups.get(groupNames[i])!;
-      const second = groups.get(groupNames[j])!;
+  for (let i = 0; i < keys.length; i++) {
+    for (let j = i + 1; j < keys.length; j++) {
+      const first = partitions.get(keys[i])!;
+      const second = partitions.get(keys[j])!;
       if (second.length === 0) continue;
 
       const rotated = rotateArray(second, (relativeRound - 1) % second.length);
@@ -195,15 +195,6 @@ function interGroup(
   }
 
   return result;
-}
-
-function groupEntrants(entrants: Entrant[]): Map<string, string[]> {
-  const groups = new Map<string, string[]>();
-  for (const entrant of entrants.filter((e) => e.isActive)) {
-    const key = entrant.groupId ?? '__nogrup__';
-    groups.set(key, [...(groups.get(key) ?? []), entrant.id]);
-  }
-  return groups;
 }
 
 // ─── Taula de Berger ──────────────────────────────────────────────────────────

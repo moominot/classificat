@@ -89,6 +89,15 @@ export interface TeamAggregation {
 export type ByeHandling = 'lowest_ranked' | 'random_last_group' | 'least_byes';
 export type SeedingCriterion = 'points' | 'elo' | 'rank' | 'name';
 
+/**
+ * Partició per etiqueta, comuna als quatre mètodes automàtics (docs/pla-rols.md
+ * §13.1 #8, Fase 2 de la migració grups→etiquetes). `tagIds` són les etiquetes
+ * triades pel director com a particions d'aquesta fase — no "totes les
+ * etiquetes de tothom", que amb etiquetes múltiples no definiria particions
+ * netes. Només Round Robin admet `inter_tag` (enfrontar una etiqueta contra
+ * una altra); als altres tres, partir vol dir calcular-hi dins una
+ * classificació independent per partició, no té sentit un "inter".
+ */
 export interface SwissConfig {
   method: 'swiss';
   avoidRematches: boolean;
@@ -96,19 +105,22 @@ export interface SwissConfig {
   scoreGroupWindowSize: number;
   carryStandingsFromPhaseIds: string[];
   seedingCriteria: SeedingCriterion[];
+  scope: 'all' | 'intra_tag';
+  tagIds: string[];
 }
 
 export interface SwissFideConfig {
   method: 'swiss_fide';
-  scope: 'all' | 'intra_group';
+  scope: 'all' | 'intra_tag';
+  tagIds: string[];
   carryStandingsFromPhaseIds: string[];
   expectedRounds?: number;
 }
 
 export interface RoundRobinConfig {
   method: 'round_robin';
-  scope: 'intra_group' | 'inter_group' | 'all';
-  groupIds?: string[];
+  scope: 'all' | 'intra_tag' | 'inter_tag';
+  tagIds: string[];
   doubleRound: boolean;
 }
 
@@ -116,6 +128,8 @@ export interface KingOfTheHillConfig {
   method: 'king_of_the_hill';
   topN?: number | null;
   carryStandingsFromPhaseIds: string[];
+  scope: 'all' | 'intra_tag';
+  tagIds: string[];
 }
 
 export interface ManualConfig {

@@ -2,11 +2,11 @@ import { and, asc, eq } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { db } from '@/db';
-import { groups, phases, roundAbsences, rounds, tournaments } from '@/db/schema';
+import { phases, roundAbsences, rounds, tournaments } from '@/db/schema';
 import { DEFAULT_VISIBILITY } from '@/db/types';
 import Badge from '@/components/ui/Badge';
 import { canManageTournament, getCurrentAccount } from '@/lib/authz';
-import { loadEntrants, loadRoundMatches } from '@/lib/db-helpers';
+import { loadEntrants, loadRoundMatches, loadTags } from '@/lib/db-helpers';
 import type { RoundRobinConfig } from '@/lib/pairing/types';
 import GenerarAparellaments from './GenerarAparellaments';
 import ResultatAparellament from './ResultatAparellament';
@@ -62,10 +62,10 @@ export default async function RondaPage({
 
   const [fase] = await db.select().from(phases).where(eq(phases.id, ronda.phaseId));
 
-  const [partides, inscrits, tots_grups, absencies_actuals] = await Promise.all([
+  const [partides, inscrits, totes_etiquetes, absencies_actuals] = await Promise.all([
     loadRoundMatches(rid),
     loadEntrants(id),
-    db.select().from(groups).where(eq(groups.tournamentId, id)).orderBy(asc(groups.order)),
+    loadTags(id),
     db.select().from(roundAbsences).where(eq(roundAbsences.roundId, rid)),
   ]);
 
@@ -79,7 +79,8 @@ export default async function RondaPage({
     : [];
 
   const nomPerEntry = new Map(inscrits.map((e) => [e.id, e.displayName]));
-  const grupPerEntry = new Map(inscrits.map((e) => [e.id, e.groupId ?? null]));
+  const tagsPerEntry = new Map(inscrits.map((e) => [e.id, e.tagIds]));
+  const tagNameById = new Map(totes_etiquetes.map((t) => [t.id, t.name]));
 
   // El bye no amaga res (és un fet de calendari, no un resultat): només es
   // buiden les taules amb més d'un jugador.
@@ -99,24 +100,30 @@ export default async function RondaPage({
   const jugades = jugables.filter((p) => p.participants.every((x) => x.rank !== null)).length;
   const totals = jugables.length;
 
-  // Round robin dins de cada grup: les taules s'agrupen per grup.
+  // Round robin intra-etiqueta: les taules s'agrupen per etiqueta (Fase 2 de
+  // la migració grups→etiquetes, docs/pla-rols.md §13.1 #8).
   const faseConfig = fase?.config as RoundRobinConfig | undefined;
-  const agrupat =
-    fase?.method === 'round_robin' && faseConfig?.scope === 'intra_group' && tots_grups.length > 0;
+  const etiquetesFase = faseConfig?.tagIds ?? [];
+  const agrupat = fase?.method === 'round_robin' && faseConfig?.scope === 'intra_tag' && etiquetesFase.length > 0;
+
+  function etiquetaDe(entryId: string): string | null {
+    const seves = tagsPerEntry.get(entryId) ?? [];
+    return etiquetesFase.find((t) => seves.includes(t)) ?? null;
+  }
 
   const partidesPerGrup = agrupat
     ? (() => {
-        const byGrup = new Map<string | null, PartidaVista[]>();
+        const byTag = new Map<string | null, PartidaVista[]>();
         for (const partida of vistes) {
-          const gid = grupPerEntry.get(partida.participants[0]?.entryId ?? '') ?? null;
-          byGrup.set(gid, [...(byGrup.get(gid) ?? []), partida]);
+          const tid = etiquetaDe(partida.participants[0]?.entryId ?? '');
+          byTag.set(tid, [...(byTag.get(tid) ?? []), partida]);
         }
-        const result = tots_grups
-          .map((g) => ({ grupId: g.id, grupName: g.name, partides: byGrup.get(g.id) ?? [] }))
+        const result = etiquetesFase
+          .map((tid) => ({ grupId: tid, grupName: tagNameById.get(tid) ?? '?', partides: byTag.get(tid) ?? [] }))
           .filter((x) => x.partides.length > 0);
-        const sense_grup = byGrup.get(null) ?? [];
-        if (sense_grup.length > 0) {
-          result.push({ grupId: null as unknown as string, grupName: 'Sense grup', partides: sense_grup });
+        const sense_etiqueta = byTag.get(null) ?? [];
+        if (sense_etiqueta.length > 0) {
+          result.push({ grupId: null as unknown as string, grupName: 'Sense etiqueta', partides: sense_etiqueta });
         }
         return result;
       })()
@@ -229,7 +236,7 @@ export default async function RondaPage({
               return (
                 <div key={grupId ?? '__sense_grup'}>
                   <h3 className="text-xs font-semibold text-ink-3 uppercase tracking-wide px-1 mb-2">
-                    Grup {grupName}
+                    {grupName}
                   </h3>
                   <div className="space-y-2">
                     {reals.map((partida) => (

@@ -2,7 +2,7 @@ import { asc, eq } from 'drizzle-orm';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { db } from '@/db';
-import { groups, phases, rounds, tournaments } from '@/db/schema';
+import { phases, rounds, tournaments } from '@/db/schema';
 import Badge from '@/components/ui/Badge';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import { canManageTournament, getCurrentAccount } from '@/lib/authz';
@@ -42,16 +42,14 @@ export default async function CampionatInici({ params }: { params: Promise<{ id:
   const account = await getCurrentAccount();
   const canManage = account ? await canManageTournament(account, id) : false;
 
-  const [totesFases, totesRondes, totesEtiquetes, totsGrups, jugadors, vista] = await Promise.all([
+  const [totesFases, totesRondes, totesEtiquetes, jugadors, vista] = await Promise.all([
     db.select().from(phases).where(eq(phases.tournamentId, id)).orderBy(asc(phases.order)),
     db.select().from(rounds).where(eq(rounds.tournamentId, id)).orderBy(asc(rounds.number)),
     loadTags(id),
-    // Encara usat per describeScope() (Round Robin/Swiss FIDE intra/inter
-    // grup): aquesta part del motor encara no s'ha migrat a etiquetes.
-    db.select().from(groups).where(eq(groups.tournamentId, id)),
     loadEntrants(id),
     loadStandings(id, { canManage }),
   ]);
+  const tagNameById = new Map(totesEtiquetes.map((t) => [t.id, t.name]));
 
   const statusBadge = STATUS_BADGE[tournament.status] ?? STATUS_BADGE.draft;
   const rondesTancades = totesRondes.filter((r) => r.status === 'closed').length;
@@ -104,7 +102,7 @@ export default async function CampionatInici({ params }: { params: Promise<{ id:
                     Rondes {fase.startRound}–{fase.endRound}
                   </span>
                 </div>
-                <p className="text-xs text-ink-3">{describeScope(fase.config, totsGrups.length)}</p>
+                <p className="text-xs text-ink-3">{describeScope(fase.config, tagNameById)}</p>
                 {fase.tiebreakers.length > 0 && (
                   <p className="text-xs text-ink-3 mt-1 leading-relaxed">
                     Desempats: {fase.tiebreakers.map((t) => resolveTiebreaker(t)?.label ?? t).join(' → ')}
@@ -152,20 +150,27 @@ export default async function CampionatInici({ params }: { params: Promise<{ id:
   );
 }
 
-function describeScope(config: PhaseConfig, numGrups: number): string {
+function describeScope(config: PhaseConfig, tagNameById: Map<string, string>): string {
+  const noms = (ids: string[]) => ids.map((id) => tagNameById.get(id) ?? '?').join(', ');
+
   if (config.method === 'round_robin') {
-    const scope = config.scope === 'intra_group' ? 'intra-grupal' : config.scope === 'inter_group' ? 'inter-grupal' : 'tots contra tots';
-    return `Round Robin${config.doubleRound ? ' a doble volta' : ''}, ${scope}.`;
+    const volta = config.doubleRound ? ' a doble volta' : '';
+    if (config.scope === 'intra_tag') return `Round Robin${volta}, intra-etiqueta (${noms(config.tagIds)}).`;
+    if (config.scope === 'inter_tag') return `Round Robin${volta}, interetiquetes (${noms(config.tagIds)}).`;
+    return `Round Robin${volta}, tots contra tots.`;
   }
   if (config.method === 'swiss_fide') {
-    if (config.scope === 'intra_group' && numGrups > 0) return 'Sistema suís FIDE, independent dins de cada grup.';
+    if (config.scope === 'intra_tag') return `Sistema suís FIDE, independent per etiqueta (${noms(config.tagIds)}).`;
     return 'Sistema suís FIDE, global.';
   }
   if (config.method === 'swiss') {
+    if (config.scope === 'intra_tag') return `Sistema suís, independent per etiqueta (${noms(config.tagIds)}).`;
     return 'Sistema suís.';
   }
   if (config.method === 'king_of_the_hill') {
-    return config.topN ? `Rei del turó, limitat als ${config.topN} millors.` : 'Rei del turó, amb tots els jugadors.';
+    const top = config.topN ? `limitat als ${config.topN} millors` : 'amb tots els jugadors';
+    if (config.scope === 'intra_tag') return `Rei del turó, ${top}, independent per etiqueta (${noms(config.tagIds)}).`;
+    return `Rei del turó, ${top}.`;
   }
   return 'Aparellaments manuals o importats per CSV.';
 }

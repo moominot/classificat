@@ -11,13 +11,12 @@ import Modal from '@/components/ui/Modal';
 import EmptyState from '@/components/ui/EmptyState';
 import { readError } from '@/lib/http';
 import type {
-  PhaseConfig, SeedingCriterion,
+  PhaseConfig, SeedingCriterion, Tag,
   SwissConfig, SwissFideConfig, RoundRobinConfig, KingOfTheHillConfig,
 } from '@/lib/pairing/types';
 import { DEFAULT_SEEDING_CRITERIA } from '@/lib/pairing/types';
 import { availableTiebreakers } from '@/lib/pairing/tiebreakers';
 
-interface Grup { id: string; name: string }
 interface Fase {
   id: string;
   order: number;
@@ -198,11 +197,11 @@ const METHOD_BADGES: Record<string, { label: string; color: 'blue' | 'green' | '
 export default function FasesClient({
   tournamentId,
   fases,
-  grups,
+  tags,
 }: {
   tournamentId: string;
   fases: Fase[];
-  grups: Grup[];
+  tags: Tag[];
 }) {
   const router = useRouter();
   const canManage = useCanManage();
@@ -224,7 +223,7 @@ export default function FasesClient({
           <NovaFaseForm
             tournamentId={tournamentId}
             fases={fases}
-            grups={grups}
+            tags={tags}
             onDone={() => { setMostrarForm(false); router.refresh(); }}
             onCancel={() => setMostrarForm(false)}
           />
@@ -243,7 +242,7 @@ export default function FasesClient({
             <FaseCard
               key={fase.id}
               fase={fase}
-              grups={grups}
+              tags={tags}
               tournamentId={tournamentId}
               fases={fases}
               onRefresh={() => router.refresh()}
@@ -258,10 +257,10 @@ export default function FasesClient({
 // ─── Targeta de fase ──────────────────────────────────────────────────────────
 
 function FaseCard({
-  fase, grups, tournamentId, fases, onRefresh,
+  fase, tags, tournamentId, fases, onRefresh,
 }: {
   fase: Fase;
-  grups: Grup[];
+  tags: Tag[];
   tournamentId: string;
   fases: Fase[];
   onRefresh: () => void;
@@ -272,8 +271,8 @@ function FaseCard({
   const [deleteError, setDeleteError] = useState('');
 
   const badge = METHOD_BADGES[fase.method] ?? { label: fase.method, color: 'gray' as const };
-  const grupMap = new Map(grups.map(g => [g.id, g.name]));
-  const configInfo = describeConfig(fase.config, grupMap);
+  const tagMap = new Map(tags.map(t => [t.id, t.name]));
+  const configInfo = describeConfig(fase.config, tagMap);
 
   async function handleDelete() {
     setDeleting(true);
@@ -295,7 +294,7 @@ function FaseCard({
           tournamentId={tournamentId}
           fase={fase}
           fases={fases.filter(f => f.id !== fase.id)}
-          grups={grups}
+          tags={tags}
           onDone={() => { setMode('view'); onRefresh(); }}
           onCancel={() => setMode('view')}
         />
@@ -357,26 +356,31 @@ function FaseCard({
   );
 }
 
-function describeConfig(config: PhaseConfig, grupMap: Map<string, string>): string {
+function describeConfig(config: PhaseConfig, tagMap: Map<string, string>): string {
+  const noms = (ids: string[]) => ids.map(id => tagMap.get(id) ?? '?').join(', ');
+
   if (config.method === 'round_robin') {
-    const scope = config.scope === 'intra_group' ? 'intra-grupal'
-      : config.scope === 'inter_group' ? 'inter-grupal' : 'global';
     const doble = config.doubleRound ? ' (doble volta)' : '';
-    return `Round Robin ${scope}${doble}`;
+    if (config.scope === 'intra_tag') return `Round Robin intra-etiqueta${doble} (${noms(config.tagIds)})`;
+    if (config.scope === 'inter_tag') return `Round Robin interetiquetes${doble} (${noms(config.tagIds)})`;
+    return `Round Robin global${doble}`;
   }
   if (config.method === 'swiss_fide') {
+    const base = config.scope === 'intra_tag' ? `FIDE Dutch per etiqueta (${noms(config.tagIds)})` : 'FIDE Dutch global';
     return config.carryStandingsFromPhaseIds.length > 0
-      ? 'FIDE Dutch · Hereta classificació de fases anteriors'
-      : 'FIDE Dutch · Classificació independent';
+      ? `${base} · Hereta classificació de fases anteriors`
+      : `${base} · Classificació independent`;
   }
   if (config.method === 'swiss') {
+    const base = config.scope === 'intra_tag' ? `Suís per etiqueta (${noms(config.tagIds)})` : 'Suís global';
     return config.carryStandingsFromPhaseIds.length > 0
-      ? 'Hereta classificació de fases anteriors'
-      : 'Classificació independent';
+      ? `${base} · Hereta classificació de fases anteriors`
+      : `${base} · Classificació independent`;
   }
   if (config.method === 'king_of_the_hill') {
     const top = config.topN ? `Top ${config.topN}` : 'Tots';
-    return `${top} · ${config.carryStandingsFromPhaseIds.length > 0 ? 'Hereta classificació' : 'Classificació independent'}`;
+    const base = config.scope === 'intra_tag' ? `${top} per etiqueta (${noms(config.tagIds)})` : top;
+    return `${base} · ${config.carryStandingsFromPhaseIds.length > 0 ? 'Hereta classificació' : 'Classificació independent'}`;
   }
   return '';
 }
@@ -387,14 +391,14 @@ function EditarFaseForm({
   tournamentId,
   fase,
   fases,
-  grups,
+  tags,
   onDone,
   onCancel,
 }: {
   tournamentId: string;
   fase: Fase;
   fases: Fase[];
-  grups: Grup[];
+  tags: Tag[];
   onDone: () => void;
   onCancel: () => void;
 }) {
@@ -412,20 +416,26 @@ function EditarFaseForm({
   const [swissSeedingCriteria, setSwissSeedingCriteria] = useState<SeedingCriterion[]>(
     swissConfig?.seedingCriteria?.length ? swissConfig.seedingCriteria : [...DEFAULT_SEEDING_CRITERIA]
   );
+  const [swissScope, setSwissScope] = useState<'all' | 'intra_tag'>(swissConfig?.scope ?? 'all');
+  const [swissTagIds, setSwissTagIds] = useState<string[]>(swissConfig?.tagIds ?? []);
 
   const swissFideConfig = fase.method === 'swiss_fide' ? (fase.config as SwissFideConfig) : null;
-  const [swissFideScope, setSwissFideScope] = useState<'all' | 'intra_group'>(swissFideConfig?.scope ?? 'all');
+  const [swissFideScope, setSwissFideScope] = useState<'all' | 'intra_tag'>(swissFideConfig?.scope ?? 'all');
+  const [swissFideTagIds, setSwissFideTagIds] = useState<string[]>(swissFideConfig?.tagIds ?? []);
   const [swissFideCarry, setSwissFideCarry] = useState<string[]>(swissFideConfig?.carryStandingsFromPhaseIds ?? []);
   const [swissFideExpectedRounds, setSwissFideExpectedRounds] = useState(
     swissFideConfig?.expectedRounds?.toString() ?? ''
   );
 
   const rrConfig = fase.method === 'round_robin' ? (fase.config as RoundRobinConfig) : null;
-  const [rrScope, setRrScope] = useState<'intra_group' | 'inter_group' | 'all'>(rrConfig?.scope ?? 'all');
+  const [rrScope, setRrScope] = useState<'all' | 'intra_tag' | 'inter_tag'>(rrConfig?.scope ?? 'all');
+  const [rrTagIds, setRrTagIds] = useState<string[]>(rrConfig?.tagIds ?? []);
   const [rrDoble, setRrDoble] = useState(rrConfig?.doubleRound ?? false);
 
   const kothConfig = fase.method === 'king_of_the_hill' ? (fase.config as KingOfTheHillConfig) : null;
   const [kothTopN, setKothTopN] = useState(kothConfig?.topN?.toString() ?? '');
+  const [kothScope, setKothScope] = useState<'all' | 'intra_tag'>(kothConfig?.scope ?? 'all');
+  const [kothTagIds, setKothTagIds] = useState<string[]>(kothConfig?.tagIds ?? []);
   const [kothCarry, setKothCarry] = useState<string[]>(kothConfig?.carryStandingsFromPhaseIds ?? []);
 
   function buildConfig(): PhaseConfig {
@@ -433,6 +443,7 @@ function EditarFaseForm({
       return {
         method: 'swiss_fide',
         scope: swissFideScope,
+        tagIds: swissFideScope === 'all' ? [] : swissFideTagIds,
         carryStandingsFromPhaseIds: swissFideCarry,
         expectedRounds: swissFideExpectedRounds ? parseInt(swissFideExpectedRounds) : undefined,
       };
@@ -445,16 +456,20 @@ function EditarFaseForm({
         scoreGroupWindowSize: swissConfig?.scoreGroupWindowSize ?? 2,
         carryStandingsFromPhaseIds: swissCarry,
         seedingCriteria: swissSeedingCriteria,
+        scope: swissScope,
+        tagIds: swissScope === 'all' ? [] : swissTagIds,
       };
     }
     if (fase.method === 'round_robin') {
-      return { method: 'round_robin', scope: rrScope, doubleRound: rrDoble };
+      return { method: 'round_robin', scope: rrScope, tagIds: rrScope === 'all' ? [] : rrTagIds, doubleRound: rrDoble };
     }
     if (fase.method === 'king_of_the_hill') {
       return {
         method: 'king_of_the_hill',
         topN: kothTopN ? parseInt(kothTopN) : null,
         carryStandingsFromPhaseIds: kothCarry,
+        scope: kothScope,
+        tagIds: kothScope === 'all' ? [] : kothTagIds,
       };
     }
     return { method: 'manual', allowCsvImport: true };
@@ -541,12 +556,14 @@ function EditarFaseForm({
         <ConfigSwissFide
           scope={swissFideScope}
           setScope={setSwissFideScope}
+          tagIds={swissFideTagIds}
+          setTagIds={setSwissFideTagIds}
           carry={swissFideCarry}
           setCarry={setSwissFideCarry}
           expectedRounds={swissFideExpectedRounds}
           setExpectedRounds={setSwissFideExpectedRounds}
           fases={fases}
-          grups={grups}
+          tags={tags}
         />
       )}
       {fase.method === 'swiss' && (
@@ -557,25 +574,37 @@ function EditarFaseForm({
           setCarry={setSwissCarry}
           seedingCriteria={swissSeedingCriteria}
           setSeedingCriteria={setSwissSeedingCriteria}
+          scope={swissScope}
+          setScope={setSwissScope}
+          tagIds={swissTagIds}
+          setTagIds={setSwissTagIds}
           fases={fases}
+          tags={tags}
         />
       )}
       {fase.method === 'round_robin' && (
         <ConfigRoundRobin
           scope={rrScope}
           setScope={setRrScope}
+          tagIds={rrTagIds}
+          setTagIds={setRrTagIds}
           doble={rrDoble}
           setDoble={setRrDoble}
-          grups={grups}
+          tags={tags}
         />
       )}
       {fase.method === 'king_of_the_hill' && (
         <ConfigKotH
           topN={kothTopN}
           setTopN={setKothTopN}
+          scope={kothScope}
+          setScope={setKothScope}
+          tagIds={kothTagIds}
+          setTagIds={setKothTagIds}
           carry={kothCarry}
           setCarry={setKothCarry}
           fases={fases}
+          tags={tags}
         />
       )}
 
@@ -598,13 +627,13 @@ function EditarFaseForm({
 function NovaFaseForm({
   tournamentId,
   fases,
-  grups,
+  tags,
   onDone,
   onCancel,
 }: {
   tournamentId: string;
   fases: Fase[];
-  grups: Grup[];
+  tags: Tag[];
   onDone: () => void;
   onCancel: () => void;
 }) {
@@ -617,15 +646,21 @@ function NovaFaseForm({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const [rrScope, setRrScope] = useState<'intra_group' | 'inter_group' | 'all'>('intra_group');
+  const [rrScope, setRrScope] = useState<'all' | 'intra_tag' | 'inter_tag'>('all');
+  const [rrTagIds, setRrTagIds] = useState<string[]>([]);
   const [rrDoble, setRrDoble] = useState(false);
   const [swissAvoidRematches, setSwissAvoidRematches] = useState(true);
   const [swissCarry, setSwissCarry] = useState<string[]>([]);
   const [swissSeedingCriteria, setSwissSeedingCriteria] = useState<SeedingCriterion[]>([...DEFAULT_SEEDING_CRITERIA]);
-  const [swissFideScope, setSwissFideScope] = useState<'all' | 'intra_group'>('all');
+  const [swissScope, setSwissScope] = useState<'all' | 'intra_tag'>('all');
+  const [swissTagIds, setSwissTagIds] = useState<string[]>([]);
+  const [swissFideScope, setSwissFideScope] = useState<'all' | 'intra_tag'>('all');
+  const [swissFideTagIds, setSwissFideTagIds] = useState<string[]>([]);
   const [swissFideCarry, setSwissFideCarry] = useState<string[]>([]);
   const [swissFideExpectedRounds, setSwissFideExpectedRounds] = useState('');
   const [kothTopN, setKothTopN] = useState('');
+  const [kothScope, setKothScope] = useState<'all' | 'intra_tag'>('all');
+  const [kothTagIds, setKothTagIds] = useState<string[]>([]);
   const [kothCarry, setKothCarry] = useState<string[]>([]);
 
   const nextStart = fases.length > 0
@@ -637,6 +672,7 @@ function NovaFaseForm({
       return {
         method: 'swiss_fide',
         scope: swissFideScope,
+        tagIds: swissFideScope === 'all' ? [] : swissFideTagIds,
         carryStandingsFromPhaseIds: swissFideCarry,
         expectedRounds: swissFideExpectedRounds ? parseInt(swissFideExpectedRounds) : undefined,
       };
@@ -649,16 +685,20 @@ function NovaFaseForm({
         scoreGroupWindowSize: 2,
         carryStandingsFromPhaseIds: swissCarry,
         seedingCriteria: swissSeedingCriteria,
+        scope: swissScope,
+        tagIds: swissScope === 'all' ? [] : swissTagIds,
       };
     }
     if (metode === 'round_robin') {
-      return { method: 'round_robin', scope: rrScope, doubleRound: rrDoble };
+      return { method: 'round_robin', scope: rrScope, tagIds: rrScope === 'all' ? [] : rrTagIds, doubleRound: rrDoble };
     }
     if (metode === 'king_of_the_hill') {
       return {
         method: 'king_of_the_hill',
         topN: kothTopN ? parseInt(kothTopN) : null,
         carryStandingsFromPhaseIds: kothCarry,
+        scope: kothScope,
+        tagIds: kothScope === 'all' ? [] : kothTagIds,
       };
     }
     return { method: 'manual', allowCsvImport: true };
@@ -745,12 +785,14 @@ function NovaFaseForm({
         <ConfigSwissFide
           scope={swissFideScope}
           setScope={setSwissFideScope}
+          tagIds={swissFideTagIds}
+          setTagIds={setSwissFideTagIds}
           carry={swissFideCarry}
           setCarry={setSwissFideCarry}
           expectedRounds={swissFideExpectedRounds}
           setExpectedRounds={setSwissFideExpectedRounds}
           fases={fases}
-          grups={grups}
+          tags={tags}
         />
       )}
       {metode === 'swiss' && (
@@ -761,25 +803,37 @@ function NovaFaseForm({
           setCarry={setSwissCarry}
           seedingCriteria={swissSeedingCriteria}
           setSeedingCriteria={setSwissSeedingCriteria}
+          scope={swissScope}
+          setScope={setSwissScope}
+          tagIds={swissTagIds}
+          setTagIds={setSwissTagIds}
           fases={fases}
+          tags={tags}
         />
       )}
       {metode === 'round_robin' && (
         <ConfigRoundRobin
           scope={rrScope}
           setScope={setRrScope}
+          tagIds={rrTagIds}
+          setTagIds={setRrTagIds}
           doble={rrDoble}
           setDoble={setRrDoble}
-          grups={grups}
+          tags={tags}
         />
       )}
       {metode === 'king_of_the_hill' && (
         <ConfigKotH
           topN={kothTopN}
           setTopN={setKothTopN}
+          scope={kothScope}
+          setScope={setKothScope}
+          tagIds={kothTagIds}
+          setTagIds={setKothTagIds}
           carry={kothCarry}
           setCarry={setKothCarry}
           fases={fases}
+          tags={tags}
         />
       )}
 
@@ -799,6 +853,83 @@ function NovaFaseForm({
 
 // ─── Sub-configuracions per mètode ───────────────────────────────────────────
 
+/**
+ * Tria de l'àmbit per etiqueta, compartida pels quatre mètodes automàtics
+ * (docs/pla-rols.md §13.1 #8, Fase 2 de la migració grups→etiquetes): quines
+ * etiquetes actuen de partició aquesta fase. Només Round Robin ofereix
+ * "interetiquetes" (`allowInter`); als altres, partir és calcular-hi dins
+ * una classificació independent per partició.
+ */
+const TAG_PICKER_COLORS = {
+  accent: 'bg-accent-tint border-accent text-accent-ink',
+  win: 'bg-win-tint border-win text-win',
+} as const;
+
+function TagScopePicker<S extends 'all' | 'intra_tag' | 'inter_tag'>({
+  scope, setScope, tagIds, setTagIds, tags, allowInter, color = 'accent',
+}: {
+  scope: S;
+  setScope: (v: S) => void;
+  tagIds: string[];
+  setTagIds: (v: string[]) => void;
+  tags: Tag[];
+  allowInter?: boolean;
+  color?: keyof typeof TAG_PICKER_COLORS;
+}) {
+  function toggleTag(id: string) {
+    setTagIds(tagIds.includes(id) ? tagIds.filter(t => t !== id) : [...tagIds, id]);
+  }
+
+  return (
+    <div>
+      <Select label="Àmbit" value={scope} onChange={e => setScope(e.target.value as S)}>
+        <option value="all">Tots els jugadors (global)</option>
+        <option value="intra_tag" disabled={tags.length === 0}>
+          Per etiqueta (independent dins de cada una)
+        </option>
+        {allowInter && (
+          <option value="inter_tag" disabled={tags.length < 2}>
+            Interetiquetes (una etiqueta contra una altra)
+          </option>
+        )}
+      </Select>
+      {tags.length === 0 && scope !== 'all' && (
+        <p className="text-xs text-accent-ink bg-accent-tint rounded p-2 mt-2">
+          Cal crear etiquetes primer (pestanya Etiquetes).
+        </p>
+      )}
+      {scope !== 'all' && tags.length > 0 && (
+        <div className="mt-2">
+          <p className="text-sm font-medium text-ink-2 mb-1">
+            Etiquetes que actuen de partició
+            {scope === 'inter_tag' && <span className="font-normal text-ink-3"> (cal triar-ne com a mínim 2)</span>}
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {tags.map(t => {
+              const actiu = tagIds.includes(t.id);
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => toggleTag(t.id)}
+                  className={`px-2.5 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition-colors ${
+                    actiu ? TAG_PICKER_COLORS[color] : 'border-border text-ink-2 hover:border-ink-3'
+                  }`}
+                >
+                  {t.name}
+                </button>
+              );
+            })}
+          </div>
+          {tagIds.length === 0 && (
+            <p className="text-xs text-loss mt-1">Tria almenys una etiqueta.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const SEEDING_CRITERION_LABELS: Record<SeedingCriterion, string> = {
   points: 'Punts',
   elo:    'BARRUF',
@@ -809,7 +940,7 @@ const ALL_SEEDING_CRITERIA: SeedingCriterion[] = ['points', 'elo', 'rank', 'name
 
 function ConfigSwiss({
   avoidRematches, setAvoidRematches, carry, setCarry,
-  seedingCriteria, setSeedingCriteria, fases,
+  seedingCriteria, setSeedingCriteria, scope, setScope, tagIds, setTagIds, fases, tags,
 }: {
   avoidRematches: boolean;
   setAvoidRematches: (v: boolean) => void;
@@ -817,7 +948,12 @@ function ConfigSwiss({
   setCarry: (v: string[]) => void;
   seedingCriteria: SeedingCriterion[];
   setSeedingCriteria: (v: SeedingCriterion[]) => void;
+  scope: 'all' | 'intra_tag';
+  setScope: (v: 'all' | 'intra_tag') => void;
+  tagIds: string[];
+  setTagIds: (v: string[]) => void;
   fases: Fase[];
+  tags: Tag[];
 }) {
   function toggleCriterion(c: SeedingCriterion) {
     setSeedingCriteria(
@@ -844,6 +980,8 @@ function ConfigSwiss({
         <input type="checkbox" checked={avoidRematches} onChange={e => setAvoidRematches(e.target.checked)} className="accent-current text-accent" />
         Evitar revanxes
       </label>
+
+      <TagScopePicker scope={scope} setScope={setScope} tagIds={tagIds} setTagIds={setTagIds} tags={tags} />
 
       <div>
         <p className="text-sm font-medium text-ink-2 mb-1">Ordre de seeding</p>
@@ -898,16 +1036,18 @@ function ConfigSwiss({
 }
 
 function ConfigSwissFide({
-  scope, setScope, carry, setCarry, expectedRounds, setExpectedRounds, fases, grups,
+  scope, setScope, tagIds, setTagIds, carry, setCarry, expectedRounds, setExpectedRounds, fases, tags,
 }: {
-  scope: 'all' | 'intra_group';
-  setScope: (v: 'all' | 'intra_group') => void;
+  scope: 'all' | 'intra_tag';
+  setScope: (v: 'all' | 'intra_tag') => void;
+  tagIds: string[];
+  setTagIds: (v: string[]) => void;
   carry: string[];
   setCarry: (v: string[]) => void;
   expectedRounds: string;
   setExpectedRounds: (v: string) => void;
   fases: Fase[];
-  grups: Grup[];
+  tags: Tag[];
 }) {
   return (
     <div className="bg-accent-tint rounded-lg p-4 space-y-3">
@@ -915,21 +1055,7 @@ function ConfigSwissFide({
       <p className="text-xs text-accent-ink">
         Usa l&apos;algorisme holandès FIDE amb matching global òptim (blossom). Gestiona automàticament revanxes, floats i bye.
       </p>
-      <Select
-        label="Àmbit"
-        value={scope}
-        onChange={e => setScope(e.target.value as 'all' | 'intra_group')}
-      >
-        <option value="all">Tots els jugadors (global)</option>
-        <option value="intra_group" disabled={grups.length === 0}>
-          Per grups (Swiss independent dins de cada grup)
-        </option>
-      </Select>
-      {grups.length === 0 && scope === 'intra_group' && (
-        <p className="text-xs text-accent-ink bg-accent-tint rounded p-2">
-          Cal crear grups primer per usar el mode per grups.
-        </p>
-      )}
+      <TagScopePicker scope={scope} setScope={setScope} tagIds={tagIds} setTagIds={setTagIds} tags={tags} />
       <Input
         label="Total de rondes previstes (opcional)"
         type="number"
@@ -962,35 +1088,28 @@ function ConfigSwissFide({
 }
 
 function ConfigRoundRobin({
-  scope, setScope, doble, setDoble, grups,
+  scope, setScope, tagIds, setTagIds, doble, setDoble, tags,
 }: {
-  scope: 'intra_group' | 'inter_group' | 'all';
-  setScope: (v: 'intra_group' | 'inter_group' | 'all') => void;
+  scope: 'all' | 'intra_tag' | 'inter_tag';
+  setScope: (v: 'all' | 'intra_tag' | 'inter_tag') => void;
+  tagIds: string[];
+  setTagIds: (v: string[]) => void;
   doble: boolean;
   setDoble: (v: boolean) => void;
-  grups: Grup[];
+  tags: Tag[];
 }) {
   return (
     <div className="bg-win-tint rounded-lg p-4 space-y-3">
       <p className="text-xs font-semibold text-win uppercase tracking-wide">Configuració Round Robin</p>
-      <Select
-        label="Àmbit"
-        value={scope}
-        onChange={e => setScope(e.target.value as typeof scope)}
-      >
-        <option value="all">Tots els jugadors (sense grups)</option>
-        <option value="intra_group" disabled={grups.length === 0}>
-          Intra-grupal (round robin dins de cada grup)
-        </option>
-        <option value="inter_group" disabled={grups.length < 2}>
-          Inter-grupal (jugadors d&apos;un grup contra els d&apos;un altre)
-        </option>
-      </Select>
-      {grups.length === 0 && scope !== 'all' && (
-        <p className="text-xs text-accent-ink bg-accent-tint rounded p-2">
-          Cal crear grups primer per usar els modes intra/inter-grupal.
-        </p>
-      )}
+      <TagScopePicker
+        scope={scope}
+        setScope={setScope}
+        tagIds={tagIds}
+        setTagIds={setTagIds}
+        tags={tags}
+        allowInter
+        color="win"
+      />
       <label className="flex items-center gap-2 text-sm text-ink-2">
         <input type="checkbox" checked={doble} onChange={e => setDoble(e.target.checked)} className="accent-current text-win" />
         Doble volta (cada parella juga dos cops)
@@ -1000,13 +1119,18 @@ function ConfigRoundRobin({
 }
 
 function ConfigKotH({
-  topN, setTopN, carry, setCarry, fases,
+  topN, setTopN, scope, setScope, tagIds, setTagIds, carry, setCarry, fases, tags,
 }: {
   topN: string;
   setTopN: (v: string) => void;
+  scope: 'all' | 'intra_tag';
+  setScope: (v: 'all' | 'intra_tag') => void;
+  tagIds: string[];
+  setTagIds: (v: string[]) => void;
   carry: string[];
   setCarry: (v: string[]) => void;
   fases: Fase[];
+  tags: Tag[];
 }) {
   return (
     <div className="bg-accent-tint rounded-lg p-4 space-y-3">
@@ -1019,6 +1143,7 @@ function ConfigKotH({
         onChange={e => setTopN(e.target.value)}
         placeholder="ex. 8"
       />
+      <TagScopePicker scope={scope} setScope={setScope} tagIds={tagIds} setTagIds={setTagIds} tags={tags} />
       {fases.length > 0 && (
         <div>
           <p className="text-sm font-medium text-ink-2 mb-1">Heretar classificació de:</p>

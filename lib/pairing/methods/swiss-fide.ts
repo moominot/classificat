@@ -6,9 +6,11 @@ import type {
   Outcome,
   PairingContext,
   PairingEngineResult,
+  PairingWarning,
   PreviousMatch,
   SwissFideConfig,
 } from '../types';
+import { partitionByTags } from './tag-partition';
 
 /**
  * Sistema suís holandès FIDE, delegat a `@echecs/swiss`.
@@ -32,8 +34,8 @@ export function generateSwissFidePairings(ctx: PairingContext): PairingEngineRes
       return a.displayName.localeCompare(b.displayName);
     });
 
-  return config.scope === 'intra_group'
-    ? pairByGroups(active, ctx, config)
+  return config.scope === 'intra_tag'
+    ? pairByTags(active, ctx, config)
     : pairAll(active, ctx, config);
 }
 
@@ -58,31 +60,27 @@ function pairAll(
   return { matches: [...matches, ...byes], warnings: [] };
 }
 
-function pairByGroups(
+function pairByTags(
   active: Entrant[],
   ctx: PairingContext,
   config: SwissFideConfig
 ): PairingEngineResult {
   const standingMap = new Map(ctx.standings.map((s) => [s.entryId, s]));
+  const entrantById = new Map(active.map((e) => [e.id, e]));
 
-  const groupMap = new Map<string, Entrant[]>();
-  for (const entrant of active) {
-    const key = entrant.groupId ?? '__ungrouped__';
-    groupMap.set(key, [...(groupMap.get(key) ?? []), entrant]);
-  }
+  const { partitions, warnings } = partitionByTags(active, config.tagIds ?? []);
 
   const allPairings: Array<[string, string]> = [];
   const allByes: GeneratedMatch[] = [];
 
-  for (const groupEntrants of groupMap.values()) {
-    const groupIds = new Set(groupEntrants.map((e) => e.id));
-    const groupHistory = ctx.previousMatches.filter((m) =>
-      m.entryIds.every((id) => groupIds.has(id))
-    );
+  for (const entryIds of partitions.values()) {
+    const tagEntrants = entryIds.map((id) => entrantById.get(id)!);
+    const tagIdSet = new Set(entryIds);
+    const tagHistory = ctx.previousMatches.filter((m) => m.entryIds.every((id) => tagIdSet.has(id)));
 
     const result = pair(
-      groupEntrants.map((e) => ({ id: e.id, rating: e.rating ?? undefined })),
-      buildGameHistory(groupHistory),
+      tagEntrants.map((e) => ({ id: e.id, rating: e.rating ?? undefined })),
+      buildGameHistory(tagHistory),
       { expectedRounds: config.expectedRounds }
     );
 
@@ -90,7 +88,7 @@ function pairByGroups(
     allByes.push(...result.byes.map((b) => ({ tableNumber: -1, entryIds: [b.player] })));
   }
 
-  return { matches: [...sortAndNumber(allPairings, standingMap), ...allByes], warnings: [] };
+  return { matches: [...sortAndNumber(allPairings, standingMap), ...allByes], warnings };
 }
 
 function sortAndNumber(

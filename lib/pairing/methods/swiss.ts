@@ -1,4 +1,5 @@
 import type {
+  Entrant,
   GeneratedMatch,
   PairingContext,
   PairingEngineResult,
@@ -10,6 +11,7 @@ import type {
 import { DEFAULT_SEEDING_CRITERIA } from '../types';
 import { buildRematchSet, hasPlayed } from '../utils/rematch';
 import { assignBye } from '../utils/bye';
+import { partitionByTags } from './tag-partition';
 
 /**
  * Sistema suís (holandès), adaptat.
@@ -23,6 +25,48 @@ import { assignBye } from '../utils/bye';
  * motor no ofereix aquest mètode en fases així.
  */
 export function generateSwissPairings(ctx: PairingContext): PairingEngineResult {
+  const config = ctx.phase.config as SwissConfig;
+  const active = ctx.entrants.filter((e) => e.isActive);
+
+  // Igual que Swiss FIDE/Rei del turó: cada etiqueta triada calcula el seu
+  // propi aparellament, independent de les altres bosses (docs/pla-rols.md
+  // §13.1 #8, Fase 2). El numerat de taules es fa un sol cop al final,
+  // sobre el conjunt sencer, perquè la taula 1 continuï sent la dels
+  // capdavanters globals.
+  if (config.scope === 'intra_tag') {
+    const { partitions, warnings: tagWarnings } = partitionByTags(active, config.tagIds ?? []);
+    const entrantById = new Map(active.map((e) => [e.id, e]));
+    const matches: GeneratedMatch[] = [];
+    const warnings: PairingWarning[] = [...tagWarnings];
+    const seedingOrder: string[] = [];
+
+    for (const entryIds of partitions.values()) {
+      const pool = entryIds.map((id) => entrantById.get(id)!);
+      const poolIdSet = new Set(entryIds);
+      const poolCtx: PairingContext = {
+        ...ctx,
+        entrants: pool,
+        standings: ctx.standings.filter((s) => poolIdSet.has(s.entryId)),
+        previousMatches: ctx.previousMatches.filter((m) => m.entryIds.every((id) => poolIdSet.has(id))),
+      };
+      const result = pairSwissPool(poolCtx);
+      matches.push(...result.matches);
+      warnings.push(...result.warnings);
+      if (result.seedingOrder) seedingOrder.push(...result.seedingOrder);
+    }
+
+    assignTableNumbers(
+      matches,
+      new Map(ctx.standings.map((s) => [s.entryId, s])),
+      new Map(ctx.entrants.map((e) => [e.id, e.rating ?? null]))
+    );
+    return { matches, warnings, seedingOrder };
+  }
+
+  return pairSwissPool(ctx);
+}
+
+function pairSwissPool(ctx: PairingContext): PairingEngineResult {
   const config = ctx.phase.config as SwissConfig;
   const warnings: PairingWarning[] = [];
 
