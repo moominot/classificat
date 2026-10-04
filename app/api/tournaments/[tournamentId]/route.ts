@@ -57,6 +57,12 @@ export async function PATCH(req: Request, { params }: Params) {
     }
     updates.status = body.status;
   }
+  if (body.presencePendingAs !== undefined) {
+    if (body.presencePendingAs !== 'present' && body.presencePendingAs !== 'absent') {
+      return NextResponse.json({ error: 'Valor no vàlid per als pendents' }, { status: 400 });
+    }
+    updates.presencePendingAs = body.presencePendingAs;
+  }
   // Els interruptors del panell: mode de classificació, ronda congelada i els
   // defectes de publicació (docs/pla-rols.md §8.5).
   if (body.visibility) {

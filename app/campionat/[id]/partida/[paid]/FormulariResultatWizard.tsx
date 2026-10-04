@@ -41,6 +41,9 @@ interface Props {
   potEditar: boolean;
   questions: QuestionDef[];
   existingAnswers: ExistingAnswer[];
+  /** Número de la ronda següent si encara se'n juguen més; null si no cal preguntar. */
+  properaRonda?: number | null;
+  continuaInicial?: Record<string, boolean>;
 }
 
 type Slot = { text: string; number: string; imageUrl: string };
@@ -95,6 +98,8 @@ export default function FormulariResultatWizard({
   potEditar,
   questions,
   existingAnswers,
+  properaRonda = null,
+  continuaInicial = {},
 }: Props) {
   const router = useRouter();
   const participants = partida.participants;
@@ -102,6 +107,9 @@ export default function FormulariResultatWizard({
   const [step, setStep] = useState(0);
   const [values, setValues] = useState<Values>(() =>
     initialValues(participants, questions, existingAnswers)
+  );
+  const [continuen, setContinuen] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(participants.map((p) => [p.entryId, continuaInicial[p.entryId] ?? true]))
   );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -191,7 +199,12 @@ export default function FormulariResultatWizard({
     const res = await fetch(`/api/tournaments/${tournamentId}/rounds/${roundId}/result`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ matchId: partida.id, participants: participantsPayload, answers }),
+      body: JSON.stringify({
+        matchId: partida.id,
+        participants: participantsPayload,
+        answers,
+        ...(properaRonda !== null ? { continues: continuen } : {}),
+      }),
     });
 
     if (res.ok) {
@@ -253,7 +266,17 @@ export default function FormulariResultatWizard({
         )}
 
         {step === confirmStepIndex && (
-          <ConfirmStep questions={questions} participants={participants} values={values} />
+          <>
+            <ConfirmStep questions={questions} participants={participants} values={values} />
+            {properaRonda !== null && (
+              <ContinuacioStep
+                properaRonda={properaRonda}
+                participants={participants}
+                value={continuen}
+                onChange={setContinuen}
+              />
+            )}
+          </>
         )}
 
         {error && <p className="text-sm text-loss mt-4">{error}</p>}
@@ -498,6 +521,44 @@ function ConfirmStep({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Pregunta final: continuen a la ronda següent? Sí per defecte, perquè el
+ * cas habitual és que sí. Si algú marxa, desmarcar-lo evita haver de refer
+ * els aparellaments quan ja estan fets.
+ */
+function ContinuacioStep({
+  properaRonda,
+  participants,
+  value,
+  onChange,
+}: {
+  properaRonda: number;
+  participants: ParticipantVista[];
+  value: Record<string, boolean>;
+  onChange: (v: Record<string, boolean>) => void;
+}) {
+  return (
+    <div className="rounded-2xl border border-border p-3.5 mt-3 space-y-2">
+      <div>
+        <p className="text-sm font-semibold text-ink">Continueu a la ronda {properaRonda}?</p>
+        <p className="text-xs text-ink-3">Desmarca qui marxa o no jugarà, perquè no l&apos;aparellem.</p>
+      </div>
+      {participants.map((p) => (
+        <label key={p.entryId} className="flex items-center gap-2.5 text-sm cursor-pointer">
+          <input
+            type="checkbox"
+            checked={value[p.entryId] ?? true}
+            onChange={(e) => onChange({ ...value, [p.entryId]: e.target.checked })}
+            className="accent-current text-accent w-4 h-4"
+          />
+          <span className="text-ink">{p.displayName}</span>
+          <span className="text-xs text-ink-3 ml-auto">{value[p.entryId] ?? true ? 'continua' : 'marxa'}</span>
+        </label>
+      ))}
     </div>
   );
 }

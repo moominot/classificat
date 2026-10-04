@@ -6,6 +6,7 @@ import { matchParticipants, matchRevisions, matches, phases, rounds } from '@/db
 import { canManageTournament, canReportResult, getViewer } from '@/lib/authz';
 import { scoreMatch } from '@/lib/pairing/scoring';
 import { saveAnswers, type AnswerInput } from '@/lib/pairing/match-answers';
+import { lastPlannedRound, roundIsPaired, setPresence } from '@/lib/presence';
 
 type Params = { params: Promise<{ tournamentId: string; roundId: string }> };
 
@@ -29,12 +30,14 @@ interface ParticipantInput {
 export async function PUT(req: Request, { params }: Params) {
   const { tournamentId, roundId } = await params;
   const body = await req.json().catch(() => ({}));
-  const { matchId, participants, answers, location, comments } = body as {
+  const { matchId, participants, answers, location, comments, continues } = body as {
     matchId?: string;
     participants?: ParticipantInput[];
     answers?: AnswerInput[];
     location?: string;
     comments?: string;
+    /** Per jugador de la taula: continua a la ronda següent? (només si n'hi ha més de previstes) */
+    continues?: Record<string, boolean>;
   };
 
   if (!matchId) return NextResponse.json({ error: 'Cal matchId' }, { status: 400 });
@@ -132,6 +135,27 @@ export async function PUT(req: Request, { params }: Params) {
     .where(eq(matches.id, matchId));
 
   await saveAnswers(tournamentId, matchId, existingParticipants, answers ?? []);
+
+  // El botó d'home mort: en acabar la partida, la taula diu qui continua. Amb
+  // un mòbil per taula n'hi ha prou (el company confirma per l'altre).
+  if (continues && typeof continues === 'object') {
+    const next = round.number + 1;
+    if (next <= (await lastPlannedRound(tournamentId)) && !(await roundIsPaired(tournamentId, next))) {
+      for (const participant of existingParticipants) {
+        const value = continues[participant.entryId];
+        if (typeof value !== 'boolean') continue;
+        await setPresence({
+          tournamentId,
+          roundNumber: next,
+          entryId: participant.entryId,
+          status: value ? 'present' : 'absent',
+          source: viewer.entryId === participant.entryId ? 'player' : 'table',
+          deviceId: viewer.deviceId,
+          accountId: viewer.account?.id ?? null,
+        });
+      }
+    }
+  }
 
   await db.insert(matchRevisions).values({
     id: uuid(),

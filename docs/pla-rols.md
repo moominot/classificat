@@ -654,6 +654,19 @@ Conseqüències que això imposa al disseny:
 - **Traça obligatòria**: cada correcció sobre una ronda tancada queda registrada (qui, quan, valor anterior i nou). És la que permet explicar després per què va canviar una classificació que algú ja havia vist.
 - La classificació congelada (`frozen_at`, punt 15.5) també es recalcula: congelar és **fins a quina ronda** es mostra, no una fotografia desada.
 
+### 15.8 Presència a la ronda següent: el botó d'home mort
+
+**Problema.** En campionats grans, qui marxa a mig campionat no avisa i cal refer els aparellaments. **Decisió (2026-10):** els jugadors diuen si continuen, amb tres estats —*present*, *absent* i **pendent** (cap resposta)— i la política dels pendents és configurable.
+
+- **A l'inici**, quan el director crea una ronda (en esborrany i sense aparellaments), el jugador identificat veu «Jugaràs la ronda N?» amb *Hi seré / No hi seré*.
+- **En enviar el resultat**, al pas final hi ha «Continueu a la ronda N+1?» amb una casella per jugador, **marcades per defecte**. Només surt si queden rondes previstes (final de l'última fase) i la ronda següent encara no té aparellaments. Amb un sol mòbil per taula n'hi ha prou: el company confirma per l'altre (`source = table`).
+- **El director passa llista** al mateix selector de participants en generar: cada jugador mostra *confirmat / avisa / pendent*, i el que marca el director (`source = admin`) **mana** sobre el que digui un jugador o la taula.
+- **Pendents:** per defecte **compten com a presents** (no perjudica qui no té mòbil). Ajustos → «Presència a la ronda següent» permet canviar-ho a «absents» (`tournaments.presence_pending_as`).
+- **Dades:** `round_presence(tournament_id, round_number, entry_id, status, source, device_id, account_id)`; va per número de ronda perquè la resposta arriba abans que existeixi la ronda. `round_absences` continua sent el resultat final de la generació.
+- **Identitat:** igual que a 15.2, declarada, no demostrada. Si el dispositiu no sap qui és el jugador, l'inici ofereix «Qui ets?» (`/identify`).
+
+**Pendent de decidir (apuntat):** opció d'admin per limitar **qui pot enviar el resultat d'una partida**: només els qui l'han jugat, o qualsevol (com ara, 15.6). Caldria un valor per competició (p. ex. `resultsEntryPolicy: 'participants' | 'anyone'`) i que `canReportResult()` l'apliqui amb el `participantEntryIds` que ja rep i que avui ignora.
+
 ---
 
 ## 16. Esquema proposat

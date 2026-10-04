@@ -36,6 +36,8 @@ export default function GenerarAparellaments({
   participantsPerMatch,
   players = [],
   previousAbsentIds = [],
+  presencia = {},
+  pendentsCompten = 'present',
 }: {
   tournamentId: string;
   roundId: string;
@@ -44,10 +46,25 @@ export default function GenerarAparellaments({
   participantsPerMatch: number;
   players?: Jugador[];
   previousAbsentIds?: string[];
+  /** Qui ha respost si juga la ronda; qui no hi surt és pendent. */
+  presencia?: Record<string, 'present' | 'absent'>;
+  /** Com compten els pendents en aparellar (Ajustos). */
+  pendentsCompten?: 'present' | 'absent';
 }) {
   const router = useRouter();
   const canManage = useCanManage();
-  const [absentIds, setAbsentIds] = useState<Set<string>>(new Set(previousAbsentIds));
+  // Absents de partida: els que han dit que no hi seran, els pendents si la
+  // política ho vol, i els de la ronda anterior que no han confirmat que tornen.
+  const [absentIds, setAbsentIds] = useState<Set<string>>(
+    () =>
+      new Set([
+        ...previousAbsentIds.filter((id) => presencia[id] !== 'present'),
+        ...players.filter((p) => (presencia[p.id] ? presencia[p.id] === 'absent' : pendentsCompten === 'absent')).map((p) => p.id),
+      ])
+  );
+  const confirmats = players.filter((p) => presencia[p.id] === 'present').length;
+  const noHiSeran = players.filter((p) => presencia[p.id] === 'absent').length;
+  const pendents = players.length - confirmats - noHiSeran;
 
   if (!canManage) return null;
 
@@ -68,6 +85,13 @@ export default function GenerarAparellaments({
         <h3 className="text-sm font-semibold text-ink-2">Participants ronda {roundNumber}</h3>
         <span className="text-xs text-ink-3">{playing.length} jugadors</span>
       </div>
+
+      {players.length > 0 && (
+        <p className="text-xs text-ink-3 mb-2">
+          {confirmats} confirmats · {pendents} pendents (compten com a {pendentsCompten === 'present' ? 'presents' : 'absents'}) ·{' '}
+          {noHiSeran} no hi seran
+        </p>
+      )}
 
       {players.length === 0 ? (
         <p className="text-sm text-ink-3">No hi ha jugadors actius al campionat.</p>
@@ -91,6 +115,9 @@ export default function GenerarAparellaments({
                   className="rounded accent-current text-win flex-shrink-0"
                 />
                 <span className="truncate">{p.name}</span>
+                {presencia[p.id] === 'present' && <span className="ml-auto text-[10px] font-semibold uppercase">confirmat</span>}
+                {presencia[p.id] === 'absent' && <span className="ml-auto text-[10px] font-semibold uppercase">avisa</span>}
+                {!presencia[p.id] && <span className="ml-auto text-[10px] uppercase opacity-60">pendent</span>}
               </label>
             );
           })}

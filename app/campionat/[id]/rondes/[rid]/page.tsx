@@ -7,6 +7,7 @@ import { DEFAULT_VISIBILITY } from '@/db/types';
 import Badge from '@/components/ui/Badge';
 import { canManageTournament, getCurrentAccount } from '@/lib/authz';
 import { loadEntrants, loadRoundMatches, loadTags } from '@/lib/db-helpers';
+import { loadPendingPolicy, loadPresence } from '@/lib/presence';
 import type { RoundRobinConfig } from '@/lib/pairing/types';
 import GenerarAparellaments from './GenerarAparellaments';
 import ResultatAparellament from './ResultatAparellament';
@@ -77,6 +78,13 @@ export default async function RondaPage({
   const absencies_anteriors = ronda_anterior
     ? await db.select().from(roundAbsences).where(eq(roundAbsences.roundId, ronda_anterior.id))
     : [];
+
+  // Qui ha dit que juga aquesta ronda (el botó d'home mort). Només compta
+  // mentre no hi ha aparellaments: després ja no canvia res.
+  const [presencia, presenciaPendents] =
+    canManage && partides.length === 0 && ronda.status !== 'closed'
+      ? await Promise.all([loadPresence(id, ronda.number), loadPendingPolicy(id)])
+      : [new Map(), 'present' as const];
 
   const nomPerEntry = new Map(inscrits.map((e) => [e.id, e.displayName]));
   const tagsPerEntry = new Map(inscrits.map((e) => [e.id, e.tagIds]));
@@ -224,6 +232,8 @@ export default async function RondaPage({
             .filter((e) => e.isActive)
             .map((e) => ({ id: e.id, name: e.displayName, rating: e.rating ?? null }))}
           previousAbsentIds={absencies_anteriors.map((a) => a.entryId)}
+          presencia={Object.fromEntries([...presencia].map(([k, v]) => [k, v.status]))}
+          pendentsCompten={presenciaPendents}
         />
       )}
 
