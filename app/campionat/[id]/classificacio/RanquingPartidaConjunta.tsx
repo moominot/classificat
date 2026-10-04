@@ -28,11 +28,11 @@ export default function RanquingPartidaConjunta({
           href={`/campionat/${tournamentId}/partida/${row.matchId}`}
           className="block border-2 border-border rounded-xl bg-surface p-4 hover:border-accent transition-colors"
         >
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
             <span className="w-9 h-9 rounded-full bg-accent-tint text-accent-ink flex items-center justify-center font-display font-bold flex-shrink-0 tabular-nums">
               {i + 1}
             </span>
-            <span className="flex-1 text-lg font-display font-bold text-ink truncate">
+            <span className="min-w-0 flex-1 text-lg font-display font-bold text-ink whitespace-nowrap">
               Suma de punts: {formatValue(row.combinedScore)}
             </span>
             <span
