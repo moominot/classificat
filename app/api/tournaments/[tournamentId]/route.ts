@@ -3,7 +3,11 @@ import { asc, eq } from 'drizzle-orm';
 import { db } from '@/db';
 import { groups, phases, teams, tournaments } from '@/db/schema';
 import { getCurrentAccount, canManageTournament, requireTournamentAccess } from '@/lib/authz';
+import type { StandingsMode, TournamentStatus } from '@/db/types';
 import { loadEntrants } from '@/lib/db-helpers';
+
+const STATUSES: TournamentStatus[] = ['draft', 'active', 'finished'];
+const STANDINGS_MODES: StandingsMode[] = ['live', 'closed_rounds', 'frozen_at', 'hidden'];
 
 type Params = { params: Promise<{ tournamentId: string }> };
 
@@ -47,10 +51,24 @@ export async function PATCH(req: Request, { params }: Params) {
 
   const updates: Partial<typeof existing> = { updatedAt: new Date() };
   if (body.name) updates.name = String(body.name).trim();
-  if (body.status) updates.status = body.status;
+  if (body.status) {
+    if (!STATUSES.includes(body.status)) {
+      return NextResponse.json({ error: 'Estat no vàlid' }, { status: 400 });
+    }
+    updates.status = body.status;
+  }
   // Els interruptors del panell: mode de classificació, ronda congelada i els
   // defectes de publicació (docs/pla-rols.md §8.5).
-  if (body.visibility) updates.visibility = { ...existing.visibility, ...body.visibility };
+  if (body.visibility) {
+    const v = body.visibility;
+    if (v.standingsMode !== undefined && !STANDINGS_MODES.includes(v.standingsMode)) {
+      return NextResponse.json({ error: 'Mode de classificació no vàlid' }, { status: 400 });
+    }
+    if (v.frozenRound != null && (!Number.isInteger(v.frozenRound) || v.frozenRound < 0)) {
+      return NextResponse.json({ error: 'Ronda congelada no vàlida' }, { status: 400 });
+    }
+    updates.visibility = { ...existing.visibility, ...v };
+  }
 
   await db.update(tournaments).set(updates).where(eq(tournaments.id, tournamentId));
   return NextResponse.json({ ...existing, ...updates });

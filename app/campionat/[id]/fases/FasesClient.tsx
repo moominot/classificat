@@ -14,7 +14,8 @@ import type {
   PhaseConfig, SeedingCriterion, Tag,
   SwissConfig, SwissFideConfig, RoundRobinConfig, KingOfTheHillConfig,
 } from '@/lib/pairing/types';
-import type { EntryPairExclusion, TagPairExclusion } from '@/db/types';
+import type { EntryPairExclusion, ScoringConfig, StandingsScopeKey, TagPairExclusion, TeamAggregation } from '@/db/types';
+import { DEFAULT_SCORING } from '@/db/types';
 import { DEFAULT_SEEDING_CRITERIA } from '@/lib/pairing/types';
 import { availableTiebreakers } from '@/lib/pairing/tiebreakers';
 
@@ -30,6 +31,9 @@ interface Fase {
   config: PhaseConfig;
   isComplete: boolean;
   standingsLive: boolean;
+  scoring: ScoringConfig;
+  standingsScope: StandingsScopeKey[];
+  teamAggregation: TeamAggregation | null;
 }
 
 interface EntrantOption {
@@ -59,6 +63,115 @@ function desempatsDisponibles(participantsPerMatch: number) {
 }
 
 const TOTS_ELS_DESEMPATS = desempatsDisponibles(2);
+
+/** Estat del formulari de puntuació i classificacions d'una fase (text, perquè s'hi pugui escriure lliurement). */
+interface PuntuacioState {
+  positionPoints: string;
+  trailingPoints: string;
+  byePoints: string;
+  forfeitPoints: string;
+  scope: StandingsScopeKey[];
+  teamRule: TeamAggregation['rule'];
+  teamN: string;
+}
+
+function puntuacioInicial(
+  base?: { scoring: ScoringConfig; standingsScope: StandingsScopeKey[]; teamAggregation: TeamAggregation | null }
+): PuntuacioState {
+  const scoring = base?.scoring ?? DEFAULT_SCORING;
+  return {
+    positionPoints: scoring.positionPoints.join(', '),
+    trailingPoints: String(scoring.trailingPoints),
+    byePoints: String(scoring.byePoints),
+    forfeitPoints: String(scoring.forfeitPoints),
+    scope: base?.standingsScope ?? ['global'],
+    teamRule: base?.teamAggregation?.rule ?? 'sum',
+    teamN: String(base?.teamAggregation?.n ?? 3),
+  };
+}
+
+/** Converteix el formulari al que espera l'API, o un missatge d'error. */
+function puntuacioPayload(
+  st: PuntuacioState
+): { error: string } | { scoring: ScoringConfig; standingsScope: StandingsScopeKey[]; teamAggregation: TeamAggregation } {
+  const positionPoints = st.positionPoints.split(',').map((v) => v.trim()).filter(Boolean).map(Number);
+  if (positionPoints.length === 0 || positionPoints.some((n) => Number.isNaN(n))) {
+    return { error: 'Els punts per posició han de ser nombres separats per comes (p. ex. 1, 0)' };
+  }
+  const [trailingPoints, byePoints, forfeitPoints] = [st.trailingPoints, st.byePoints, st.forfeitPoints].map(Number);
+  if ([trailingPoints, byePoints, forfeitPoints].some((n) => Number.isNaN(n))) {
+    return { error: 'Els punts de bye, incompareixença i posicions restants han de ser nombres' };
+  }
+  const n = parseInt(st.teamN, 10);
+  if (st.teamRule === 'top_n' && !(n >= 1)) return { error: 'Indica quants membres compten per equip' };
+  return {
+    scoring: { positionPoints, trailingPoints, byePoints, forfeitPoints },
+    standingsScope: st.scope,
+    teamAggregation: st.teamRule === 'top_n' ? { rule: 'top_n', n } : { rule: st.teamRule },
+  };
+}
+
+/**
+ * Puntuació per posició i àmbits de classificació de la fase (docs/pla-rols.md
+ * §12.5 i §12.10). Plegat per defecte: és configuració que es toca poc.
+ */
+function PuntuacioPicker({ value, onChange }: { value: PuntuacioState; onChange: (v: PuntuacioState) => void }) {
+  const set = (patch: Partial<PuntuacioState>) => onChange({ ...value, ...patch });
+  const equips = value.scope.includes('team');
+  return (
+    <details className="rounded-xl border border-border p-3 space-y-3">
+      <summary className="cursor-pointer text-sm font-medium text-ink">Puntuació i classificacions</summary>
+      <div className="space-y-4 pt-3">
+        <div className="space-y-3">
+          <p className="text-xs font-semibold text-ink-3 uppercase tracking-wide">Puntuació</p>
+          <Input
+            label="Punts per posició"
+            hint="De la 1a posició cap avall, separats per comes. 1v1 clàssic: 1, 0"
+            value={value.positionPoints}
+            onChange={(e) => set({ positionPoints: e.target.value })}
+          />
+          <div className="grid grid-cols-3 gap-3">
+            <Input label="Posicions restants" type="number" step="any" value={value.trailingPoints}
+              onChange={(e) => set({ trailingPoints: e.target.value })} />
+            <Input label="Bye" type="number" step="any" value={value.byePoints}
+              onChange={(e) => set({ byePoints: e.target.value })} />
+            <Input label="Incompareixença" type="number" step="any" value={value.forfeitPoints}
+              onChange={(e) => set({ forfeitPoints: e.target.value })} />
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <p className="text-xs font-semibold text-ink-3 uppercase tracking-wide">Classificació per equips</p>
+          <label className="flex items-center gap-2 text-sm text-ink">
+            <input
+              type="checkbox"
+              className="accent-current text-accent"
+              checked={equips}
+              onChange={(e) =>
+                set({ scope: e.target.checked ? [...value.scope, 'team'] : value.scope.filter((k) => k !== 'team') })
+              }
+            />
+            Publica també la classificació d&apos;equips
+          </label>
+          {equips && (
+            <div className="grid grid-cols-2 gap-3">
+              <Select label="Com compten els membres" value={value.teamRule}
+                onChange={(e) => set({ teamRule: e.target.value as TeamAggregation['rule'] })}>
+                <option value="sum">Suma</option>
+                <option value="avg">Mitjana</option>
+                <option value="top_n">Els N millors</option>
+              </Select>
+              {value.teamRule === 'top_n' && (
+                <Input label="Membres que compten" type="number" min={1} value={value.teamN}
+                  onChange={(e) => set({ teamN: e.target.value })} />
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </details>
+  );
+}
 
 /** Si la classificació de la fase compta també les rondes obertes o només les tancades. */
 function ModeClassificacio({ value, onChange }: { value: boolean; onChange: (live: boolean) => void }) {
@@ -462,6 +575,7 @@ function EditarFaseForm({
   const [endRound, setEndRound] = useState(fase.endRound.toString());
   const [desempats, setDesempats] = useState<string[]>(fase.tiebreakers);
   const [standingsLive, setStandingsLive] = useState(fase.standingsLive ?? false);
+  const [puntuacio, setPuntuacio] = useState(() => puntuacioInicial(fase));
   const [participantsPerMatch, setParticipantsPerMatch] = useState(fase.participantsPerMatch ?? 2);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -553,6 +667,11 @@ function EditarFaseForm({
       setError('Cal nom, ronda inicial i ronda final');
       return;
     }
+    const pp = puntuacioPayload(puntuacio);
+    if ('error' in pp) {
+      setError(pp.error);
+      return;
+    }
     setLoading(true);
     const res = await fetch(`/api/tournaments/${tournamentId}/phases/${fase.id}`, {
       method: 'PATCH',
@@ -563,6 +682,9 @@ function EditarFaseForm({
         endRound: parseInt(endRound),
         tiebreakers: desempats,
         standingsLive,
+        scoring: pp.scoring,
+        standingsScope: pp.standingsScope,
+        teamAggregation: pp.teamAggregation,
         participantsPerMatch,
         config: buildConfig(),
       }),
@@ -697,6 +819,8 @@ function EditarFaseForm({
 
       <ModeClassificacio value={standingsLive} onChange={setStandingsLive} />
 
+      <PuntuacioPicker value={puntuacio} onChange={setPuntuacio} />
+
       {error && <p className="text-sm text-loss">{error}</p>}
 
       <div className="flex gap-2">
@@ -730,6 +854,7 @@ function NovaFaseForm({
   const [endRound, setEndRound] = useState('');
   const [desempats, setDesempats] = useState<string[]>(['median_buchholz', 'buchholz', 'spread']);
   const [standingsLive, setStandingsLive] = useState(false);
+  const [puntuacio, setPuntuacio] = useState(() => puntuacioInicial(fases[fases.length - 1]));
   const [participantsPerMatch, setParticipantsPerMatch] = useState(2);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -812,6 +937,11 @@ function NovaFaseForm({
       setError('Cal nom, ronda inicial i ronda final');
       return;
     }
+    const pp = puntuacioPayload(puntuacio);
+    if ('error' in pp) {
+      setError(pp.error);
+      return;
+    }
     setLoading(true);
     const res = await fetch(`/api/tournaments/${tournamentId}/phases`, {
       method: 'POST',
@@ -823,6 +953,9 @@ function NovaFaseForm({
         endRound: parseInt(endRound),
         tiebreakers: desempats,
         standingsLive,
+        scoring: pp.scoring,
+        standingsScope: pp.standingsScope,
+        teamAggregation: pp.teamAggregation,
         participantsPerMatch,
         config: buildConfig(),
       }),
@@ -955,6 +1088,8 @@ function NovaFaseForm({
       )}
 
       <ModeClassificacio value={standingsLive} onChange={setStandingsLive} />
+
+      <PuntuacioPicker value={puntuacio} onChange={setPuntuacio} />
 
       {error && <p className="text-sm text-loss">{error}</p>}
 

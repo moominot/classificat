@@ -9,6 +9,7 @@ export const CONFIG_LINKS = [
   { key: 'fases', label: 'Fases' },
   { key: 'preguntes', label: 'Preguntes' },
   { key: 'barruf', label: 'BARRUF' },
+  { key: 'ajustos', label: 'Ajustos' },
 ];
 
 export default function ConfigSidebar({ id }: { id: string }) {
