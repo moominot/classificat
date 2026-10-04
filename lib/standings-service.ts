@@ -31,6 +31,8 @@ export interface StandingsView {
   /** Mode aplicat realment: per a qui gestiona sempre és `live`. */
   mode: StandingsMode;
   frozenRound: number | null;
+  /** Fases en temps real: en mode `closed_rounds` també hi compten les rondes obertes. */
+  livePhaseIds: string[];
   standings: StandingRow[];
   teamStandings: TeamStandingRow[] | null;
 }
@@ -39,6 +41,7 @@ const HIDDEN: StandingsView = {
   visible: false,
   mode: 'hidden',
   frozenRound: null,
+  livePhaseIds: [],
   standings: [],
   teamStandings: null,
 };
@@ -65,9 +68,11 @@ export async function loadStandings(
 
   const activePhases = opts.phaseId ? allPhases.filter((p) => p.id === opts.phaseId) : allPhases;
   const referencePhase = activePhases[activePhases.length - 1] ?? null;
+  const livePhaseIds = allPhases.filter((p) => p.standingsLive).map((p) => p.id);
 
   const scopedMatches = await loadScoredMatches(tournamentId, {
     onlyClosedRounds: mode === 'closed_rounds',
+    livePhaseIds,
     upToRound:
       opts.upToRound ??
       (mode === 'frozen_at' && visibility.frozenRound !== null ? visibility.frozenRound : undefined),
@@ -77,6 +82,7 @@ export async function loadStandings(
   const entrants = await loadEntrants(tournamentId);
   const { metrics, answers } = await loadQuestionMetrics(tournamentId, {
     onlyClosedRounds: mode === 'closed_rounds',
+    livePhaseIds,
     phaseIds: opts.phaseId ? activePhases.map((p) => p.id) : undefined,
   });
 
@@ -101,6 +107,7 @@ export async function loadStandings(
     visible: true,
     mode,
     frozenRound: visibility.frozenRound,
+    livePhaseIds,
     standings: rows,
     teamStandings: await maybeTeamStandings(tournamentId, activePhases, scopedMatches, standings),
   };

@@ -208,6 +208,9 @@ export const phases = sqliteTable('phases', {
   startRound:           integer('start_round').notNull(),
   endRound:             integer('end_round').notNull(),
   isComplete:           integer('is_complete', { mode: 'boolean' }).notNull().default(false),
+  // true = la classificació d'aquesta fase es mostra en temps real (compten
+  // també les rondes obertes); false = només les rondes tancades.
+  standingsLive:        integer('standings_live', { mode: 'boolean' }).notNull().default(false),
 }, (t) => [
   index('phases_tournament_idx').on(t.tournamentId),
   uniqueIndex('phases_order_uniq').on(t.tournamentId, t.order),

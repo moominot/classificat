@@ -1,14 +1,15 @@
 'use client';
 
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import Link from 'next/link';
+import { Card } from '@/components/ui/Card';
 import type { StandingRow } from '@/lib/standings-service';
 import type { MetricHistoryRow } from '@/lib/db-helpers';
 
 /**
- * Rànquing d'una sola mètrica, en targetes grans (no taula): al mòbil una
- * fila densa amb el nom petit i el valor enganxat es llegeix malament.
- * Cada targeta es pot desplegar per veure l'historial complet, ronda a
+ * Rànquing d'una sola mètrica: taula a pc i targetes grans al mòbil (una
+ * fila densa amb el nom petit i el valor enganxat es llegeix malament).
+ * Cada fila/targeta es pot desplegar per veure l'historial complet, ronda a
  * ronda, en lloc de només el millor valor.
  */
 export default function RanquingMetrica({
@@ -47,28 +48,109 @@ export default function RanquingMetrica({
   }
 
   return (
-    <div className="space-y-3">
+    <>
+      {/* Pc: taula */}
+      <Card padding={false} className="hidden sm:block">
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-[11px] uppercase tracking-wide text-ink-3 border-b border-border">
+                <th className="px-3 py-2 font-semibold">#</th>
+                <th className="px-2 py-2 font-semibold">Jugador</th>
+                {isWordMetric && <th className="px-2 py-2 font-semibold">Paraula</th>}
+                <th className="px-2 py-2 font-semibold text-right whitespace-nowrap">
+                  {isWordMetric ? 'Punts' : `Total ${etiqueta}`}
+                </th>
+                {isWordMetric ? (
+                  <th className="px-2 py-2 font-semibold">Adversari</th>
+                ) : (
+                  <th className="px-2 py-2 font-semibold text-right">Mitjana</th>
+                )}
+                <th className="px-2 py-2 font-semibold text-right whitespace-nowrap">Darrera ronda</th>
+                <th className="w-8" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-border">
+              {ordenat.map((s, i) => {
+                const d = dadesFila(s, historyByEntry[s.entryId] ?? [], metrica);
+                const obert = oberts.has(s.entryId);
+                return (
+                  <Fragment key={s.entryId}>
+                    <tr
+                      onClick={() => d.history.length > 0 && toggle(s.entryId)}
+                      className={`hover:bg-surface-2 transition-colors ${d.history.length > 0 ? 'cursor-pointer' : ''}`}
+                    >
+                      <td className="px-3 py-2.5 font-display font-bold text-ink-2 tabular-nums">{i + 1}</td>
+                      <td className="px-2 py-2.5 min-w-[9rem]">
+                        <Link
+                          href={`/campionat/${tournamentId}/jugadors/${s.entryId}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="font-medium text-ink hover:text-accent-ink transition-colors"
+                        >
+                          {s.displayName}
+                        </Link>
+                      </td>
+                      {isWordMetric && (
+                        <td className="px-2 py-2.5 font-display font-black text-accent-ink uppercase tracking-wide">
+                          {d.best?.word ?? '—'}
+                        </td>
+                      )}
+                      <td className="px-2 py-2.5 text-right font-display font-bold text-ink tabular-nums">
+                        {formatValue(isWordMetric ? (d.best?.value ?? d.total) : d.total)}
+                      </td>
+                      {isWordMetric ? (
+                        <td className="px-2 py-2.5 text-ink-3">{d.best?.opponentNames.join(', ') ?? ''}</td>
+                      ) : (
+                        <td className="px-2 py-2.5 text-right tabular-nums text-ink-2">
+                          {d.realGames > 0 ? formatValue(d.mitjana) : '—'}
+                        </td>
+                      )}
+                      <td className="px-2 py-2.5 text-right tabular-nums text-ink-2 whitespace-nowrap">
+                        {d.darrera
+                          ? isWordMetric
+                            ? d.esMillora
+                              ? `Millora (R${d.darrera.roundNumber})`
+                              : `R${d.darrera.roundNumber}`
+                            : `+${formatValue(d.darrera.value)} (R${d.darrera.roundNumber})`
+                          : '—'}
+                      </td>
+                      <td className="pr-3 text-ink-3">
+                        {d.history.length > 0 && (
+                          <svg
+                            className={`w-4 h-4 transition-transform ${obert ? 'rotate-180' : ''}`}
+                            fill="none"
+                            viewBox="0 0 24 24"
+                            stroke="currentColor"
+                          >
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                          </svg>
+                        )}
+                      </td>
+                    </tr>
+                    {obert && d.history.length > 0 && (
+                      <tr>
+                        <td colSpan={isWordMetric ? 7 : 6} className="p-0 bg-surface-2/40">
+                          <HistorialFiles tournamentId={tournamentId} history={d.history} isWordMetric={isWordMetric} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {/* Mòbil: targetes */}
+      <div className="sm:hidden space-y-3">
       {ordenat.map((s, i) => {
-        const history = historyByEntry[s.entryId] ?? [];
-        const best = history[0] ?? null;
-        const total = s.metrics[metrica] ?? 0;
-        const realGames = Math.max(0, s.gamesPlayed - s.byes);
-        const mitjana = realGames > 0 ? total / realGames : 0;
-        const obert = oberts.has(s.entryId);
-        // El valor de la darrera ronda jugada, no el millor (que ja es veu
-        // a sota): és el que acaba de passar, el que més interessa d'un cop
-        // d'ull quan es consulta la classificació entre rondes.
-        const darrera = history.reduce<MetricHistoryRow | null>(
-          (acc, row) => (!acc || row.roundNumber > acc.roundNumber ? row : acc),
-          null
+        const { history, best, total, realGames, mitjana, darrera, esMillora } = dadesFila(
+          s,
+          historyByEntry[s.entryId] ?? [],
+          metrica
         );
-        // A "paraula + valor" (p.ex. Millor jugada) el nombre no diu res per
-        // si sol — el que interessa és si la darrera jugada ha millorat les
-        // anteriors, no el seu valor absolut.
-        const anteriorsMillor = history
-          .filter((row) => row !== darrera)
-          .reduce((max, row) => Math.max(max, row.value), -Infinity);
-        const esMillora = darrera !== null && darrera.value >= anteriorsMillor;
+        const obert = oberts.has(s.entryId);
 
         return (
           <div key={s.entryId} className="border-2 border-border rounded-xl overflow-hidden bg-surface">
@@ -141,39 +223,74 @@ export default function RanquingMetrica({
             </button>
 
             {obert && history.length > 0 && (
-              <div className="border-t border-border divide-y divide-border">
-                {history.map((row) => (
-                  <Link
-                    key={row.matchId}
-                    href={`/campionat/${tournamentId}/partida/${row.matchId}`}
-                    className="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-2 transition-colors"
-                  >
-                    <span className="text-xs text-ink-3 w-16 flex-shrink-0">Ronda {row.roundNumber}</span>
-                    <span className="font-display font-bold text-ink tabular-nums w-10 flex-shrink-0">
-                      {formatValue(row.value)}
-                    </span>
-                    {isWordMetric && row.word && (
-                      <span className="font-display font-black text-ink uppercase text-sm truncate">
-                        {row.word}
-                      </span>
-                    )}
-                    <span className="flex-1 text-sm text-ink-3 truncate text-right">
-                      {row.opponentNames.join(', ')}
-                    </span>
-                    <svg className="w-4 h-4 text-ink-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
-                  </Link>
-                ))}
-              </div>
+              <HistorialFiles tournamentId={tournamentId} history={history} isWordMetric={isWordMetric} />
             )}
           </div>
         );
       })}
-    </div>
+      </div>
+    </>
   );
 }
 
 function formatValue(value: number): string {
   return Number.isInteger(value) ? value.toString() : value.toFixed(2);
+}
+
+/** Valors derivats d'un jugador per a una mètrica — compartits per la taula i les targetes. */
+function dadesFila(s: StandingRow, history: MetricHistoryRow[], metrica: string) {
+  const best = history[0] ?? null;
+  const total = s.metrics[metrica] ?? 0;
+  const realGames = Math.max(0, s.gamesPlayed - s.byes);
+  const mitjana = realGames > 0 ? total / realGames : 0;
+  // El valor de la darrera ronda jugada, no el millor (que ja es veu a part):
+  // és el que acaba de passar, el que més interessa d'un cop d'ull quan es
+  // consulta la classificació entre rondes.
+  const darrera = history.reduce<MetricHistoryRow | null>(
+    (acc, row) => (!acc || row.roundNumber > acc.roundNumber ? row : acc),
+    null
+  );
+  // A "paraula + valor" (p.ex. Millor jugada) el nombre no diu res per si
+  // sol — el que interessa és si la darrera jugada ha millorat les
+  // anteriors, no el seu valor absolut.
+  const anteriorsMillor = history
+    .filter((row) => row !== darrera)
+    .reduce((max, row) => Math.max(max, row.value), -Infinity);
+  const esMillora = darrera !== null && darrera.value >= anteriorsMillor;
+  return { history, best, total, realGames, mitjana, darrera, esMillora };
+}
+
+/** Historial ronda a ronda d'un jugador, desplegat sota la seva fila o targeta. */
+function HistorialFiles({
+  tournamentId,
+  history,
+  isWordMetric,
+}: {
+  tournamentId: string;
+  history: MetricHistoryRow[];
+  isWordMetric: boolean;
+}) {
+  return (
+    <div className="border-t border-border divide-y divide-border">
+      {history.map((row) => (
+        <Link
+          key={row.matchId}
+          href={`/campionat/${tournamentId}/partida/${row.matchId}`}
+          className="flex items-center gap-3 px-4 py-2.5 hover:bg-surface-2 transition-colors"
+        >
+          <span className="text-xs text-ink-3 w-16 flex-shrink-0">Ronda {row.roundNumber}</span>
+          <span className="font-display font-bold text-ink tabular-nums w-10 flex-shrink-0">
+            {formatValue(row.value)}
+          </span>
+          {isWordMetric && row.word && (
+            <span className="font-display font-black text-ink uppercase text-sm truncate">{row.word}</span>
+          )}
+          <span className="flex-1 text-sm text-ink-3 truncate text-right">{row.opponentNames.join(', ')}</span>
+          <svg className="w-4 h-4 text-ink-3 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+          </svg>
+        </Link>
+      ))}
+    </div>
+  );
 }

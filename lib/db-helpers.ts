@@ -111,7 +111,10 @@ async function loadRoundRows(tournamentId: string): Promise<RoundRow[]> {
  * ronda amagada no es colés per la porta del darrere via les classificacions
  * secundàries (Bingos, Millor jugada...), que no passaven per aquest sedàs.
  */
-export async function loadVisibleRoundIds(tournamentId: string): Promise<Set<string>> {
+export async function loadVisibleRoundIds(
+  tournamentId: string,
+  livePhaseIds: string[] = []
+): Promise<Set<string>> {
   const [tournament] = await db
     .select({ visibility: tournaments.visibility })
     .from(tournaments)
@@ -119,15 +122,36 @@ export async function loadVisibleRoundIds(tournamentId: string): Promise<Set<str
   const defaultResultsVisible = tournament?.visibility?.resultsVisible ?? true;
 
   const roundRows = await db
-    .select({ id: rounds.id, status: rounds.status, resultsVisible: rounds.resultsVisible })
+    .select({
+      id: rounds.id,
+      status: rounds.status,
+      resultsVisible: rounds.resultsVisible,
+      phaseId: rounds.phaseId,
+    })
     .from(rounds)
     .where(eq(rounds.tournamentId, tournamentId));
 
+  // Les fases en temps real compten també amb la ronda oberta.
+  const live = new Set(livePhaseIds);
+
   return new Set(
     roundRows
-      .filter((r) => r.status === 'closed' && (r.resultsVisible ?? defaultResultsVisible))
+      .filter(
+        (r) =>
+          (r.status === 'closed' || (live.has(r.phaseId) && r.status === 'open')) &&
+          (r.resultsVisible ?? defaultResultsVisible)
+      )
       .map((r) => r.id)
   );
+}
+
+/** Fases la classificació de les quals es mostra en temps real (compten les rondes obertes). */
+export async function loadLivePhaseIds(tournamentId: string): Promise<string[]> {
+  const rows = await db
+    .select({ id: phases.id })
+    .from(phases)
+    .where(and(eq(phases.tournamentId, tournamentId), eq(phases.standingsLive, true)));
+  return rows.map((r) => r.id);
 }
 
 async function loadParticipants(roundIds: string[]) {
@@ -178,11 +202,11 @@ function buildMatch(
  */
 export async function loadScoredMatches(
   tournamentId: string,
-  opts: { onlyClosedRounds?: boolean; upToRound?: number; phaseIds?: string[] } = {}
+  opts: { onlyClosedRounds?: boolean; upToRound?: number; phaseIds?: string[]; livePhaseIds?: string[] } = {}
 ): Promise<ScoredMatch[]> {
   const roundRows = await loadRoundRows(tournamentId);
   const phaseFilter = opts.phaseIds ? new Set(opts.phaseIds) : null;
-  const visibleIds = opts.onlyClosedRounds ? await loadVisibleRoundIds(tournamentId) : null;
+  const visibleIds = opts.onlyClosedRounds ? await loadVisibleRoundIds(tournamentId, opts.livePhaseIds) : null;
 
   const usable = roundRows.filter((r) => {
     if (visibleIds && !visibleIds.has(r.id)) return false;
@@ -219,11 +243,11 @@ export interface CombinedMatchRow {
  */
 export async function loadCombinedMatchRanking(
   tournamentId: string,
-  opts: { onlyClosedRounds?: boolean; upToRound?: number; phaseIds?: string[] } = {}
+  opts: { onlyClosedRounds?: boolean; upToRound?: number; phaseIds?: string[]; livePhaseIds?: string[] } = {}
 ): Promise<CombinedMatchRow[]> {
   const roundRows = await loadRoundRows(tournamentId);
   const phaseFilter = opts.phaseIds ? new Set(opts.phaseIds) : null;
-  const visibleIds = opts.onlyClosedRounds ? await loadVisibleRoundIds(tournamentId) : null;
+  const visibleIds = opts.onlyClosedRounds ? await loadVisibleRoundIds(tournamentId, opts.livePhaseIds) : null;
 
   const usable = roundRows.filter((r) => {
     if (visibleIds && !visibleIds.has(r.id)) return false;
@@ -332,7 +356,7 @@ export async function loadEntryMatches(tournamentId: string, entryId: string) {
  */
 export async function loadQuestionMetrics(
   tournamentId: string,
-  opts: { onlyClosedRounds?: boolean; phaseIds?: string[] } = {}
+  opts: { onlyClosedRounds?: boolean; phaseIds?: string[]; livePhaseIds?: string[] } = {}
 ): Promise<{
   metrics: QuestionMetric[];
   answers: MetricAnswer[];
@@ -355,7 +379,7 @@ export async function loadQuestionMetrics(
   if (definitions.length === 0) return { metrics: [], answers: [] };
 
   const keyByQuestionId = new Map(definitions.map((d) => [d.id, d.key]));
-  const visibleIds = opts.onlyClosedRounds ? await loadVisibleRoundIds(tournamentId) : null;
+  const visibleIds = opts.onlyClosedRounds ? await loadVisibleRoundIds(tournamentId, opts.livePhaseIds) : null;
   const phaseFilter = opts.phaseIds ? new Set(opts.phaseIds) : null;
 
   const rows = await db
@@ -404,7 +428,7 @@ export async function loadQuestionMetrics(
 async function loadWordAnswers(
   tournamentId: string,
   entryId: string,
-  opts: { onlyClosedRounds?: boolean } = {}
+  opts: { onlyClosedRounds?: boolean; livePhaseIds?: string[] } = {}
 ): Promise<Map<string, { value: number; text: string }>> {
   const wordQuestions = await db
     .select({ id: questionDefinitions.id, key: questionDefinitions.key })
@@ -414,7 +438,7 @@ async function loadWordAnswers(
     );
   if (wordQuestions.length === 0) return new Map();
 
-  const visibleIds = opts.onlyClosedRounds ? await loadVisibleRoundIds(tournamentId) : null;
+  const visibleIds = opts.onlyClosedRounds ? await loadVisibleRoundIds(tournamentId, opts.livePhaseIds) : null;
 
   const rows = await db
     .select({
@@ -451,7 +475,7 @@ async function loadWordAnswers(
 export async function loadEntryWordAnswers(
   tournamentId: string,
   entryId: string,
-  opts: { onlyClosedRounds?: boolean } = {}
+  opts: { onlyClosedRounds?: boolean; livePhaseIds?: string[] } = {}
 ): Promise<Map<string, string>> {
   const best = await loadWordAnswers(tournamentId, entryId, opts);
   return new Map([...best].map(([key, v]) => [key, v.text]));
@@ -505,7 +529,7 @@ export interface MetricHistoryRow {
 export async function loadMetricHistory(
   tournamentId: string,
   questionKey: string,
-  opts: { onlyClosedRounds?: boolean; upToRound?: number; phaseIds?: string[] } = {}
+  opts: { onlyClosedRounds?: boolean; upToRound?: number; phaseIds?: string[]; livePhaseIds?: string[] } = {}
 ): Promise<Map<string, MetricHistoryRow[]>> {
   const result = new Map<string, MetricHistoryRow[]>();
 
@@ -515,7 +539,7 @@ export async function loadMetricHistory(
     .where(and(eq(questionDefinitions.tournamentId, tournamentId), eq(questionDefinitions.key, questionKey)));
   if (!question) return result;
 
-  const visibleIds = opts.onlyClosedRounds ? await loadVisibleRoundIds(tournamentId) : null;
+  const visibleIds = opts.onlyClosedRounds ? await loadVisibleRoundIds(tournamentId, opts.livePhaseIds) : null;
   const phaseFilter = opts.phaseIds ? new Set(opts.phaseIds) : null;
 
   const roundRows = (

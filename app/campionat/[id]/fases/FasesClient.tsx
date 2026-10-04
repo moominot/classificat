@@ -29,6 +29,7 @@ interface Fase {
   participantsPerMatch: number;
   config: PhaseConfig;
   isComplete: boolean;
+  standingsLive: boolean;
 }
 
 interface EntrantOption {
@@ -58,6 +59,35 @@ function desempatsDisponibles(participantsPerMatch: number) {
 }
 
 const TOTS_ELS_DESEMPATS = desempatsDisponibles(2);
+
+/** Si la classificació de la fase compta també les rondes obertes o només les tancades. */
+function ModeClassificacio({ value, onChange }: { value: boolean; onChange: (live: boolean) => void }) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-ink mb-1.5">Classificació</label>
+      <div className="flex gap-2">
+        {[
+          { live: false, label: 'Només rondes tancades' },
+          { live: true, label: 'En temps real' },
+        ].map((o) => (
+          <button
+            key={String(o.live)}
+            type="button"
+            onClick={() => onChange(o.live)}
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+              value === o.live ? 'bg-accent text-surface' : 'bg-surface-2 text-ink-2 hover:text-ink'
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+      <p className="text-xs text-ink-3 mt-1.5">
+        En temps real, els resultats de la ronda oberta ja compten a la classificació pública.
+      </p>
+    </div>
+  );
+}
 
 /** Treu files incompletes o amb el mateix jugador/etiqueta a banda i banda abans d'enviar. */
 function cleanEntryExclusions(rules: EntryPairExclusion[]): EntryPairExclusion[] {
@@ -356,6 +386,9 @@ function FaseCard({
             {fase.endRound - fase.startRound + 1} ronda{fase.endRound - fase.startRound + 1 !== 1 ? 'es' : ''}
           </p>
           {configInfo && <p className="text-xs text-ink-3 mt-1">{configInfo}</p>}
+          <p className="text-xs text-ink-3 mt-1">
+            Classificació: {fase.standingsLive ? 'en temps real' : 'només rondes tancades'}
+          </p>
           {fase.tiebreakers.length > 0 && (
             <p className="text-xs text-ink-3 mt-1 leading-relaxed">
               Desempats: {fase.tiebreakers.map(t =>
@@ -428,6 +461,7 @@ function EditarFaseForm({
   const [startRound, setStartRound] = useState(fase.startRound.toString());
   const [endRound, setEndRound] = useState(fase.endRound.toString());
   const [desempats, setDesempats] = useState<string[]>(fase.tiebreakers);
+  const [standingsLive, setStandingsLive] = useState(fase.standingsLive ?? false);
   const [participantsPerMatch, setParticipantsPerMatch] = useState(fase.participantsPerMatch ?? 2);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -528,6 +562,7 @@ function EditarFaseForm({
         startRound: parseInt(startRound),
         endRound: parseInt(endRound),
         tiebreakers: desempats,
+        standingsLive,
         participantsPerMatch,
         config: buildConfig(),
       }),
@@ -660,6 +695,8 @@ function EditarFaseForm({
         <DesempatsPicker participantsPerMatch={participantsPerMatch} value={desempats} onChange={setDesempats} />
       )}
 
+      <ModeClassificacio value={standingsLive} onChange={setStandingsLive} />
+
       {error && <p className="text-sm text-loss">{error}</p>}
 
       <div className="flex gap-2">
@@ -692,6 +729,7 @@ function NovaFaseForm({
   const [startRound, setStartRound] = useState('');
   const [endRound, setEndRound] = useState('');
   const [desempats, setDesempats] = useState<string[]>(['median_buchholz', 'buchholz', 'spread']);
+  const [standingsLive, setStandingsLive] = useState(false);
   const [participantsPerMatch, setParticipantsPerMatch] = useState(2);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -784,6 +822,7 @@ function NovaFaseForm({
         startRound: parseInt(startRound),
         endRound: parseInt(endRound),
         tiebreakers: desempats,
+        standingsLive,
         participantsPerMatch,
         config: buildConfig(),
       }),
@@ -914,6 +953,8 @@ function NovaFaseForm({
       {metode !== 'manual' && (
         <DesempatsPicker participantsPerMatch={participantsPerMatch} value={desempats} onChange={setDesempats} />
       )}
+
+      <ModeClassificacio value={standingsLive} onChange={setStandingsLive} />
 
       {error && <p className="text-sm text-loss">{error}</p>}
 

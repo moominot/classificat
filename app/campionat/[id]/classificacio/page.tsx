@@ -85,7 +85,7 @@ export default async function ClassificacioPage({
   // `vistaCompleta`, que no depèn de la fase/ronda triades). "Sense triar"
   // equival a la darrera ronda disponible — no hi ha un estat "general"
   // separat, perquè seria exactament el mateix que la darrera ronda.
-  const rondesVisiblesIds = vistaCompleta.mode === 'closed_rounds' ? await loadVisibleRoundIds(id) : null;
+  const rondesVisiblesIds = vistaCompleta.mode === 'closed_rounds' ? await loadVisibleRoundIds(id, vistaCompleta.livePhaseIds) : null;
   const rondesDisponibles = (
     rondesVisiblesIds
       ? totes_rondes.filter((r) => rondesVisiblesIds.has(r.id))
@@ -196,6 +196,7 @@ export default async function ClassificacioPage({
   const historial = preguntaActiva
     ? await loadMetricHistory(id, pestanya, {
         onlyClosedRounds: vista.mode === 'closed_rounds',
+        livePhaseIds: vista.livePhaseIds,
         upToRound: rondaSeleccionada ?? undefined,
         phaseIds: faseSeleccionada ? [faseSeleccionada] : undefined,
       })
@@ -208,6 +209,7 @@ export default async function ClassificacioPage({
     pestanya === 'partida-conjunta'
       ? await loadCombinedMatchRanking(id, {
           onlyClosedRounds: vista.mode === 'closed_rounds',
+          livePhaseIds: vista.livePhaseIds,
           upToRound:
             rondaSeleccionada ??
             (vista.mode === 'frozen_at' && vista.frozenRound !== null ? vista.frozenRound : undefined),

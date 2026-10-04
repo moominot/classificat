@@ -6,7 +6,7 @@ import { questionDefinitions } from '@/db/schema';
 import Badge from '@/components/ui/Badge';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import { canManageTournament, getCurrentAccount } from '@/lib/authz';
-import { loadEntrantsWithContact, loadEntryMatches, loadEntryWordAnswers, loadTags, loadVisibleRoundIds } from '@/lib/db-helpers';
+import { loadEntrantsWithContact, loadEntryMatches, loadEntryWordAnswers, loadLivePhaseIds, loadTags, loadVisibleRoundIds } from '@/lib/db-helpers';
 import { loadStandings } from '@/lib/standings-service';
 
 export const dynamic = 'force-dynamic';
@@ -45,11 +45,12 @@ export default async function JugadorDetallPage({
   const tagMap = new Map(tots_tags.map((t) => [t.id, t.name]));
   const nomPerEntry = new Map(inscrits.map((e) => [e.id, e.displayName]));
 
+  const livePhaseIds = canManage ? [] : await loadLivePhaseIds(id);
   const [vista, partidesReals, paraulesDestacades, visiblesIds] = await Promise.all([
     loadStandings(id, { canManage }),
     loadEntryMatches(id, pid),
-    loadEntryWordAnswers(id, pid, { onlyClosedRounds: !canManage }),
-    canManage ? null : loadVisibleRoundIds(id),
+    loadEntryWordAnswers(id, pid, { onlyClosedRounds: !canManage, livePhaseIds }),
+    canManage ? null : loadVisibleRoundIds(id, livePhaseIds),
   ]);
 
   // Una ronda sense resultats publicats és, per a qui no gestiona, com si no

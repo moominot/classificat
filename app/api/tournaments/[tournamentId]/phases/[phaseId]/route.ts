@@ -68,6 +68,7 @@ export async function PATCH(req: Request, { params }: Params) {
       tiebreakers,
       scoring: body.scoring ?? phase.scoring,
       standingsScope: body.standingsScope ?? phase.standingsScope,
+      standingsLive: typeof body.standingsLive === 'boolean' ? body.standingsLive : phase.standingsLive,
       teamAggregation: body.teamAggregation ?? phase.teamAggregation,
     })
     .where(eq(phases.id, phaseId));

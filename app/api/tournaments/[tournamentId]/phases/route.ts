@@ -75,6 +75,8 @@ export async function POST(req: Request, { params }: Params) {
   const teamAggregation: TeamAggregation | null =
     body.teamAggregation ?? previous?.teamAggregation ?? null;
 
+  const standingsLive: boolean = typeof body.standingsLive === 'boolean' ? body.standingsLive : (previous?.standingsLive ?? false);
+
   const invalid = validatePhaseConfig({ method, participantsPerMatch, tiebreakers });
   if (invalid) return NextResponse.json({ error: invalid }, { status: 400 });
 
@@ -90,6 +92,7 @@ export async function POST(req: Request, { params }: Params) {
     tiebreakers,
     standingsScope,
     teamAggregation,
+    standingsLive,
     startRound,
     endRound,
     isComplete: false,
