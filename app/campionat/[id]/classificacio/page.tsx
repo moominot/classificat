@@ -35,6 +35,13 @@ const METRIC_LABELS: Record<string, string> = {
   total_score: 'Punts a favor',
 };
 
+const MODE_PUBLIC: Record<string, string> = {
+  live: 'la classificació en temps real',
+  closed_rounds: 'només les rondes tancades (i les fases en temps real)',
+  frozen_at: 'la classificació congelada',
+  hidden: 'cap classificació',
+};
+
 const MODE_NOTICE: Record<string, string> = {
   frozen_at: 'La classificació està congelada: no inclou les últimes rondes.',
 };
@@ -49,7 +56,11 @@ export default async function ClassificacioPage({
   const [{ id }, sp] = await Promise.all([params, searchParams]);
 
   const account = await getCurrentAccount();
-  const canManage = account ? await canManageTournament(account, id) : false;
+  const esAdmin = account ? await canManageTournament(account, id) : false;
+  // L'admin ho veu tot en temps real, i així no podria comprovar què veuen
+  // els jugadors: amb `?v=jugador` la classificació es calcula com per a ells.
+  const veureComJugador = esAdmin && sp.v === 'jugador';
+  const canManage = esAdmin && !veureComJugador;
 
   const [totes_fases, totesPreguntes, totesEtiquetes, vistaCompleta, totes_rondes, entrants] = await Promise.all([
     db.select().from(phases).where(eq(phases.tournamentId, id)).orderBy(asc(phases.order)),
@@ -234,9 +245,24 @@ export default async function ClassificacioPage({
       : null;
   const avis = MODE_NOTICE[vista.mode];
 
+  // Per fases: amb el mode "rondes tancades", cada fase decideix si hi compta
+  // també la ronda oberta. Sense dir-ho, dues classificacions idèntiques
+  // semblarien una sola cosa (i l'admin, que ho veu tot en temps real, no
+  // veuria cap diferència).
+  const fasesEnTempsReal = totes_fases.filter((f) => vista.livePhaseIds.includes(f.id)).map((f) => f.name);
+  const avisFases =
+    vista.mode === 'closed_rounds' && fasesEnTempsReal.length > 0
+      ? `En temps real: ${fasesEnTempsReal.join(', ')}. La resta de fases, només rondes tancades.`
+      : null;
+  const avisAdmin =
+    esAdmin && !veureComJugador && vista.publicMode !== 'live'
+      ? `Vista d'administrador: es mostra tot en temps real. Els jugadors veuen ${MODE_PUBLIC[vista.publicMode]}.`
+      : null;
+
   // Un únic constructor d'enllaç perquè pestanya/ronda/fase/cerca es puguin
   // combinar sense que triar-ne un esborri els altres.
-  function hrefFor(overrides: { t?: string; f?: string | null; r?: number | null; clearFilters?: boolean }) {
+  function hrefFor(overrides: { t?: string; f?: string | null; r?: number | null; v?: 'jugador' | null; clearFilters?: boolean }) {
+    const vistaJugador = overrides.v !== undefined ? overrides.v === 'jugador' : veureComJugador;
     const params = new URLSearchParams();
     const t = overrides.t ?? pestanya;
     const f = overrides.f !== undefined ? overrides.f : overrides.clearFilters ? null : faseSeleccionada;
@@ -244,6 +270,7 @@ export default async function ClassificacioPage({
     if (t && t !== 'general') params.set('t', t);
     if (f) params.set('f', f);
     if (r !== null && r !== maxRonda) params.set('r', String(r));
+    if (vistaJugador) params.set('v', 'jugador');
     if (!overrides.clearFilters) {
       if (sp.q) params.set('q', sp.q);
       if (sp.br) params.set('br', sp.br);
@@ -262,11 +289,24 @@ export default async function ClassificacioPage({
 
   return (
     <div className="space-y-4">
-      {(avis || avisRondes) && (
-        <p className="text-xs text-ink-3 bg-surface-2 border border-border rounded-lg px-3 py-2">
-          {avisRondes ?? avis}
-          {vista.mode === 'frozen_at' && vista.frozenRound !== null && ` Última ronda inclosa: ${vista.frozenRound}.`}
-        </p>
+      {esAdmin && (
+        <div className="flex items-center gap-1.5 text-xs">
+          <Link href={hrefFor({ v: null })} className={pillClass(!veureComJugador)}>Vista d&apos;administrador</Link>
+          <Link href={hrefFor({ v: 'jugador' })} className={pillClass(veureComJugador)}>Vista de jugador</Link>
+        </div>
+      )}
+
+      {(avis || avisRondes || avisFases || avisAdmin) && (
+        <div className="text-xs text-ink-3 bg-surface-2 border border-border rounded-lg px-3 py-2 space-y-1">
+          {avisAdmin && <p>{avisAdmin}</p>}
+          {(avisRondes ?? avis) && (
+            <p>
+              {avisRondes ?? avis}
+              {vista.mode === 'frozen_at' && vista.frozenRound !== null && ` Última ronda inclosa: ${vista.frozenRound}.`}
+            </p>
+          )}
+          {avisFases && <p>{avisFases}</p>}
+        </div>
       )}
 
       <div className="flex items-center gap-2">
@@ -329,6 +369,7 @@ export default async function ClassificacioPage({
           bv={sp.bv ?? ''}
           tags={totesEtiquetes}
           tagsSeleccionades={tagsSeleccionades}
+          vistaJugador={veureComJugador}
         />
       </div>
 

@@ -31,6 +31,8 @@ export interface StandingsView {
   /** Mode aplicat realment: per a qui gestiona sempre és `live`. */
   mode: StandingsMode;
   frozenRound: number | null;
+  /** Mode configurat per als jugadors (`mode` val `live` per a qui gestiona). */
+  publicMode: StandingsMode;
   /** Fases en temps real: en mode `closed_rounds` també hi compten les rondes obertes. */
   livePhaseIds: string[];
   standings: StandingRow[];
@@ -40,6 +42,7 @@ export interface StandingsView {
 const HIDDEN: StandingsView = {
   visible: false,
   mode: 'hidden',
+  publicMode: 'hidden',
   frozenRound: null,
   livePhaseIds: [],
   standings: [],
@@ -106,6 +109,7 @@ export async function loadStandings(
   return {
     visible: true,
     mode,
+    publicMode: visibility.standingsMode,
     frozenRound: visibility.frozenRound,
     livePhaseIds,
     standings: rows,

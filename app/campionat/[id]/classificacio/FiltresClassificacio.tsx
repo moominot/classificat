@@ -22,6 +22,7 @@ export default function FiltresClassificacio({
   bv,
   tags,
   tagsSeleccionades,
+  vistaJugador = false,
 }: {
   tournamentId: string;
   pestanya: string;
@@ -34,6 +35,8 @@ export default function FiltresClassificacio({
   bv: string;
   tags: Tag[];
   tagsSeleccionades: string[];
+  /** Vista de jugador per a l'admin: es conserva com la pestanya. */
+  vistaJugador?: boolean;
 }) {
   const router = useRouter();
   const [obert, setObert] = useState(false);
@@ -44,6 +47,7 @@ export default function FiltresClassificacio({
     const params = new URLSearchParams();
     if (pestanya !== 'general') params.set('t', pestanya);
     if (rondaSeleccionada !== null) params.set('r', String(rondaSeleccionada));
+    if (vistaJugador) params.set('v', 'jugador');
     return params;
   }
 
