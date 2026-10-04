@@ -1173,6 +1173,132 @@ const SEEDING_CRITERION_LABELS: Record<SeedingCriterion, string> = {
 };
 const ALL_SEEDING_CRITERIA: SeedingCriterion[] = ['points', 'elo', 'rank', 'name'];
 
+/**
+ * Tria i ordre dels criteris de seeding, amb arrossegament — mateix patró
+ * que `DesempatsPicker` (Pointer Events perquè funcioni també al mòbil):
+ * es mostren en l'ordre triat, no en un ordre fix amb número al costat.
+ */
+function SeedingCriteriaPicker({
+  value, onChange,
+}: {
+  value: SeedingCriterion[];
+  onChange: (next: SeedingCriterion[]) => void;
+}) {
+  const noSeleccionats = ALL_SEEDING_CRITERIA.filter(c => !value.includes(c));
+
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+  const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+
+  function handlePointerMove(e: React.PointerEvent) {
+    if (dragIndex === null) return;
+    for (const [idx, el] of itemRefs.current) {
+      const rect = el.getBoundingClientRect();
+      if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
+        setOverIndex(idx);
+        return;
+      }
+    }
+  }
+
+  function handlePointerUp() {
+    if (dragIndex !== null && overIndex !== null && dragIndex !== overIndex) {
+      const next = [...value];
+      const [moved] = next.splice(dragIndex, 1);
+      next.splice(overIndex, 0, moved);
+      onChange(next);
+    }
+    setDragIndex(null);
+    setOverIndex(null);
+  }
+
+  function move(c: SeedingCriterion, dir: -1 | 1) {
+    const i = value.indexOf(c);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= value.length) return;
+    const next = [...value];
+    [next[i], next[j]] = [next[j], next[i]];
+    onChange(next);
+  }
+
+  function remove(c: SeedingCriterion) {
+    onChange(value.filter(x => x !== c));
+  }
+
+  function add(c: SeedingCriterion) {
+    onChange([...value, c]);
+  }
+
+  return (
+    <div>
+      <p className="text-sm font-medium text-ink-2 mb-2">
+        Ordre de seeding
+        <span className="font-normal text-ink-3 ml-2">Arrossega per reordenar</span>
+      </p>
+
+      {value.length === 0 ? (
+        <p className="text-xs text-ink-3 mb-2">Cap criteri triat.</p>
+      ) : (
+        <div className="space-y-1 mb-2">
+          {value.map((c, i) => (
+            <div
+              key={c}
+              ref={el => { if (el) itemRefs.current.set(i, el); else itemRefs.current.delete(i); }}
+              className={`flex items-center gap-1.5 rounded-lg px-2 py-2 bg-accent-tint border transition-colors ${
+                dragIndex === i ? 'opacity-50' : overIndex === i && dragIndex !== null ? 'border-accent-ink' : 'border-accent'
+              }`}
+            >
+              <button
+                type="button"
+                onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); setDragIndex(i); }}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerUp}
+                className="touch-none cursor-grab active:cursor-grabbing text-accent-ink p-1.5 -ml-1 flex-shrink-0"
+                aria-label="Arrossega per reordenar"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="8" cy="6" r="1.6" /><circle cx="16" cy="6" r="1.6" />
+                  <circle cx="8" cy="12" r="1.6" /><circle cx="16" cy="12" r="1.6" />
+                  <circle cx="8" cy="18" r="1.6" /><circle cx="16" cy="18" r="1.6" />
+                </svg>
+              </button>
+              <span className="w-4 text-xs font-mono text-accent-ink flex-shrink-0">{i + 1}.</span>
+              <span className="text-sm flex-1 text-accent-ink font-medium truncate">{SEEDING_CRITERION_LABELS[c]}</span>
+              <div className="flex gap-0.5 flex-shrink-0">
+                <button type="button" onClick={() => move(c, -1)}
+                  className="p-1 text-accent-ink disabled:opacity-30" disabled={i === 0} aria-label="Puja">▲</button>
+                <button type="button" onClick={() => move(c, 1)}
+                  className="p-1 text-accent-ink disabled:opacity-30" disabled={i === value.length - 1} aria-label="Baixa">▼</button>
+              </div>
+              <button type="button" onClick={() => remove(c)}
+                className="p-1 text-accent-ink hover:text-loss flex-shrink-0" aria-label="Treu">✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {noSeleccionats.length > 0 && (
+        <div>
+          {value.length > 0 && <p className="text-xs text-ink-3 mb-1">Afegeix-ne:</p>}
+          <div className="flex flex-wrap gap-1.5">
+            {noSeleccionats.map(c => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => add(c)}
+                className="px-2.5 py-1.5 rounded-lg border border-border text-xs text-ink-2 hover:border-ink-3 hover:bg-surface-2 transition-colors cursor-pointer"
+              >
+                + {SEEDING_CRITERION_LABELS[c]}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ConfigSwiss({
   avoidRematches, setAvoidRematches, carry, setCarry,
   seedingCriteria, setSeedingCriteria, scope, setScope, tagIds, setTagIds, fases, tags,
@@ -1194,24 +1320,6 @@ function ConfigSwiss({
   exclusions: EntryPairExclusion[];
   setExclusions: (v: EntryPairExclusion[]) => void;
 }) {
-  function toggleCriterion(c: SeedingCriterion) {
-    setSeedingCriteria(
-      seedingCriteria.includes(c)
-        ? seedingCriteria.filter(x => x !== c)
-        : [...seedingCriteria, c]
-    );
-  }
-
-  function moveCriterion(c: SeedingCriterion, dir: -1 | 1) {
-    const i = seedingCriteria.indexOf(c);
-    if (i < 0) return;
-    const next = [...seedingCriteria];
-    const j = i + dir;
-    if (j < 0 || j >= next.length) return;
-    [next[i], next[j]] = [next[j], next[i]];
-    setSeedingCriteria(next);
-  }
-
   return (
     <div className="bg-accent-tint rounded-lg p-4 space-y-3">
       <p className="text-xs font-semibold text-accent-ink uppercase tracking-wide">Configuració Suís</p>
@@ -1224,37 +1332,7 @@ function ConfigSwiss({
 
       <EntryExclusionsEditor entrants={entrants} rules={exclusions} setRules={setExclusions} />
 
-      <div>
-        <p className="text-sm font-medium text-ink-2 mb-1">Ordre de seeding</p>
-        <div className="space-y-1">
-          {ALL_SEEDING_CRITERIA.map(c => {
-            const active = seedingCriteria.includes(c);
-            const pos = seedingCriteria.indexOf(c);
-            return (
-              <div key={c} className={`flex items-center gap-2 rounded px-2 py-1 text-sm ${active ? 'bg-accent-tint text-accent-ink' : 'text-ink-3'}`}>
-                <input
-                  type="checkbox"
-                  checked={active}
-                  onChange={() => toggleCriterion(c)}
-                  className="accent-current text-accent flex-shrink-0"
-                />
-                {active && (
-                  <span className="w-4 text-xs font-mono text-accent-ink flex-shrink-0">{pos + 1}.</span>
-                )}
-                <span className={active ? '' : 'ml-4'}>{SEEDING_CRITERION_LABELS[c]}</span>
-                {active && (
-                  <div className="ml-auto flex gap-0.5">
-                    <button type="button" onClick={() => moveCriterion(c, -1)} disabled={pos === 0}
-                      className="px-1 text-accent-ink hover:text-accent-ink disabled:opacity-30 text-xs">▲</button>
-                    <button type="button" onClick={() => moveCriterion(c, 1)} disabled={pos === seedingCriteria.length - 1}
-                      className="px-1 text-accent-ink hover:text-accent-ink disabled:opacity-30 text-xs">▼</button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      <SeedingCriteriaPicker value={seedingCriteria} onChange={setSeedingCriteria} />
 
       {fases.length > 0 && (
         <div>
