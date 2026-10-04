@@ -218,6 +218,7 @@ export default async function RondaPage({
           teAparellaments={totals > 0}
           teResultats={jugades > 0}
           resultatsPublics={ronda.resultsVisible ?? null}
+          esUltima={!totes_rondes.some((r) => r.number > ronda.number)}
         />
       </div>
 
