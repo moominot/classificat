@@ -200,6 +200,63 @@ export async function loadScoredMatches(
   }));
 }
 
+/** Una partida amb puntuació, per a la classificació de "millor partida conjunta". */
+export interface CombinedMatchRow {
+  matchId: string;
+  roundNumber: number;
+  tableNumber: number;
+  combinedScore: number;
+  participants: Array<{ entryId: string; score: number }>;
+}
+
+/**
+ * Totes les partides jugades (no byes) amb puntuació als dos costats,
+ * ordenades de més a menys per la suma dels punts dels participants — la
+ * "millor partida conjunta" no és un mèrit d'un jugador, sinó de la taula.
+ *
+ * Mateix sedàs de rondes visibles que `loadScoredMatches`, perquè respecti
+ * els mateixos modes de classificació (§8.2/§8.3).
+ */
+export async function loadCombinedMatchRanking(
+  tournamentId: string,
+  opts: { onlyClosedRounds?: boolean; upToRound?: number; phaseIds?: string[] } = {}
+): Promise<CombinedMatchRow[]> {
+  const roundRows = await loadRoundRows(tournamentId);
+  const phaseFilter = opts.phaseIds ? new Set(opts.phaseIds) : null;
+  const visibleIds = opts.onlyClosedRounds ? await loadVisibleRoundIds(tournamentId) : null;
+
+  const usable = roundRows.filter((r) => {
+    if (visibleIds && !visibleIds.has(r.id)) return false;
+    if (opts.upToRound !== undefined && r.number > opts.upToRound) return false;
+    if (phaseFilter && !phaseFilter.has(r.phaseId)) return false;
+    return true;
+  });
+
+  const { matchRows, participantRows } = await loadParticipants(usable.map((r) => r.id));
+  const roundNumberByRound = new Map(usable.map((r) => [r.id, r.number]));
+
+  const rows: CombinedMatchRow[] = [];
+  for (const matchRow of matchRows) {
+    const participants = participantRows
+      .filter((p) => p.matchId === matchRow.id)
+      .sort((a, b) => a.seat - b.seat);
+
+    // Un bye no és una "partida conjunta", i sense tots els resultats encara
+    // no hi ha suma a mostrar.
+    if (participants.length < 2 || participants.some((p) => p.score === null)) continue;
+
+    rows.push({
+      matchId: matchRow.id,
+      roundNumber: roundNumberByRound.get(matchRow.roundId) ?? 0,
+      tableNumber: matchRow.tableNumber,
+      combinedScore: participants.reduce((sum, p) => sum + (p.score ?? 0), 0),
+      participants: participants.map((p) => ({ entryId: p.entryId, score: p.score as number })),
+    });
+  }
+
+  return rows.sort((a, b) => b.combinedScore - a.combinedScore);
+}
+
 /** L'historial d'enfrontaments que necessita el motor per evitar revanxes. */
 export async function loadPreviousMatches(tournamentId: string): Promise<PreviousMatch[]> {
   const roundRows = await loadRoundRows(tournamentId);

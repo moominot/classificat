@@ -4,11 +4,18 @@ import { db } from '@/db';
 import { phases, questionDefinitions, rounds } from '@/db/schema';
 import { Card } from '@/components/ui/Card';
 import { canManageTournament, getCurrentAccount } from '@/lib/authz';
-import { loadEntrantsWithContact, loadMetricHistory, loadTags, loadVisibleRoundIds } from '@/lib/db-helpers';
+import {
+  loadCombinedMatchRanking,
+  loadEntrantsWithContact,
+  loadMetricHistory,
+  loadTags,
+  loadVisibleRoundIds,
+} from '@/lib/db-helpers';
 import { loadStandings } from '@/lib/standings-service';
 import { resolveTiebreaker } from '@/lib/pairing/tiebreakers';
 import RanquingMetrica from './RanquingMetrica';
 import ClassificacioGeneral from './ClassificacioGeneral';
+import RanquingPartidaConjunta from './RanquingPartidaConjunta';
 import FiltresClassificacio from './FiltresClassificacio';
 
 export const dynamic = 'force-dynamic';
@@ -139,6 +146,7 @@ export default async function ClassificacioPage({
 
   const PESTANYES: { id: string; label: string }[] = [
     { id: 'general', label: 'General' },
+    { id: 'partida-conjunta', label: 'Millor partida conjunta' },
     ...metriquesRanquing.map((key) => ({ id: key, label: etiqueta(key) })),
     ...(vista.teamStandings ? [{ id: 'equips', label: 'Equips' }] : []),
   ];
@@ -153,6 +161,18 @@ export default async function ClassificacioPage({
         phaseIds: faseSeleccionada ? [faseSeleccionada] : undefined,
       })
     : new Map();
+
+  // Mateix filtre de rondes/fase que la resta de pestanyes, només calculat
+  // quan es consulta — és una pestanya més, no part de la classificació
+  // general.
+  const partidesConjuntes =
+    pestanya === 'partida-conjunta'
+      ? await loadCombinedMatchRanking(id, {
+          onlyClosedRounds: vista.mode === 'closed_rounds',
+          upToRound: vista.mode === 'frozen_at' && vista.frozenRound !== null ? vista.frozenRound : undefined,
+          phaseIds: faseSeleccionada ? [faseSeleccionada] : undefined,
+        })
+      : [];
 
   // Quines rondes alimenten la classificació que s'està veient — útil quan el
   // director manté la incògnita de resultats fins al final i la xifra de
@@ -258,6 +278,12 @@ export default async function ClassificacioPage({
         </Card>
       ) : pestanya === 'general' ? (
         <ClassificacioGeneral tournamentId={id} standings={standingsFiltrats} desempats={desempatsGeneral} />
+      ) : pestanya === 'partida-conjunta' ? (
+        <RanquingPartidaConjunta
+          tournamentId={id}
+          rows={partidesConjuntes}
+          nomPerEntry={Object.fromEntries(entrants.map((e) => [e.id, e.displayName]))}
+        />
       ) : (
         <RanquingMetrica
           tournamentId={id}
