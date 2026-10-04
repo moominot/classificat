@@ -4,8 +4,9 @@ import {
   clearPresence,
   entryBelongsTo,
   lastPlannedRound,
+  awaitingRound,
   loadPresence,
-  roundAwaitingPresence,
+  needsAnswer,
   roundIsPaired,
   setPresence,
 } from '@/lib/presence';
@@ -20,12 +21,17 @@ type Params = { params: Promise<{ tournamentId: string }> };
 export async function GET(_req: Request, { params }: Params) {
   const { tournamentId } = await params;
   const viewer = await getViewer(tournamentId);
-  const roundNumber = await roundAwaitingPresence(tournamentId);
-  if (roundNumber === null || !viewer.entryId) {
+  const round = await awaitingRound(tournamentId);
+  const roundNumber = round?.number ?? null;
+  if (!round || !viewer.entryId) {
     return NextResponse.json({ roundNumber, status: 'pending' });
   }
-  const row = (await loadPresence(tournamentId, roundNumber)).get(viewer.entryId);
-  return NextResponse.json({ roundNumber, status: row?.status ?? 'pending' });
+  const row = (await loadPresence(tournamentId, round.number)).get(viewer.entryId);
+  // `pending` vol dir «pregunta-li»: no ha dit res o només hi ha una previsió d'abans de la ronda.
+  return NextResponse.json({
+    roundNumber,
+    status: needsAnswer(row, round.createdAt) ? 'pending' : (row?.status ?? 'pending'),
+  });
 }
 
 /**
