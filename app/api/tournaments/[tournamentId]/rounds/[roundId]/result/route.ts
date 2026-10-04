@@ -1,18 +1,11 @@
 import { NextResponse } from 'next/server';
-import { and, eq, inArray, isNull } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { v4 as uuid } from 'uuid';
 import { db } from '@/db';
-import {
-  matchAnswers,
-  matchParticipants,
-  matchRevisions,
-  matches,
-  phases,
-  questionDefinitions,
-  rounds,
-} from '@/db/schema';
+import { matchParticipants, matchRevisions, matches, phases, rounds } from '@/db/schema';
 import { canManageTournament, canReportResult, getViewer } from '@/lib/authz';
 import { scoreMatch } from '@/lib/pairing/scoring';
+import { saveAnswers, type AnswerInput } from '@/lib/pairing/match-answers';
 
 type Params = { params: Promise<{ tournamentId: string; roundId: string }> };
 
@@ -20,15 +13,6 @@ interface ParticipantInput {
   entryId: string;
   score?: number | null;
   rank?: number | null;
-}
-
-interface AnswerInput {
-  questionId: string;
-  /** null quan la pregunta és d'àmbit `match`. */
-  entryId?: string | null;
-  textValue?: string | null;
-  numberValue?: number | null;
-  imageUrl?: string | null;
 }
 
 /**
@@ -162,66 +146,4 @@ export async function PUT(req: Request, { params }: Params) {
   });
 
   return NextResponse.json({ ok: true, participants: scored });
-}
-
-/**
- * Desa les respostes de les preguntes.
- *
- * Ja no hi ha columnes fixes d'Scrabble: bingos, millor jugada i fotos són
- * respostes com qualsevol altra, i les que tenen agregació alimenten les
- * mètriques de la classificació (§12.1).
- */
-async function saveAnswers(
-  tournamentId: string,
-  matchId: string,
-  participants: Array<{ id: string; entryId: string }>,
-  answers: AnswerInput[]
-) {
-  if (answers.length === 0) return;
-
-  const questionIds = [...new Set(answers.map((a) => a.questionId))];
-  const questions = await db
-    .select()
-    .from(questionDefinitions)
-    .where(
-      and(
-        eq(questionDefinitions.tournamentId, tournamentId),
-        inArray(questionDefinitions.id, questionIds)
-      )
-    );
-  const known = new Set(questions.map((q) => q.id));
-  const participantIdByEntry = new Map(participants.map((p) => [p.entryId, p.id]));
-
-  for (const answer of answers) {
-    if (!known.has(answer.questionId)) continue;
-
-    const participantId = answer.entryId ? participantIdByEntry.get(answer.entryId) ?? null : null;
-    if (answer.entryId && !participantId) continue;
-
-    await db
-      .delete(matchAnswers)
-      .where(
-        and(
-          eq(matchAnswers.matchId, matchId),
-          eq(matchAnswers.questionId, answer.questionId),
-          participantId === null
-            ? isNull(matchAnswers.participantId)
-            : eq(matchAnswers.participantId, participantId)
-        )
-      );
-
-    const hasValue =
-      answer.textValue != null || answer.numberValue != null || answer.imageUrl != null;
-    if (!hasValue) continue;
-
-    await db.insert(matchAnswers).values({
-      id: uuid(),
-      matchId,
-      participantId,
-      questionId: answer.questionId,
-      textValue: answer.textValue ?? null,
-      numberValue: answer.numberValue ?? null,
-      imageUrl: answer.imageUrl ?? null,
-    });
-  }
 }

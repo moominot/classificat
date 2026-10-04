@@ -14,9 +14,11 @@ interface Props {
 }
 
 /**
- * Format llarg (docs a app/api/.../csv/route.ts): una fila per participant,
- * perquè amb taules de N jugadors no hi ha columnes fixes per "jugador 2".
- *   partida,taula,jugador,jugador_id,puntuacio,posicio,localitat,comentaris
+ * Format ample (docs a app/api/.../csv/route.ts): una fila per partida, amb
+ * un bloc de columnes per jugador (nom, idBARRUF, punts, preguntes pròpies)
+ * i les preguntes comunes de partida al final. El parsing es fa al servidor
+ * perquè les columnes depenen de les preguntes configurades — aquí només es
+ * llegeix el fitxer i es reenvia tal qual.
  */
 export default function CsvImportExport({ tournamentId, roundId, roundNumber, rondaTancada }: Props) {
   const router = useRouter();
@@ -38,22 +40,11 @@ export default function CsvImportExport({ tournamentId, roundId, roundNumber, ro
     setMissatge(null);
 
     try {
-      const text = await file.text();
-      const { rows, errors } = parseCsvResults(text);
-
-      if (errors.length > 0) {
-        setMissatge({ tipus: 'error', text: errors.join(' · ') });
-        return;
-      }
-      if (rows.length === 0) {
-        setMissatge({ tipus: 'error', text: "No s'han trobat resultats al CSV" });
-        return;
-      }
-
+      const csv = await file.text();
       const res = await fetch(`/api/tournaments/${tournamentId}/rounds/${roundId}/csv`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(rows),
+        body: JSON.stringify({ csv }),
       });
       if (!res.ok) {
         setMissatge({ tipus: 'error', text: await readError(res, 'Error en importar') });
@@ -105,74 +96,4 @@ export default function CsvImportExport({ tournamentId, roundId, roundNumber, ro
       )}
     </div>
   );
-}
-
-// ─── Parser CSV client-side ───────────────────────────────────────────────────
-
-type ImportRow = {
-  matchId: string;
-  entryId: string;
-  score: number | null;
-  rank: number | null;
-};
-
-function parseCsvResults(csvText: string): { rows: ImportRow[]; errors: string[] } {
-  const lines = csvText.trim().split('\n').map((l) => l.trim()).filter(Boolean);
-  const errors: string[] = [];
-  const rows: ImportRow[] = [];
-
-  if (lines.length < 2) {
-    errors.push('El CSV és buit o no té dades');
-    return { rows, errors };
-  }
-
-  // Salta la capçalera (primera línia)
-  for (let i = 1; i < lines.length; i++) {
-    const parts = parseLine(lines[i]);
-    // partida,taula,jugador,jugador_id,puntuacio,posicio,localitat,comentaris
-    const [matchId, , , entryId, scoreStr, rankStr] = parts;
-
-    if (!matchId || !entryId) continue;
-
-    const score = scoreStr ? parseInt(scoreStr, 10) : NaN;
-    const rank = rankStr ? parseInt(rankStr, 10) : NaN;
-
-    if (isNaN(score) && isNaN(rank)) {
-      // Fila de bye o sense resultat encara: se salta sense avisar.
-      continue;
-    }
-
-    rows.push({
-      matchId,
-      entryId,
-      score: isNaN(score) ? null : score,
-      rank: isNaN(rank) ? null : rank,
-    });
-  }
-
-  return { rows, errors };
-}
-
-function parseLine(line: string): string[] {
-  const result: string[] = [];
-  let i = 0;
-  while (i <= line.length) {
-    if (line[i] === '"') {
-      let val = '';
-      i++;
-      while (i < line.length) {
-        if (line[i] === '"' && line[i + 1] === '"') { val += '"'; i += 2; }
-        else if (line[i] === '"') { i++; break; }
-        else { val += line[i++]; }
-      }
-      result.push(val);
-      if (line[i] === ',') i++;
-    } else {
-      const end = line.indexOf(',', i);
-      if (end === -1) { result.push(line.slice(i)); break; }
-      result.push(line.slice(i, end));
-      i = end + 1;
-    }
-  }
-  return result;
 }
