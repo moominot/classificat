@@ -13,7 +13,7 @@ type Estat = { roundNumber: number | null; status: 'present' | 'absent' | 'pendi
  * El botó d'home mort, perquè no calgui ser a l'inici per veure'l: cada 30 s
  * (i en tornar a la pestanya) pregunta al servidor si hi ha una ronda
  * esperant resposta. Si és així i el jugador no ha respost, surt un modal
- * a qualsevol pàgina del campionat.
+ * a qualsevol pàgina del campionat. Amb «Més tard» torna a sortir als 30 s.
  *
  * A l'inici no surt el modal —hi ha la targeta—, però s'hi refresca la pàgina
  * perquè la targeta aparegui sola.
@@ -28,6 +28,13 @@ export default function PresenciaModal({ tournamentId }: { tournamentId: string 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const darrerSenyal = useRef<string | null>(null);
+
+  // «Més tard» només l'amaga un cicle: al cap de 30 s el modal torna a sortir.
+  useEffect(() => {
+    if (descartada === null) return;
+    const timer = setTimeout(() => setDescartada(null), POLL_MS);
+    return () => clearTimeout(timer);
+  }, [descartada]);
 
   const consulta = useCallback(async () => {
     try {
