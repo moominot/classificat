@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { and, eq } from 'drizzle-orm';
 import { db } from '@/db';
-import { entries, people, rounds, tournaments } from '@/db/schema';
+import { entries, matches, people, rounds, tournaments } from '@/db/schema';
 import { DEFAULT_VISIBILITY } from '@/db/types';
 import type { RoundStatus } from '@/db/types';
 import { canManageTournament, getCurrentAccount, requireTournamentAccess } from '@/lib/authz';
@@ -100,4 +100,39 @@ export async function PATCH(req: Request, { params }: Params) {
 
   await db.update(rounds).set(updates).where(eq(rounds.id, roundId));
   return NextResponse.json({ ...round, ...updates });
+}
+
+/**
+ * DELETE — Esborra una ronda que encara no té aparellaments.
+ *
+ * Només la darrera: esborrar-ne una del mig deixaria un forat a la numeració
+ * (la ronda següent es crea com a «màxim + 1»). Amb aparellaments hi ha
+ * resultats en joc: això es fa esborrant-los primer, a propòsit.
+ */
+export async function DELETE(_req: Request, { params }: Params) {
+  const { tournamentId, roundId } = await params;
+  const guard = await requireTournamentAccess(tournamentId);
+  if (guard.error) return guard.error;
+
+  const [round] = await db
+    .select()
+    .from(rounds)
+    .where(and(eq(rounds.id, roundId), eq(rounds.tournamentId, tournamentId)));
+  if (!round) return NextResponse.json({ error: 'Ronda no trobada' }, { status: 404 });
+
+  const [match] = await db.select({ id: matches.id }).from(matches).where(eq(matches.roundId, roundId)).limit(1);
+  if (match) {
+    return NextResponse.json(
+      { error: 'La ronda té aparellaments. Esborra\'ls primer si vols eliminar-la.' },
+      { status: 409 }
+    );
+  }
+
+  const all = await db.select({ number: rounds.number }).from(rounds).where(eq(rounds.tournamentId, tournamentId));
+  if (all.some((r) => r.number > round.number)) {
+    return NextResponse.json({ error: 'Només es pot esborrar la darrera ronda' }, { status: 409 });
+  }
+
+  await db.delete(rounds).where(eq(rounds.id, roundId));
+  return new NextResponse(null, { status: 204 });
 }

@@ -41,6 +41,9 @@ interface Props {
   potEditar: boolean;
   questions: QuestionDef[];
   existingAnswers: ExistingAnswer[];
+  /** Número de la ronda següent si encara se'n juguen més; null si no cal preguntar. */
+  properaRonda?: number | null;
+  continuaInicial?: Record<string, boolean>;
 }
 
 type Slot = { text: string; number: string; imageUrl: string };
@@ -95,6 +98,8 @@ export default function FormulariResultatWizard({
   potEditar,
   questions,
   existingAnswers,
+  properaRonda = null,
+  continuaInicial = {},
 }: Props) {
   const router = useRouter();
   const participants = partida.participants;
@@ -103,11 +108,16 @@ export default function FormulariResultatWizard({
   const [values, setValues] = useState<Values>(() =>
     initialValues(participants, questions, existingAnswers)
   );
+  const [continuen, setContinuen] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(participants.map((p) => [p.entryId, continuaInicial[p.entryId] ?? true]))
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const totalSteps = questions.length + 1; // +1 = pas de confirmació
-  const confirmStepIndex = questions.length;
+  // Pas de «continueu?» (si en queden de rondes) i pas de confirmació, al final.
+  const continuacioStepIndex = properaRonda !== null ? questions.length : -1;
+  const totalSteps = questions.length + (properaRonda !== null ? 1 : 0) + 1;
+  const confirmStepIndex = totalSteps - 1;
 
   function setSlot(questionId: string, entryId: string | null, patch: Partial<Slot>) {
     const key = slotKey(questionId, entryId);
@@ -191,7 +201,12 @@ export default function FormulariResultatWizard({
     const res = await fetch(`/api/tournaments/${tournamentId}/rounds/${roundId}/result`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ matchId: partida.id, participants: participantsPayload, answers }),
+      body: JSON.stringify({
+        matchId: partida.id,
+        participants: participantsPayload,
+        answers,
+        ...(properaRonda !== null ? { continues: continuen } : {}),
+      }),
     });
 
     if (res.ok) {
@@ -222,7 +237,11 @@ export default function FormulariResultatWizard({
   }
 
   const currentQuestion = step < questions.length ? questions[step] : null;
-  const stepTitle = currentQuestion ? currentQuestion.label : 'Confirma';
+  const stepTitle = currentQuestion
+    ? currentQuestion.label
+    : step === continuacioStepIndex
+      ? `Ronda ${properaRonda}`
+      : 'Confirma';
   const progressPct = Math.round(((step + 1) / totalSteps) * 100);
 
   return (
@@ -253,7 +272,21 @@ export default function FormulariResultatWizard({
         )}
 
         {step === confirmStepIndex && (
-          <ConfirmStep questions={questions} participants={participants} values={values} />
+          <ConfirmStep
+            questions={questions}
+            participants={participants}
+            values={values}
+            continuacio={properaRonda !== null ? { properaRonda, value: continuen } : null}
+          />
+        )}
+
+        {step === continuacioStepIndex && properaRonda !== null && (
+          <ContinuacioStep
+            properaRonda={properaRonda}
+            participants={participants}
+            value={continuen}
+            onChange={setContinuen}
+          />
         )}
 
         {error && <p className="text-sm text-loss mt-4">{error}</p>}
@@ -453,10 +486,12 @@ function ConfirmStep({
   questions,
   participants,
   values,
+  continuacio,
 }: {
   questions: QuestionDef[];
   participants: ParticipantVista[];
   values: Values;
+  continuacio: { properaRonda: number; value: Record<string, boolean> } | null;
 }) {
   const scoreQ = questions.find((q) => q.key === 'score');
   const participantQuestions = questions.filter((q) => q.scope === 'participant' && q.id !== scoreQ?.id);
@@ -476,6 +511,14 @@ function ConfirmStep({
                 </span>
               )}
             </div>
+            {continuacio && (
+              <div className="mb-1">
+                <ConfirmRow
+                  label={`Ronda ${continuacio.properaRonda}`}
+                  value={(continuacio.value[participant.entryId] ?? true) ? 'continua' : 'marxa'}
+                />
+              </div>
+            )}
             {participantQuestions.length > 0 && (
               <div className="space-y-1">
                 {participantQuestions.map((q) => (
@@ -498,6 +541,59 @@ function ConfirmStep({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Pas propi, com les preguntes del formulari: continueu a la ronda següent?
+ * Sí per defecte, perquè és el cas habitual. Si algú marxa, dir-ho aquí
+ * evita haver de refer els aparellaments quan ja estan fets.
+ */
+function ContinuacioStep({
+  properaRonda,
+  participants,
+  value,
+  onChange,
+}: {
+  properaRonda: number;
+  participants: ParticipantVista[];
+  value: Record<string, boolean>;
+  onChange: (v: Record<string, boolean>) => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="text-center mb-1">
+        <div className="font-display font-bold text-xl text-ink">Continueu a la ronda {properaRonda}?</div>
+        <div className="text-sm text-ink-3 mt-0.5">Si algú marxa, no el posarem en cap taula</div>
+      </div>
+      {participants.map((p, i) => {
+        const continua = value[p.entryId] ?? true;
+        return (
+          <ParticipantCard key={p.entryId} seat={i} name={p.displayName}>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => onChange({ ...value, [p.entryId]: true })}
+                className={`rounded-xl py-4 font-display font-bold text-xl transition-colors ${
+                  continua ? 'bg-win text-surface' : 'bg-surface text-ink-3 border border-border'
+                }`}
+              >
+                Sí
+              </button>
+              <button
+                type="button"
+                onClick={() => onChange({ ...value, [p.entryId]: false })}
+                className={`rounded-xl py-4 font-display font-bold text-xl transition-colors ${
+                  !continua ? 'bg-loss text-surface' : 'bg-surface text-ink-3 border border-border'
+                }`}
+              >
+                No
+              </button>
+            </div>
+          </ParticipantCard>
+        );
+      })}
     </div>
   );
 }

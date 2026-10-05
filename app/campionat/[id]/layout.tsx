@@ -7,6 +7,8 @@ import { ViewerProvider } from '@/components/ViewerContext';
 import { SetHeaderTitle } from '@/components/HeaderTitleContext';
 import NavTabs from './NavTabs';
 import ConfigSidebar from './ConfigSidebar';
+import AutoRefresh from './AutoRefresh';
+import PresenciaModal from './PresenciaModal';
 
 /**
  * Cada campionat s'ha de sentir com una aplicació pròpia: el nom del
@@ -42,6 +44,7 @@ export default async function CampionatLayout({
       }}
     >
       <SetHeaderTitle name={tournament.name} id={id} />
+      {canManage ? <AutoRefresh tournamentId={id} /> : viewer.entryId ? <PresenciaModal tournamentId={id} /> : null}
       <div className="lg:flex lg:gap-6 lg:items-start">
         {canManage && <ConfigSidebar id={id} />}
         <div className="flex-1 min-w-0 space-y-5">

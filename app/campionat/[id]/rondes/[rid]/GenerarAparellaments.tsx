@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -36,6 +36,8 @@ export default function GenerarAparellaments({
   participantsPerMatch,
   players = [],
   previousAbsentIds = [],
+  presencia = {},
+  pendentsCompten = 'present',
 }: {
   tournamentId: string;
   roundId: string;
@@ -44,20 +46,59 @@ export default function GenerarAparellaments({
   participantsPerMatch: number;
   players?: Jugador[];
   previousAbsentIds?: string[];
+  /** Qui ha respost si juga la ronda; qui no hi surt és pendent. */
+  presencia?: Record<string, 'present' | 'absent'>;
+  /** Com compten els pendents en aparellar (Ajustos). */
+  pendentsCompten?: 'present' | 'absent';
 }) {
   const router = useRouter();
   const canManage = useCanManage();
-  const [absentIds, setAbsentIds] = useState<Set<string>>(new Set(previousAbsentIds));
+  // Absents per defecte: els que han dit que no hi seran, els pendents si la
+  // política ho vol, i els de la ronda anterior que no han confirmat que
+  // tornen. Es calcula a cada render perquè les respostes dels jugadors
+  // arriben mentre el director té la pantalla oberta. El que marca el director
+  // es desa al servidor (`source = admin`) i el veuen els altres dispositius i
+  // administradors; `pendent` només estalvia l'espera fins que el refresc
+  // porta la resposta del servidor.
+  const [pendent, setPendent] = useState<Map<string, boolean>>(new Map());
+  const absentPerDefecte = (id: string) =>
+    presencia[id]
+      ? presencia[id] === 'absent'
+      : pendentsCompten === 'absent' || previousAbsentIds.includes(id);
+  const absentIds = new Set(players.filter((p) => pendent.get(p.id) ?? absentPerDefecte(p.id)).map((p) => p.id));
+
+  // Quan el servidor ja reflecteix la marca, l'optimista sobra.
+  useEffect(() => {
+    if (pendent.size === 0) return;
+    setPendent((prev) => {
+      const next = new Map(prev);
+      for (const [id, absent] of prev) if (presencia[id] === (absent ? 'absent' : 'present')) next.delete(id);
+      return next.size === prev.size ? prev : next;
+    });
+  }, [presencia, pendent.size]);
+  const confirmats = players.filter((p) => presencia[p.id] === 'present').length;
+  const noHiSeran = players.filter((p) => presencia[p.id] === 'absent').length;
+  const pendents = players.length - confirmats - noHiSeran;
 
   if (!canManage) return null;
 
-  function toggleAbsent(id: string) {
-    setAbsentIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
+  async function toggleAbsent(id: string) {
+    const absent = !absentIds.has(id);
+    setPendent(prev => new Map(prev).set(id, absent));
+    const res = await fetch(`/api/tournaments/${tournamentId}/presence`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roundNumber, entryId: id, status: absent ? 'absent' : 'present' }),
     });
+    if (!res.ok) {
+      // No s'ha desat: es desfà el canvi visible en lloc de deixar-lo enganyar.
+      setPendent(prev => {
+        const next = new Map(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+    router.refresh();
   }
 
   const playing = players.filter(p => !absentIds.has(p.id));
@@ -68,6 +109,13 @@ export default function GenerarAparellaments({
         <h3 className="text-sm font-semibold text-ink-2">Participants ronda {roundNumber}</h3>
         <span className="text-xs text-ink-3">{playing.length} jugadors</span>
       </div>
+
+      {players.length > 0 && (
+        <p className="text-xs text-ink-3 mb-2">
+          {confirmats} confirmats · {pendents} pendents (compten com a {pendentsCompten === 'present' ? 'presents' : 'absents'}) ·{' '}
+          {noHiSeran} no hi seran
+        </p>
+      )}
 
       {players.length === 0 ? (
         <p className="text-sm text-ink-3">No hi ha jugadors actius al campionat.</p>
@@ -91,6 +139,9 @@ export default function GenerarAparellaments({
                   className="rounded accent-current text-win flex-shrink-0"
                 />
                 <span className="truncate">{p.name}</span>
+                {presencia[p.id] === 'present' && <span className="ml-auto text-[10px] font-semibold uppercase">confirmat</span>}
+                {presencia[p.id] === 'absent' && <span className="ml-auto text-[10px] font-semibold uppercase">avisa</span>}
+                {!presencia[p.id] && <span className="ml-auto text-[10px] uppercase opacity-60">pendent</span>}
               </label>
             );
           })}

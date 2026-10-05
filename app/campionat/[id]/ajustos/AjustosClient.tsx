@@ -8,7 +8,7 @@ import Select from '@/components/ui/Select';
 import Badge from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { readError } from '@/lib/http';
-import type { StandingsMode, TournamentStatus, TournamentVisibility } from '@/db/types';
+import type { PresencePendingAs, StandingsMode, TournamentStatus, TournamentVisibility } from '@/db/types';
 
 const ESTATS: { value: TournamentStatus; label: string }[] = [
   { value: 'draft', label: 'Esborrany' },
@@ -46,18 +46,21 @@ export default function AjustosClient({
   estat,
   visibilitat,
   currentAccountId,
+  pendentsCompten,
 }: {
   tournamentId: string;
   nom: string;
   estat: TournamentStatus;
   visibilitat: TournamentVisibility;
   currentAccountId: string;
+  pendentsCompten: PresencePendingAs;
 }) {
   return (
     <div className="space-y-6 max-w-3xl">
       <General tournamentId={tournamentId} nom={nom} estat={estat} />
       <ClassificacioPublica tournamentId={tournamentId} visibilitat={visibilitat} />
       <PublicacioRondes tournamentId={tournamentId} visibilitat={visibilitat} />
+      <PresenciaRondes tournamentId={tournamentId} pendentsCompten={pendentsCompten} />
       <Administradors tournamentId={tournamentId} currentAccountId={currentAccountId} />
       <ZonaPerill tournamentId={tournamentId} nom={nom} />
     </div>
@@ -252,6 +255,46 @@ function PublicacioRondes({ tournamentId, visibilitat }: { tournamentId: string;
         value={resultats}
         onChange={setResultats}
       />
+      <PeuDesar loading={loading} error={error} desat={desat} onSave={desa} />
+    </Grup>
+  );
+}
+
+function PresenciaRondes({ tournamentId, pendentsCompten }: { tournamentId: string; pendentsCompten: PresencePendingAs }) {
+  const router = useRouter();
+  const [valor, setValor] = useState<PresencePendingAs>(pendentsCompten);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [desat, setDesat] = useState(false);
+
+  async function desa() {
+    setLoading(true);
+    setDesat(false);
+    const err = await patchCompeticio(tournamentId, { presencePendingAs: valor });
+    setError(err);
+    setDesat(!err);
+    setLoading(false);
+    if (!err) router.refresh();
+  }
+
+  return (
+    <Grup
+      titol="Presència a la ronda següent"
+      descripcio="Els jugadors diuen si continuen (a l'inici en crear la ronda i en enviar el resultat). Qui no ha dit res és pendent."
+    >
+      <Select
+        label="En aparellar, els pendents compten com a"
+        value={valor}
+        onChange={(e) => setValor(e.target.value as PresencePendingAs)}
+        hint={
+          valor === 'present'
+            ? "No perjudica qui no té mòbil o no s'hi ha fixat. Seguiràs veient els pendents abans d'aparellar."
+            : "Només juga qui ha confirmat. Cal que tothom pugui confirmar (o que el director passi llista)."
+        }
+      >
+        <option value="present">Presents (recomanat)</option>
+        <option value="absent">Absents</option>
+      </Select>
       <PeuDesar loading={loading} error={error} desat={desat} onSave={desa} />
     </Grup>
   );

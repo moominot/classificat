@@ -3,12 +3,15 @@ import { matchParticipants, matches, phases, rounds } from '@/db/schema';
 import { asc, eq, inArray } from 'drizzle-orm';
 import Link from 'next/link';
 import Badge from '@/components/ui/Badge';
+import { canManageTournament, getCurrentAccount } from '@/lib/authz';
 import NouaRonda from './NouaRonda';
 
 export const dynamic = 'force-dynamic';
 
 export default async function RondesPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const account = await getCurrentAccount();
+  const canManage = account ? await canManageTournament(account, id) : false;
 
   const [totes_fases, totes_rondes] = await Promise.all([
     db.select().from(phases).where(eq(phases.tournamentId, id)).orderBy(asc(phases.order)),
@@ -81,12 +84,13 @@ export default async function RondesPage({ params }: { params: Promise<{ id: str
                   </span>
                 </div>
                 <div className="space-y-1.5">
-                  {rondes_fase.map(r => (
-                    <Link
-                      key={r.id}
-                      href={`/campionat/${id}/rondes/${r.id}`}
-                      className="flex items-center gap-4 bg-surface border border-border rounded-xl px-4 py-3 hover:border-accent hover:shadow-sm transition-all group"
-                    >
+                  {rondes_fase.map(r => {
+                    // Una ronda en esborrany no existeix per als jugadors (la
+                    // pàgina dóna 404): es veu, però no és un enllaç.
+                    const inert = r.status === 'draft' && !canManage;
+                    const classe = 'flex items-center gap-4 bg-surface border border-border rounded-xl px-4 py-3';
+                    const contingut = (
+                      <>
                       <div className="w-9 h-9 rounded-lg bg-surface-2 flex items-center justify-center text-sm font-display font-bold text-ink-2 flex-shrink-0 tabular-nums">
                         {r.number}
                       </div>
@@ -114,12 +118,28 @@ export default async function RondesPage({ params }: { params: Promise<{ id: str
                         ) : (
                           <Badge color="yellow">En curs</Badge>
                         )}
-                        <svg className="w-4 h-4 text-ink-3 group-hover:text-accent-ink" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                        </svg>
+                        {!inert && (
+                          <svg className="w-4 h-4 text-ink-3 group-hover:text-accent-ink" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                          </svg>
+                        )}
                       </div>
-                    </Link>
-                  ))}
+                      </>
+                    );
+                    return inert ? (
+                      <div key={r.id} className={classe}>
+                        {contingut}
+                      </div>
+                    ) : (
+                      <Link
+                        key={r.id}
+                        href={`/campionat/${id}/rondes/${r.id}`}
+                        className={`${classe} hover:border-accent hover:shadow-sm transition-all group`}
+                      >
+                        {contingut}
+                      </Link>
+                    );
+                  })}
                 </div>
               </div>
             );

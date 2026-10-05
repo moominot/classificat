@@ -8,6 +8,9 @@ import type {
   Outcome,
   PairingMethod,
   PhaseConfig,
+  PresencePendingAs,
+  PresenceSource,
+  PresenceStatus,
   QuestionAggregate,
   QuestionScope,
   QuestionType,
@@ -105,6 +108,8 @@ export const tournaments = sqliteTable('tournaments', {
   ownerId:       text('owner_id').notNull().references(() => accounts.id),
   status:        text('status').$type<TournamentStatus>().notNull().default('draft'),
   visibility:    text('visibility', { mode: 'json' }).$type<TournamentVisibility>().notNull(),
+  // Com compta, en aparellar, qui no ha dit si juga la ronda (vegeu `roundPresence`).
+  presencePendingAs: text('presence_pending_as').$type<PresencePendingAs>().notNull().default('present'),
   createdAt:     integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt:     integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 }, (t) => [
@@ -279,6 +284,29 @@ export const roundAbsences = sqliteTable('round_absences', {
 }, (t) => [
   primaryKey({ columns: [t.roundId, t.entryId] }),
   index('round_absences_round_idx').on(t.roundId),
+]);
+
+/**
+ * Intenció de jugar una ronda (el «botó d'home mort»). Va per **número de
+ * ronda** i no per `rounds.id` perquè els jugadors responen en acabar la
+ * partida anterior, quan la ronda següent encara no existeix.
+ *
+ * No hi ha fila = pendent. `round_absences` continua sent el resultat final
+ * de la generació; això és només la intenció que hi alimenta els valors per
+ * defecte.
+ */
+export const roundPresence = sqliteTable('round_presence', {
+  tournamentId: text('tournament_id').notNull().references(() => tournaments.id, { onDelete: 'cascade' }),
+  roundNumber:  integer('round_number').notNull(),
+  entryId:      text('entry_id').notNull().references(() => entries.id, { onDelete: 'cascade' }),
+  status:       text('status').$type<PresenceStatus>().notNull(),
+  source:       text('source').$type<PresenceSource>().notNull(),
+  deviceId:     text('device_id'),
+  accountId:    text('account_id'),
+  updatedAt:    integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (t) => [
+  primaryKey({ columns: [t.tournamentId, t.roundNumber, t.entryId] }),
+  index('round_presence_round_idx').on(t.tournamentId, t.roundNumber),
 ]);
 
 // ══════════════════════════════════════════════════════════════════════════════

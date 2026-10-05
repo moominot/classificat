@@ -23,6 +23,10 @@ const PUBLIC_API_WRITES = new Set([
   '/api/invitations',
 ]);
 
+// Identificar-se i dir si es juga la ronda següent són accions de jugador sense
+// compte: cada ruta decideix qui hi pot fer què (`getViewer()`).
+const PLAYER_ACTIONS = /^\/api\/tournaments\/[^/]+\/(presence|identify)$/;
+
 const RESULT_SUBMISSION = /^\/api\/tournaments\/[^/]+\/rounds\/[^/]+\/result$/;
 
 /** Pàgines de gestió: sense sessió, cap a la pantalla d'entrada. */
@@ -47,6 +51,7 @@ export async function proxy(request: NextRequest) {
   // El resultat d'una partida el pot enviar un jugador sense compte; qui pot
   // fer-ho de debò ho decideix la ruta amb `canReportResult()` (§15.6).
   if (method === 'PUT' && RESULT_SUBMISSION.test(pathname)) return NextResponse.next();
+  if (PLAYER_ACTIONS.test(pathname)) return NextResponse.next();
 
   const res = NextResponse.next();
   const session = await getIronSession<SessionData>(request, res, sessionOptions);

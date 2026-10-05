@@ -8,6 +8,7 @@ import Badge from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { canManageTournament, canReportResult, getCurrentAccount, getViewer } from '@/lib/authz';
 import { loadEntrants, loadRoundMatches } from '@/lib/db-helpers';
+import { lastPlannedRound, loadPresence, roundIsPaired } from '@/lib/presence';
 import FormulariResultatWizard from './FormulariResultatWizard';
 
 export const dynamic = 'force-dynamic';
@@ -81,6 +82,16 @@ export default async function PartidaDetallPage({
     roundIsOpen: round.status === 'open',
     managesTournament: canManage,
   });
+
+  // «Continuen a la ronda següent?»: només si en queden de previstes i encara
+  // no s'ha aparellat. El que ja s'ha dit s'hi precarrega; si no, sí.
+  const properaRonda = round.number + 1;
+  const preguntaContinuar =
+    potEditar && !esBye && properaRonda <= (await lastPlannedRound(id)) && !(await roundIsPaired(id, properaRonda));
+  const presenciaProxima = preguntaContinuar ? await loadPresence(id, properaRonda) : new Map();
+  const continuaInicial = Object.fromEntries(
+    participants.map((p) => [p.entryId, presenciaProxima.get(p.entryId)?.status !== 'absent'])
+  );
 
   const answerFor = (questionId: string, entryId: string | null) =>
     respostes.find((r) => r.questionId === questionId && r.entryId === entryId);
@@ -249,6 +260,8 @@ export default async function PartidaDetallPage({
           potEditar={potEditar}
           questions={questions}
           existingAnswers={respostes}
+          properaRonda={preguntaContinuar ? properaRonda : null}
+          continuaInicial={continuaInicial}
         />
       )}
     </div>

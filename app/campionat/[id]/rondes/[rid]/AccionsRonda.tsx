@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import { useCanManage } from '@/components/ViewerContext';
 import type { RoundStatus } from '@/db/types';
+import { readError } from '@/lib/http';
 
 interface AccionsRondaProps {
   tournamentId: string;
@@ -14,6 +15,8 @@ interface AccionsRondaProps {
   teResultats: boolean;
   /** Sobreescriptura de la ronda: null = segueix la competició. */
   resultatsPublics: boolean | null;
+  /** És la ronda amb el número més alt: l'única que es pot esborrar. */
+  esUltima?: boolean;
 }
 
 /**
@@ -30,11 +33,14 @@ export default function AccionsRonda({
   teAparellaments,
   teResultats,
   resultatsPublics,
+  esUltima = false,
 }: AccionsRondaProps) {
   const router = useRouter();
   const canManage = useCanManage();
   const [loading, setLoading] = useState<string | null>(null);
   const [confirmEsborrar, setConfirmEsborrar] = useState(false);
+  const [confirmRonda, setConfirmRonda] = useState(false);
+  const [errorRonda, setErrorRonda] = useState('');
 
   if (!canManage) return null;
 
@@ -66,6 +72,19 @@ export default function AccionsRonda({
     setLoading(null);
     setConfirmEsborrar(false);
     router.refresh();
+  }
+
+  async function esborrarRonda() {
+    setLoading('esborrarRonda');
+    setErrorRonda('');
+    const res = await fetch(`/api/tournaments/${tournamentId}/rounds/${roundId}`, { method: 'DELETE' });
+    if (res.ok) {
+      router.push(`/campionat/${tournamentId}/rondes`);
+      router.refresh();
+      return;
+    }
+    setErrorRonda(await readError(res, 'Error en esborrar la ronda'));
+    setLoading(null);
   }
 
   return (
@@ -151,6 +170,33 @@ export default function AccionsRonda({
               </Button>
             </div>
           )}
+        </>
+      )}
+
+      {estat !== 'closed' && !teAparellaments && esUltima && (
+        <>
+          {!confirmRonda ? (
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={() => setConfirmRonda(true)}
+              className="text-loss hover:text-loss hover:bg-loss-tint"
+              title="Elimina la ronda: encara no té aparellaments"
+            >
+              Esborra la ronda
+            </Button>
+          ) : (
+            <div className="flex items-center gap-2 bg-loss-tint border border-loss rounded-lg px-3 py-1.5">
+              <span className="text-xs text-loss">Segur? S&apos;esborrarà la ronda.</span>
+              <Button size="sm" variant="danger" onClick={esborrarRonda} loading={loading === 'esborrarRonda'}>
+                Sí, esborra
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setConfirmRonda(false)}>
+                No
+              </Button>
+            </div>
+          )}
+          {errorRonda && <span className="text-xs text-loss">{errorRonda}</span>}
         </>
       )}
     </div>

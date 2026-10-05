@@ -44,6 +44,17 @@ export const DEFAULT_VISIBILITY: TournamentVisibility = {
   resultsVisible: true,
 };
 
+// ─── Presència a la ronda següent ─────────────────────────────────────────────
+
+/** Qui ha dit que juga (o no) la ronda següent; qui no ha dit res és «pendent» i no té fila. */
+export type PresenceStatus = 'present' | 'absent';
+
+/** Qui ho ha marcat: el mateix jugador, un company de taula en acabar la partida, o el director. */
+export type PresenceSource = 'player' | 'table' | 'admin';
+
+/** Com compta qui no ha confirmat res en aparellar: per defecte, com a present. */
+export type PresencePendingAs = 'present' | 'absent';
+
 // ─── Fases ────────────────────────────────────────────────────────────────────
 
 export type PairingMethod = 'swiss' | 'swiss_fide' | 'round_robin' | 'king_of_the_hill' | 'manual';

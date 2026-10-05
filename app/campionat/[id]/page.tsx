@@ -5,10 +5,12 @@ import { db } from '@/db';
 import { phases, rounds, tournaments } from '@/db/schema';
 import Badge from '@/components/ui/Badge';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
-import { canManageTournament, getCurrentAccount } from '@/lib/authz';
+import { canManageTournament, getCurrentAccount, getViewer } from '@/lib/authz';
+import { loadPresence, roundAwaitingPresence } from '@/lib/presence';
 import { loadEntrants, loadTags } from '@/lib/db-helpers';
 import { loadStandings } from '@/lib/standings-service';
 import { resolveTiebreaker } from '@/lib/pairing/tiebreakers';
+import PresenciaJugador from './PresenciaJugador';
 import type { PhaseConfig } from '@/lib/pairing/types';
 
 export const dynamic = 'force-dynamic';
@@ -51,12 +53,30 @@ export default async function CampionatInici({ params }: { params: Promise<{ id:
   ]);
   const tagNameById = new Map(totesEtiquetes.map((t) => [t.id, t.name]));
 
+  // La ronda que el director acaba de crear: en esborrany i sense aparellaments.
+  // És el moment de preguntar als jugadors si hi seran.
+  const viewer = await getViewer(id);
+  const rondaPerConfirmar = await roundAwaitingPresence(id);
+  const presencia = rondaPerConfirmar !== null ? await loadPresence(id, rondaPerConfirmar) : new Map();
+  const jugadorsActius = jugadors.filter((j) => j.isActive).map((j) => ({ id: j.id, name: j.displayName }));
+  const mostraPresencia = !canManage && jugadorsActius.length > 0;
+
   const statusBadge = STATUS_BADGE[tournament.status] ?? STATUS_BADGE.draft;
   const rondesTancades = totesRondes.filter((r) => r.status === 'closed').length;
   const top = vista.standings.slice(0, 8);
 
   return (
     <div className="space-y-5">
+      {mostraPresencia && (
+        <PresenciaJugador
+          tournamentId={id}
+          jugadors={jugadorsActius}
+          entryId={viewer.entryId}
+          roundNumber={rondaPerConfirmar}
+          estat={viewer.entryId ? (presencia.get(viewer.entryId)?.status ?? 'pending') : 'pending'}
+        />
+      )}
+
       <div className="flex items-center gap-2 flex-wrap">
         <Badge color={statusBadge.color}>{statusBadge.label}</Badge>
         <span className="text-sm text-ink-3">
