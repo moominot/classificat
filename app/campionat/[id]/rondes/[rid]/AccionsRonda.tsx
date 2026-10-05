@@ -3,47 +3,58 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
-import { useIsDirector } from '@/components/DirectorContext';
+import { useCanManage } from '@/components/ViewerContext';
+import type { RoundStatus } from '@/db/types';
 
 interface AccionsRondaProps {
   tournamentId: string;
   roundId: string;
-  rondaTancada: boolean;
+  estat: RoundStatus;
   teAparellaments: boolean;
   teResultats: boolean;
+  /** Sobreescriptura de la ronda: null = segueix la competició. */
+  resultatsPublics: boolean | null;
 }
 
+/**
+ * Els interruptors de la ronda (docs/pla-rols.md §8.5).
+ *
+ * Els tres estats són explícits: en esborrany la ronda no existeix per als
+ * jugadors, oberta accepta resultats i tancada els bloqueja —per als
+ * jugadors, no per a l'admin, que pot corregir sempre (§15.7).
+ */
 export default function AccionsRonda({
   tournamentId,
   roundId,
-  rondaTancada,
+  estat,
   teAparellaments,
   teResultats,
+  resultatsPublics,
 }: AccionsRondaProps) {
   const router = useRouter();
-  const isDirector = useIsDirector();
+  const canManage = useCanManage();
   const [loading, setLoading] = useState<string | null>(null);
   const [confirmEsborrar, setConfirmEsborrar] = useState(false);
 
-  if (!isDirector) return null;
+  if (!canManage) return null;
 
-  async function tancarRonda() {
-    setLoading('tancar');
+  async function canviarEstat(status: RoundStatus, etiqueta: string) {
+    setLoading(etiqueta);
     await fetch(`/api/tournaments/${tournamentId}/rounds/${roundId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isComplete: true }),
+      body: JSON.stringify({ status }),
     });
     setLoading(null);
     router.refresh();
   }
 
-  async function reobrirRonda() {
-    setLoading('reobrir');
+  async function canviarResultatsPublics(value: boolean | null) {
+    setLoading('resultatsPublics');
     await fetch(`/api/tournaments/${tournamentId}/rounds/${roundId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ isComplete: false }),
+      body: JSON.stringify({ resultsVisible: value }),
     });
     setLoading(null);
     router.refresh();
@@ -51,9 +62,7 @@ export default function AccionsRonda({
 
   async function esborrarAparellaments() {
     setLoading('esborrar');
-    await fetch(`/api/tournaments/${tournamentId}/rounds/${roundId}/import`, {
-      method: 'DELETE',
-    });
+    await fetch(`/api/tournaments/${tournamentId}/rounds/${roundId}/import`, { method: 'DELETE' });
     setLoading(null);
     setConfirmEsborrar(false);
     router.refresh();
@@ -61,31 +70,60 @@ export default function AccionsRonda({
 
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {!rondaTancada && teResultats && (
+      {estat !== 'draft' && (
+        <label className="flex items-center gap-1.5 text-xs text-ink-3">
+          Resultats als jugadors:
+          <select
+            value={resultatsPublics === null ? 'auto' : resultatsPublics ? 'si' : 'no'}
+            onChange={(e) =>
+              canviarResultatsPublics(e.target.value === 'auto' ? null : e.target.value === 'si')
+            }
+            disabled={loading === 'resultatsPublics'}
+            className="border border-border rounded px-1.5 py-1 text-xs text-ink bg-surface"
+            title="Vols mantenir la incògnita dels resultats fins al final? Amaga'ls aquí sense esperar a tancar la ronda."
+          >
+            <option value="auto">Per defecte</option>
+            <option value="si">Visibles</option>
+            <option value="no">Amagats</option>
+          </select>
+        </label>
+      )}
+      {estat === 'draft' && teAparellaments && (
+        <Button
+          size="sm"
+          onClick={() => canviarEstat('open', 'publicar')}
+          loading={loading === 'publicar'}
+          title="Els jugadors veuran la ronda i podran enviar resultats"
+        >
+          Publica la ronda
+        </Button>
+      )}
+
+      {estat === 'open' && teResultats && (
         <Button
           size="sm"
           variant="secondary"
-          onClick={tancarRonda}
+          onClick={() => canviarEstat('closed', 'tancar')}
           loading={loading === 'tancar'}
-          title="Marca la ronda com a tancada (no es podran editar resultats)"
+          title="Els jugadors ja no podran editar resultats"
         >
-          Tancar ronda
+          Tanca la ronda
         </Button>
       )}
 
-      {rondaTancada && (
+      {estat === 'closed' && (
         <Button
           size="sm"
           variant="ghost"
-          onClick={reobrirRonda}
+          onClick={() => canviarEstat('open', 'reobrir')}
           loading={loading === 'reobrir'}
-          title="Reobre la ronda per poder editar resultats"
+          title="Torna a permetre que els jugadors editin els resultats"
         >
-          Reobrir ronda
+          Reobre la ronda
         </Button>
       )}
 
-      {!rondaTancada && teAparellaments && (
+      {estat !== 'closed' && teAparellaments && (
         <>
           {!confirmEsborrar ? (
             <Button
@@ -95,7 +133,7 @@ export default function AccionsRonda({
               className="text-loss hover:text-loss hover:bg-loss-tint"
               title="Elimina tots els aparellaments per regenerar-los"
             >
-              Esborrar aparellaments
+              Esborra els aparellaments
             </Button>
           ) : (
             <div className="flex items-center gap-2 bg-loss-tint border border-loss rounded-lg px-3 py-1.5">
@@ -106,7 +144,7 @@ export default function AccionsRonda({
                 onClick={esborrarAparellaments}
                 loading={loading === 'esborrar'}
               >
-                Sí, esborrar
+                Sí, esborra
               </Button>
               <Button size="sm" variant="ghost" onClick={() => setConfirmEsborrar(false)}>
                 No

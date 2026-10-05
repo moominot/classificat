@@ -4,6 +4,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
+import Modal from '@/components/ui/Modal';
 import { readError } from '@/lib/http';
 
 export default function NouCampionat() {
@@ -12,6 +13,12 @@ export default function NouCampionat() {
   const [nom, setNom] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  function tanca() {
+    setObert(false);
+    setNom('');
+    setError('');
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -34,34 +41,32 @@ export default function NouCampionat() {
     }
   }
 
-  if (!obert) {
-    return (
+  return (
+    <>
       <Button onClick={() => setObert(true)}>
         + Nou campionat
       </Button>
-    );
-  }
 
-  return (
-    <form onSubmit={handleSubmit} className="bg-surface border border-border rounded-xl p-4 flex gap-3 items-end shadow-sm">
-      <div className="flex-1">
-        <Input
-          label="Nom del campionat"
-          value={nom}
-          onChange={e => setNom(e.target.value)}
-          placeholder="ex. ManaCup 25-26"
-          error={error}
-          autoFocus
-        />
-      </div>
-      <div className="flex gap-2">
-        <Button type="submit" loading={loading} disabled={!nom.trim()}>
-          Crear
-        </Button>
-        <Button type="button" variant="ghost" onClick={() => { setObert(false); setNom(''); setError(''); }}>
-          Cancel·lar
-        </Button>
-      </div>
-    </form>
+      <Modal open={obert} onClose={tanca} title="Nou campionat">
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <Input
+            label="Nom del campionat"
+            value={nom}
+            onChange={e => setNom(e.target.value)}
+            placeholder="ex. ManaCup 25-26"
+            error={error}
+            autoFocus
+          />
+          <div className="flex gap-2 pt-1">
+            <Button type="submit" loading={loading} disabled={!nom.trim()} className="flex-1 sm:flex-none">
+              Crear
+            </Button>
+            <Button type="button" variant="ghost" onClick={tanca}>
+              Cancel·lar
+            </Button>
+          </div>
+        </form>
+      </Modal>
+    </>
   );
 }

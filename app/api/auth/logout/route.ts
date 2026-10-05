@@ -1,11 +1,8 @@
 import { NextResponse } from 'next/server';
-import { getIronSession } from 'iron-session';
-import { sessionOptions } from '@/lib/session';
-import type { SessionData } from '@/lib/session';
+import { getSession } from '@/lib/authz';
 
-export async function POST(req: Request) {
-  const response = NextResponse.json({ ok: true });
-  const session = await getIronSession<SessionData>(req, response, sessionOptions);
+export async function POST() {
+  const session = await getSession();
   session.destroy();
-  return response;
+  return NextResponse.json({ ok: true });
 }

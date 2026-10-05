@@ -1,258 +1,304 @@
 import type {
+  GeneratedMatch,
   PairingContext,
   PairingEngineResult,
-  GeneratedPairing,
   PairingWarning,
   RoundRobinConfig,
 } from '../types';
+import { buildRematchSet, countRematches, hasPlayed } from '../utils/rematch';
+import { partitionByTags } from './tag-partition';
+import { isTagPairExcluded } from './exclusion-partition';
 
 /**
- * Motor d'aparellaments round robin.
+ * Round robin.
  *
- * Utilitza l'algorisme de la taula de Berger (mètode del cercle):
- * - Fixa el jugador 1 (o el bye si el nombre és imparell)
- * - Rota la resta de jugadors en sentit antihorari
- * - Cada rotació genera una ronda diferent
+ * Amb taules de dos fa servir la taula de Berger (mètode del cercle), que
+ * garanteix que tothom juga contra tothom exactament un cop.
  *
- * Suporta:
- * - intra_group: round robin independent dins de cada grup
- * - inter_group: round robin creuant grups (útil per a fases intergrups)
- * - all: round robin global sense grups
+ * Amb taules de més de dos, un round robin complet no sempre existeix (és el
+ * problema del "social golfer"), de manera que es fan taules que **minimitzen
+ * les repeticions** i s'avisa. Vegeu `generateMultiTables()`.
  */
 export function generateRoundRobinPairings(ctx: PairingContext): PairingEngineResult {
   const config = ctx.phase.config as RoundRobinConfig;
   const warnings: PairingWarning[] = [];
-
-  // Determina la ronda relativa dins de la fase (1, 2, 3, ...)
   const relativeRound = ctx.roundNumber - ctx.phase.startRound + 1;
 
-  let pairings: GeneratedPairing[];
+  if (ctx.phase.participantsPerMatch > 2) {
+    return generateMultiTables(ctx, warnings);
+  }
 
-  if (config.scope === 'intra_group') {
-    pairings = generateIntraGroupRoundRobin(ctx, relativeRound, config, warnings);
-  } else if (config.scope === 'inter_group') {
-    pairings = generateInterGroupRoundRobin(ctx, relativeRound, warnings);
+  let matches: GeneratedMatch[];
+
+  if (config.scope === 'intra_tag') {
+    matches = intraTag(ctx, relativeRound, config, warnings);
+  } else if (config.scope === 'inter_tag') {
+    matches = interTag(ctx, relativeRound, config, warnings);
   } else {
-    // 'all': tots els jugadors sense distinció de grup
-    const players = ctx.players.filter((p) => p.isActive);
-    const sched = bergerSchedule(players.map((p) => p.id), relativeRound, config.doubleRound);
-    if (sched === null) {
+    const active = ctx.entrants.filter((e) => e.isActive);
+    const schedule = bergerSchedule(active.map((e) => e.id), relativeRound, config.doubleRound);
+    if (schedule === null) {
       warnings.push({
         type: 'incomplete_round_robin',
-        message: `La ronda relativa ${relativeRound} supera el nombre de rondes possibles del round robin.`,
-        affectedPlayerIds: [],
+        message: `La ronda ${relativeRound} supera el nombre de rondes possibles del round robin.`,
+        affectedEntryIds: [],
       });
-      pairings = [];
+      matches = [];
     } else {
-      pairings = sched;
+      // bergerSchedule() numera totes les taules a 0 (no sap de numeració
+      // global); cal renumerar-les aquí o l'inserció xoca amb l'únic
+      // (roundId, tableNumber) en repetir el 0 a totes les files.
+      matches = schedule.map((match, i) => ({ ...match, tableNumber: i + 1 }));
     }
   }
 
-  return { pairings, warnings };
+  return { matches, warnings };
 }
 
-// ─── Round robin intragrupal ──────────────────────────────────────────────────
+// ─── Taules de més de dos ─────────────────────────────────────────────────────
 
-function generateIntraGroupRoundRobin(
+/**
+ * Taules de N amb el mínim de repeticions.
+ *
+ * Amb més de dos per taula no hi ha cap rotació que garanteixi que tothom
+ * coincideixi amb tothom un sol cop, així que es va omplint cada taula amb qui
+ * menys ha coincidit amb els que ja hi són. És una heurística: fa la seva
+ * feina i avisa quan no pot evitar repeticions.
+ */
+function generateMultiTables(ctx: PairingContext, warnings: PairingWarning[]): PairingEngineResult {
+  const size = ctx.phase.participantsPerMatch;
+  const rematchSet = buildRematchSet(ctx.previousMatches);
+  const standingMap = new Map(ctx.standings.map((s) => [s.entryId, s]));
+
+  const remaining = ctx.entrants
+    .filter((e) => e.isActive)
+    .sort((a, b) => (standingMap.get(a.id)?.rank ?? 9999) - (standingMap.get(b.id)?.rank ?? 9999))
+    .map((e) => e.id);
+
+  const matches: GeneratedMatch[] = [];
+  let tableNumber = 1;
+  let repeats = 0;
+
+  while (remaining.length > 0) {
+    const table = [remaining.shift()!];
+
+    while (table.length < size && remaining.length > 0) {
+      // De la resta, el que menys ha coincidit amb els que ja seuen a la taula;
+      // a igualtat, el més ben classificat (l'ordre en què ja venen).
+      let bestIndex = 0;
+      let bestClashes = Infinity;
+      for (let i = 0; i < remaining.length; i++) {
+        const clashes = table.filter((seated) => hasPlayed(seated, remaining[i], rematchSet)).length;
+        if (clashes < bestClashes) {
+          bestClashes = clashes;
+          bestIndex = i;
+          if (clashes === 0) break;
+        }
+      }
+      table.push(remaining.splice(bestIndex, 1)[0]);
+    }
+
+    repeats += countRematches(table, rematchSet);
+
+    if (table.length < size && table.length > 1) {
+      warnings.push({
+        type: 'uneven_table',
+        message: `La darrera taula té ${table.length} jugadors en lloc de ${size}.`,
+        affectedEntryIds: table,
+      });
+    }
+
+    matches.push({ tableNumber: tableNumber++, entryIds: table });
+  }
+
+  if (repeats > 0) {
+    warnings.push({
+      type: 'rematch_forced',
+      message:
+        `Amb taules de ${size} no hi ha cap distribució sense repeticions: ` +
+        `${repeats} parelles ja s'havien trobat.`,
+      affectedEntryIds: [],
+    });
+  }
+
+  return { matches, warnings };
+}
+
+// ─── Round robin dins de cada etiqueta ────────────────────────────────────────
+
+function intraTag(
   ctx: PairingContext,
   relativeRound: number,
   config: RoundRobinConfig,
   warnings: PairingWarning[]
-): GeneratedPairing[] {
-  const result: GeneratedPairing[] = [];
-  let tableCounter = 1;
+): GeneratedMatch[] {
+  const result: GeneratedMatch[] = [];
+  let tableNumber = 1;
 
-  // Agrupa els jugadors per grup
-  const groups = new Map<string, string[]>();
-  for (const player of ctx.players.filter((p) => p.isActive)) {
-    const gid = player.groupId ?? '__nogrup__';
-    if (!groups.has(gid)) groups.set(gid, []);
-    groups.get(gid)!.push(player.id);
-  }
+  const { partitions, warnings: tagWarnings } = partitionByTags(ctx.entrants, config.tagIds ?? []);
+  warnings.push(...tagWarnings);
 
-  // Filtra grups si s'especifica
-  const targetGroupIds = config.groupIds && config.groupIds.length > 0
-    ? new Set(config.groupIds)
-    : null;
-
-  for (const [groupId, playerIds] of groups) {
-    if (targetGroupIds && !targetGroupIds.has(groupId)) continue;
-
-    const sched = bergerSchedule(playerIds, relativeRound, config.doubleRound);
-    if (sched === null) {
+  for (const [tagId, entryIds] of partitions) {
+    const schedule = bergerSchedule(entryIds, relativeRound, config.doubleRound);
+    if (schedule === null) {
       warnings.push({
         type: 'incomplete_round_robin',
-        message: `Grup ${groupId}: la ronda ${relativeRound} supera el nombre de rondes possibles.`,
-        affectedPlayerIds: playerIds,
+        message: `Etiqueta ${tagId}: la ronda ${relativeRound} supera el nombre de rondes possibles.`,
+        affectedEntryIds: entryIds,
       });
       continue;
     }
 
-    for (const pairing of sched) {
-      result.push({ ...pairing, tableNumber: tableCounter++ });
+    for (const match of schedule) {
+      result.push({ ...match, tableNumber: tableNumber++ });
     }
   }
 
   return result;
 }
 
-// ─── Round robin intergrupal ─────────────────────────────────────────────────
+// ─── Round robin entre etiquetes ──────────────────────────────────────────────
 
-/**
- * Aparellament entre grups: jugadors del grup A s'enfronten als del grup B, etc.
- * Útil per a fases de competició creuada entre grups.
- * Implementa una variació de la taula de Berger per a parelles de grups.
- */
-function generateInterGroupRoundRobin(
+function interTag(
   ctx: PairingContext,
   relativeRound: number,
+  config: RoundRobinConfig,
   warnings: PairingWarning[]
-): GeneratedPairing[] {
-  const result: GeneratedPairing[] = [];
-  let tableCounter = 1;
+): GeneratedMatch[] {
+  const { partitions, warnings: tagWarnings } = partitionByTags(ctx.entrants, config.tagIds ?? []);
+  warnings.push(...tagWarnings);
+  // Ordre determinista: el que ha triat el director, no l'alfabètic.
+  const keys = (config.tagIds ?? []).filter((t) => partitions.has(t));
 
-  // Agrupa els jugadors per grup i els ordena
-  const groupMap = new Map<string, string[]>();
-  for (const player of ctx.players.filter((p) => p.isActive)) {
-    const gid = player.groupId ?? '__nogrup__';
-    if (!groupMap.has(gid)) groupMap.set(gid, []);
-    groupMap.get(gid)!.push(player.id);
-  }
-
-  const groupNames = [...groupMap.keys()].sort();
-  if (groupNames.length < 2) {
+  if (keys.length < 2) {
     warnings.push({
       type: 'incomplete_round_robin',
-      message: 'Cal almenys 2 grups per a un round robin intergrupal.',
-      affectedPlayerIds: [],
+      message: 'Cal triar com a mínim 2 etiquetes per a un round robin interetiquetes.',
+      affectedEntryIds: [],
     });
     return [];
   }
 
-  // Per a cada parella de grups, aplica la rotació de Berger
-  // Parelles: (grup0, grup1), (grup0, grup2), (grup1, grup2), etc.
-  for (let i = 0; i < groupNames.length; i++) {
-    for (let j = i + 1; j < groupNames.length; j++) {
-      const g1 = groupMap.get(groupNames[i])!;
-      const g2 = groupMap.get(groupNames[j])!;
-      const crossPairings = crossGroupRound(g1, g2, relativeRound);
-      for (const p of crossPairings) {
-        result.push({ ...p, tableNumber: tableCounter++ });
+  const result: GeneratedMatch[] = [];
+  let tableNumber = 1;
+  const matched = new Set<string>();
+
+  for (let i = 0; i < keys.length; i++) {
+    for (let j = i + 1; j < keys.length; j++) {
+      if (isTagPairExcluded(config.tagExclusions, keys[i], keys[j])) continue;
+
+      const first = partitions.get(keys[i])!;
+      const second = partitions.get(keys[j])!;
+      if (second.length === 0) continue;
+
+      const rotated = rotateArray(second, (relativeRound - 1) % second.length);
+      for (let k = 0; k < Math.min(first.length, rotated.length); k++) {
+        // Amb 3+ etiquetes triades, un jugador pot sortir en més d'una
+        // combinació de parelles aquesta ronda: un cop ja aparellat, no se'l
+        // torna a fer jugar una segona vegada la mateixa ronda.
+        if (matched.has(first[k]) || matched.has(rotated[k])) continue;
+        result.push({ tableNumber: tableNumber++, entryIds: [first[k], rotated[k]] });
+        matched.add(first[k]);
+        matched.add(rotated[k]);
       }
+    }
+  }
+
+  // Una exclusió entre etiquetes pot deixar algú (o tota una etiqueta) sense
+  // cap aparellament aquesta ronda: no es deixa en silenci.
+  for (const key of keys) {
+    const ids = partitions.get(key)!;
+    if (ids.length === 0) continue;
+    const unmatched = ids.filter((id) => !matched.has(id));
+    if (unmatched.length === 0) continue;
+
+    if (unmatched.length === ids.length) {
+      warnings.push({
+        type: 'no_pairings_possible',
+        message:
+          'Cap aparellament possible per a aquesta etiqueta aquesta ronda: les combinacions amb les altres ' +
+          'etiquetes triades estan excloses.',
+        affectedEntryIds: ids,
+      });
+    } else {
+      result.push(...unmatched.map((id) => ({ tableNumber: -1, entryIds: [id] })));
+      warnings.push({
+        type: 'forbidden_bye',
+        message: `${unmatched.length} jugador${unmatched.length !== 1 ? 's' : ''} sense aparellament aquesta ronda per una exclusió entre etiquetes: se li assigna bye.`,
+        affectedEntryIds: unmatched,
+      });
     }
   }
 
   return result;
 }
 
-/**
- * Genera els aparellaments d'una ronda concreta entre dos grups.
- * Rota el grup2 per a cada ronda.
- */
-function crossGroupRound(
-  g1: string[],
-  g2: string[],
-  relativeRound: number
-): GeneratedPairing[] {
-  const result: GeneratedPairing[] = [];
-  const n = Math.max(g1.length, g2.length);
-  const rotated = rotateArray(g2, (relativeRound - 1) % g2.length);
-
-  for (let i = 0; i < Math.min(g1.length, rotated.length); i++) {
-    result.push({ tableNumber: 0, player1Id: g1[i], player2Id: rotated[i] });
-  }
-
-  return result;
-}
-
-// ─── Algorisme de la taula de Berger ─────────────────────────────────────────
+// ─── Taula de Berger ──────────────────────────────────────────────────────────
 
 /**
- * Genera els aparellaments per a la ronda `roundNumber` (1-indexed) d'un round robin
- * utilitzant el mètode del cercle (Berger table).
+ * Aparellaments de la ronda `roundNumber` (des de 1) pel mètode del cercle.
  *
- * Per a N jugadors (N parell):
- *   - N/2 partides per ronda
- *   - N-1 rondes en total (o 2*(N-1) si doubleRound)
- *
- * Si N és imparell s'afegeix un bye fictici.
- *
- * Retorna null si roundNumber supera el màxim de rondes possibles.
+ * Amb N parell: N/2 partides per ronda i N-1 rondes (el doble si `doubleRound`).
+ * Amb N senar s'afegeix un bye fictici. Retorna null si la ronda demanada
+ * supera el màxim.
  */
 export function bergerSchedule(
-  playerIds: string[],
+  entryIds: string[],
   roundNumber: number,
   doubleRound: boolean
-): GeneratedPairing[] | null {
-  let ids = [...playerIds];
-  const hasBye = ids.length % 2 !== 0;
-  if (hasBye) ids.push('__bye__');
+): GeneratedMatch[] | null {
+  const ids = [...entryIds];
+  if (ids.length % 2 !== 0) ids.push('__bye__');
 
   const n = ids.length;
-  const totalRounds = doubleRound ? n - 1 : Math.ceil((n - 1) / 1);
-  const halfRounds = n - 1; // rondes en una sola volta
+  if (n < 2) return null;
 
-  const effectiveRound = doubleRound
-    ? ((roundNumber - 1) % halfRounds) + 1
-    : roundNumber;
-
+  const halfRounds = n - 1;
+  const totalRounds = doubleRound ? halfRounds * 2 : halfRounds;
   if (roundNumber > totalRounds) return null;
 
-  // Mètode del cercle: fixa el primer element, rota la resta
+  const effectiveRound = doubleRound ? ((roundNumber - 1) % halfRounds) + 1 : roundNumber;
+
   const fixed = ids[0];
   const rotating = ids.slice(1);
+  const rotated = rotateArray(rotating, (effectiveRound - 1) % rotating.length);
 
-  // Rotació per a la ronda actual
-  const shift = (effectiveRound - 1) % rotating.length;
-  const rotated = rotateArray(rotating, shift);
+  const matches: GeneratedMatch[] = [];
 
-  const pairings: GeneratedPairing[] = [];
-  const half = n / 2;
-
-  for (let i = 0; i < half; i++) {
-    let p1: string;
-    let p2: string;
+  for (let i = 0; i < n / 2; i++) {
+    let first: string;
+    let second: string;
 
     if (i === 0) {
-      p1 = fixed;
-      p2 = rotated[0];
+      first = fixed;
+      second = rotated[0];
     } else {
-      p1 = rotated[i];
-      p2 = rotated[n - 1 - i];
+      first = rotated[i];
+      second = rotated[n - 1 - i];
     }
 
-    // En la segona volta (doubleRound), inverteix l'ordre dels colors/posicions
-    if (doubleRound && roundNumber > halfRounds) {
-      [p1, p2] = [p2, p1];
-    }
+    // A la segona volta s'inverteix l'ordre a la taula.
+    if (doubleRound && roundNumber > halfRounds) [first, second] = [second, first];
 
-    // Ignora les partides amb el bye fictici
-    if (p1 === '__bye__' || p2 === '__bye__') {
-      const realPlayer = p1 === '__bye__' ? p2 : p1;
-      if (realPlayer !== '__bye__') {
-        pairings.push({ tableNumber: 0, player1Id: realPlayer, player2Id: null });
-      }
+    if (first === '__bye__' || second === '__bye__') {
+      const real = first === '__bye__' ? second : first;
+      if (real !== '__bye__') matches.push({ tableNumber: 0, entryIds: [real] });
     } else {
-      pairings.push({ tableNumber: 0, player1Id: p1, player2Id: p2 });
+      matches.push({ tableNumber: 0, entryIds: [first, second] });
     }
   }
 
-  return pairings;
+  return matches;
 }
 
-/**
- * Retorna quantes rondes té un round robin per N jugadors.
- */
-export function roundRobinTotalRounds(playerCount: number, doubleRound: boolean): number {
-  const n = playerCount % 2 === 0 ? playerCount : playerCount + 1;
+/** Rondes que té un round robin per a N participants. */
+export function roundRobinTotalRounds(participantCount: number, doubleRound: boolean): number {
+  const n = participantCount % 2 === 0 ? participantCount : participantCount + 1;
   return doubleRound ? (n - 1) * 2 : n - 1;
 }
 
-// ─── Utils ───────────────────────────────────────────────────────────────────
-
 function rotateArray<T>(arr: T[], shift: number): T[] {
   if (arr.length === 0) return [];
-  const n = arr.length;
-  const s = ((shift % n) + n) % n;
+  const s = ((shift % arr.length) + arr.length) % arr.length;
   return [...arr.slice(s), ...arr.slice(0, s)];
 }

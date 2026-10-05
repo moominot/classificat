@@ -1,67 +1,131 @@
 import { NextResponse } from 'next/server';
+import { and, eq, inArray } from 'drizzle-orm';
+import { v4 as uuid } from 'uuid';
 import { db } from '@/db';
-import { rounds, pairings, players } from '@/db/schema';
-import { eq, and } from 'drizzle-orm';
-import type { GameOutcome } from '@/lib/pairing/types';
+import {
+  entries,
+  matchAnswers,
+  matchParticipants,
+  matchRevisions,
+  matches,
+  people,
+  phases,
+  questionDefinitions,
+  rounds,
+} from '@/db/schema';
+import { requireTournamentAccess } from '@/lib/authz';
+import { loadRoundMatches } from '@/lib/db-helpers';
+import { scoreMatch } from '@/lib/pairing/scoring';
+import { saveAnswers } from '@/lib/pairing/match-answers';
+import {
+  buildResultsCsvColumns,
+  buildResultsCsvRow,
+  escapeCsvField,
+  parseCsvLine,
+  parseResultsCsvRow,
+  type AnswerValue,
+  type ResultsCsvColumn,
+  type SeatData,
+} from '@/lib/pairing/utils/results-csv';
 
 type Params = { params: Promise<{ tournamentId: string; roundId: string }> };
 
-const CSV_HEADERS =
-  'id,taula,jugador1,jugador2,punts_j1,punts_j2,bingos_j1,bingos_j2,millor_j1,pts_millor_j1,millor_j2,pts_millor_j2,localitat,comentaris';
+/**
+ * CSV de resultats, una fila per partida (vegeu `lib/pairing/utils/results-csv.ts`
+ * pel format exacte de columnes). Exportació i importació fan servir la
+ * MATEIXA generació de columnes perquè vagin alineades per posició.
+ */
 
-function esc(val: string | number | null | undefined): string {
-  if (val == null) return '';
-  const s = String(val);
-  return s.includes(',') || s.includes('"') || s.includes('\n')
-    ? `"${s.replace(/"/g, '""')}"`
-    : s;
+async function loadColumns(tournamentId: string, phaseId: string): Promise<ResultsCsvColumn[]> {
+  const [phase] = await db.select().from(phases).where(eq(phases.id, phaseId));
+  const questions = await db
+    .select()
+    .from(questionDefinitions)
+    .where(eq(questionDefinitions.tournamentId, tournamentId))
+    .orderBy(questionDefinitions.order);
+
+  return buildResultsCsvColumns(questions, phase?.participantsPerMatch ?? 2);
 }
 
 export async function GET(_req: Request, { params }: Params) {
   const { tournamentId, roundId } = await params;
+  const guard = await requireTournamentAccess(tournamentId);
+  if (guard.error) return guard.error;
 
   const [round] = await db
     .select()
     .from(rounds)
     .where(and(eq(rounds.id, roundId), eq(rounds.tournamentId, tournamentId)));
-
   if (!round) return NextResponse.json({ error: 'Ronda no trobada' }, { status: 404 });
 
-  const allPairings = await db
-    .select()
-    .from(pairings)
-    .where(eq(pairings.roundId, roundId))
-    .orderBy(pairings.tableNumber);
+  const columns = await loadColumns(tournamentId, round.phaseId);
+  const roundMatches = await loadRoundMatches(roundId);
 
-  const allPlayers = await db
-    .select()
-    .from(players)
-    .where(eq(players.tournamentId, tournamentId));
-  const playerMap = new Map(allPlayers.map((p) => [p.id, p.name]));
+  const entryRows = await db
+    .select({ id: entries.id, displayName: people.displayName, barrufNumero: people.barrufNumero })
+    .from(entries)
+    .innerJoin(people, eq(people.id, entries.personId))
+    .where(eq(entries.tournamentId, tournamentId));
+  const entryInfo = new Map(entryRows.map((r) => [r.id, r]));
 
-  const rows = allPairings.map((p) => {
-    const isBye = p.player2Id === null;
-    return [
-      p.id,
-      p.tableNumber,
-      esc(playerMap.get(p.player1Id)),
-      isBye ? '' : esc(playerMap.get(p.player2Id ?? '')),
-      isBye ? 'bye' : esc(p.p1Score),
-      isBye ? '' : esc(p.p2Score),
-      esc(p.p1Scrabbles),
-      esc(p.p2Scrabbles),
-      esc(p.p1BestWord),
-      esc(p.p1BestWordScore),
-      esc(p.p2BestWord),
-      esc(p.p2BestWordScore),
-      esc(p.location),
-      esc(p.comments),
-    ].join(',');
+  const matchIds = roundMatches.map((m) => m.id);
+  const answerRows = matchIds.length
+    ? await db.select().from(matchAnswers).where(inArray(matchAnswers.matchId, matchIds))
+    : [];
+  const answersByMatch = new Map<string, typeof answerRows>();
+  for (const a of answerRows) {
+    answersByMatch.set(a.matchId, [...(answersByMatch.get(a.matchId) ?? []), a]);
+  }
+
+  // L'última revisió de cada partida és quan es va enviar/corregir el
+  // resultat per últim cop — no hi ha cap altra marca de temps fiable per a
+  // "quan s'ha jugat" (vegeu comentari a `matches.createdAt`, que és quan es
+  // va generar l'aparellament, no quan es va jugar).
+  const revisionRows = matchIds.length
+    ? await db.select().from(matchRevisions).where(inArray(matchRevisions.matchId, matchIds))
+    : [];
+  const lastRevisionByMatch = new Map<string, Date>();
+  for (const r of revisionRows) {
+    const prev = lastRevisionByMatch.get(r.matchId);
+    if (!prev || r.createdAt > prev) lastRevisionByMatch.set(r.matchId, r.createdAt);
+  }
+
+  const toAnswerValue = (a: { questionId: string; textValue: string | null; numberValue: number | null; imageUrl: string | null }): AnswerValue => ({
+    questionId: a.questionId,
+    textValue: a.textValue,
+    numberValue: a.numberValue,
+    imageUrl: a.imageUrl,
   });
 
-  const csv = [CSV_HEADERS, ...rows].join('\n');
+  const lines = roundMatches.map((match) => {
+    const matchAnswersRows = answersByMatch.get(match.id) ?? [];
+    const participantIdByEntry = new Map(match.participants.map((p) => [p.id, p.entryId]));
+    const commonAnswers = matchAnswersRows.filter((a) => a.participantId === null).map(toAnswerValue);
 
-  return new Response(csv, {
+    const seats: Array<SeatData | null> = match.participants.map((p) => ({
+      entryId: p.entryId,
+      name: entryInfo.get(p.entryId)?.displayName ?? '',
+      barrufNumero: entryInfo.get(p.entryId)?.barrufNumero ?? null,
+      score: p.score,
+      answers: matchAnswersRows
+        .filter((a) => a.participantId === p.id || (a.participantId && participantIdByEntry.get(a.participantId) === p.entryId))
+        .map(toAnswerValue),
+    }));
+
+    const row = buildResultsCsvRow(columns, {
+      matchId: match.id,
+      timestamp: lastRevisionByMatch.get(match.id)?.toISOString() ?? '',
+      roundNumber: round.number,
+      seats,
+      common: commonAnswers,
+    });
+
+    return row.map(escapeCsvField).join(',');
+  });
+
+  const header = columns.map((c) => escapeCsvField(c.header)).join(',');
+
+  return new Response([header, ...lines].join('\n'), {
     headers: {
       'Content-Type': 'text/csv; charset=utf-8',
       'Content-Disposition': `attachment; filename="ronda-${round.number}.csv"`,
@@ -69,70 +133,109 @@ export async function GET(_req: Request, { params }: Params) {
   });
 }
 
-type ImportRow = {
-  pairingId: string;
-  p1Score: number;
-  p2Score: number;
-  p1Scrabbles?: number | null;
-  p2Scrabbles?: number | null;
-  p1BestWord?: string | null;
-  p1BestWordScore?: number | null;
-  p2BestWord?: string | null;
-  p2BestWordScore?: number | null;
-  location?: string | null;
-  comments?: string | null;
-};
-
+/**
+ * POST — Importa resultats en bloc des del mateix format que exporta el GET.
+ *
+ * S'identifica la partida per `idPartida`; els seients es llegeixen per
+ * posició de columna (Jugador 1 = primer participant per `seat`, etc.), no
+ * pel nom ni per `idBARRUF` — aquestes dues columnes són només informatives.
+ */
 export async function POST(req: Request, { params }: Params) {
   const { tournamentId, roundId } = await params;
+  const guard = await requireTournamentAccess(tournamentId);
+  if (guard.error) return guard.error;
 
   const [round] = await db
     .select()
     .from(rounds)
     .where(and(eq(rounds.id, roundId), eq(rounds.tournamentId, tournamentId)));
-
   if (!round) return NextResponse.json({ error: 'Ronda no trobada' }, { status: 404 });
-  if (round.isComplete) return NextResponse.json({ error: 'La ronda ja està tancada' }, { status: 409 });
 
-  const body = (await req.json()) as ImportRow[];
-  if (!Array.isArray(body)) {
-    return NextResponse.json({ error: 'Cal un array de resultats' }, { status: 400 });
+  const [phase] = await db.select().from(phases).where(eq(phases.id, round.phaseId));
+  if (!phase) return NextResponse.json({ error: 'Fase no trobada' }, { status: 404 });
+
+  const body = await req.json().catch(() => null);
+  const csv: string | undefined = body?.csv;
+  if (typeof csv !== 'string' || !csv.trim()) {
+    return NextResponse.json({ error: 'Cal el contingut del CSV' }, { status: 400 });
   }
 
-  const allPairings = await db.select().from(pairings).where(eq(pairings.roundId, roundId));
-  const pairingMap = new Map(allPairings.map((p) => [p.id, p]));
+  const columns = await loadColumns(tournamentId, round.phaseId);
+  const expectedHeader = columns.map((c) => c.header).join(',');
+
+  const lines = csv.trim().split('\n').map((l) => l.replace(/\r$/, '')).filter((l) => l.length > 0);
+  if (lines.length < 1) {
+    return NextResponse.json({ error: 'El CSV és buit' }, { status: 400 });
+  }
+  if (lines[0].trim() !== expectedHeader) {
+    return NextResponse.json(
+      { error: "La capçalera del CSV no coincideix amb l'esperada. Exporta de nou i edita's sobre aquella base." },
+      { status: 400 }
+    );
+  }
+
+  const roundMatches = await loadRoundMatches(roundId);
+  const matchById = new Map(roundMatches.map((m) => [m.id, m]));
 
   const errors: string[] = [];
   let updated = 0;
 
-  for (const row of body) {
-    const pairing = pairingMap.get(row.pairingId);
-    if (!pairing) {
-      errors.push(`Aparellament no trobat: ${row.pairingId}`);
+  for (let i = 1; i < lines.length; i++) {
+    const parsed = parseResultsCsvRow(columns, parseCsvLine(lines[i]));
+    if (!parsed.matchId) continue;
+
+    const match = matchById.get(parsed.matchId);
+    if (!match) {
+      errors.push(`Partida no trobada: ${parsed.matchId}`);
       continue;
     }
-    if (pairing.player2Id === null) continue;
+    if (match.participants.length <= 1) continue; // bye: ja té resultat assignat
 
-    let o1: GameOutcome, o2: GameOutcome;
-    if (row.p1Score > row.p2Score) { o1 = 'win'; o2 = 'loss'; }
-    else if (row.p2Score > row.p1Score) { o1 = 'loss'; o2 = 'win'; }
-    else { o1 = 'draw'; o2 = 'draw'; }
+    const seatData = parsed.perSeat.slice(0, match.participants.length);
+    if (seatData.some((s) => s === null)) {
+      errors.push(`Falten resultats de la partida ${parsed.matchId}`);
+      continue;
+    }
 
-    await db.update(pairings).set({
-      p1Score: row.p1Score,
-      p2Score: row.p2Score,
-      outcome1: o1,
-      outcome2: o2,
-      p1Scrabbles: row.p1Scrabbles ?? null,
-      p2Scrabbles: row.p2Scrabbles ?? null,
-      p1BestWord: row.p1BestWord ?? null,
-      p1BestWordScore: row.p1BestWordScore ?? null,
-      p2BestWord: row.p2BestWord ?? null,
-      p2BestWordScore: row.p2BestWordScore ?? null,
-      location: row.location ?? null,
-      comments: row.comments ?? null,
-      reportedAt: new Date(),
-    }).where(eq(pairings.id, row.pairingId));
+    const before = match.participants.map((p) => ({ entryId: p.entryId, rank: p.rank, score: p.score, points: p.points }));
+
+    const inputs = match.participants.map((p, seat) => ({
+      entryId: p.entryId,
+      score: seatData[seat]!.score,
+      rank: null,
+    }));
+    const scored = scoreMatch(inputs, phase.scoring);
+
+    for (const participant of match.participants) {
+      const result = scored.find((s) => s.entryId === participant.entryId);
+      if (!result) continue;
+      await db
+        .update(matchParticipants)
+        .set({ rank: result.rank, score: result.score, outcome: result.outcome, points: result.points })
+        .where(eq(matchParticipants.id, participant.id));
+    }
+
+    const perSeatAnswers = match.participants.flatMap((p, seat) =>
+      seatData[seat]!.answers.map((a) => ({ ...a, entryId: p.entryId }))
+    );
+    await saveAnswers(
+      tournamentId,
+      match.id,
+      match.participants,
+      [...perSeatAnswers, ...parsed.common.map((a) => ({ ...a, entryId: null }))]
+    );
+
+    await db.insert(matchRevisions).values({
+      id: uuid(),
+      matchId: match.id,
+      actorKind: 'account',
+      actorAccountId: guard.account.id,
+      actorEntryId: null,
+      deviceId: null,
+      createdAt: new Date(),
+      before,
+      after: scored.map((s) => ({ entryId: s.entryId, rank: s.rank, score: s.score, points: s.points })),
+    });
 
     updated++;
   }

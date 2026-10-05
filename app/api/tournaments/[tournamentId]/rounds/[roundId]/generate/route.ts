@@ -1,209 +1,182 @@
 import { NextResponse } from 'next/server';
-import { db } from '@/db';
-import { rounds, pairings, phases, players, groups, roundAbsences } from '@/db/schema';
-import { eq, and, inArray } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import { v4 as uuid } from 'uuid';
+import { db } from '@/db';
+import { matchParticipants, matches, phases, roundAbsences, rounds } from '@/db/schema';
+import type { PhaseConfig } from '@/db/types';
+import { requireTournamentAccess } from '@/lib/authz';
 import { generatePairings } from '@/lib/pairing/engine';
 import { computeStandings } from '@/lib/pairing/standings';
-import type {
-  PairingContext,
-  Round as EngineRound,
-  Player as EnginePlayer,
-  PreviousPairing,
-  Phase as EnginePhase,
-  SwissConfig,
-  SwissFideConfig,
-  KingOfTheHillConfig,
-} from '@/lib/pairing/types';
+import type { CsvMatchRow, Entrant, PairingContext, Phase as EnginePhase } from '@/lib/pairing/types';
+import { loadEntrants, loadPreviousMatches, loadQuestionMetrics, loadScoredMatches } from '@/lib/db-helpers';
 
 type Params = { params: Promise<{ tournamentId: string; roundId: string }> };
 
 export async function POST(req: Request, { params }: Params) {
   const { tournamentId, roundId } = await params;
+  const guard = await requireTournamentAccess(tournamentId);
+  if (guard.error) return guard.error;
 
-  // Carrega la ronda
-  const [round] = await db.select().from(rounds).where(
-    and(eq(rounds.id, roundId), eq(rounds.tournamentId, tournamentId))
-  );
+  const [round] = await db
+    .select()
+    .from(rounds)
+    .where(and(eq(rounds.id, roundId), eq(rounds.tournamentId, tournamentId)));
   if (!round) return NextResponse.json({ error: 'Ronda no trobada' }, { status: 404 });
-  if (round.isComplete) return NextResponse.json({ error: 'La ronda ja està tancada' }, { status: 409 });
+  if (round.status === 'closed') {
+    return NextResponse.json({ error: 'La ronda ja està tancada' }, { status: 409 });
+  }
 
-  // Comprova que la ronda no tingui ja aparellaments generats
-  const existingPairings = await db.select().from(pairings).where(eq(pairings.roundId, roundId));
-  if (existingPairings.length > 0) {
+  const existing = await db.select({ id: matches.id }).from(matches).where(eq(matches.roundId, roundId));
+  if (existing.length > 0) {
     return NextResponse.json(
-      { error: 'Aquesta ronda ja té aparellaments. Elimineu-los primer si voleu regenerar.' },
+      { error: 'Aquesta ronda ja té aparellaments. Elimineu-los primer si voleu regenerar-los.' },
       { status: 409 }
     );
   }
 
-  // Carrega la fase
   const [phase] = await db.select().from(phases).where(eq(phases.id, round.phaseId));
   if (!phase) return NextResponse.json({ error: 'Fase no trobada' }, { status: 404 });
 
-  // Llegeix els absents del cos de la petició
-  let absentPlayerIds: string[] = [];
-  try {
-    const body = await req.json().catch(() => ({}));
-    if (Array.isArray(body.absentPlayerIds)) {
-      absentPlayerIds = body.absentPlayerIds.filter((x: unknown) => typeof x === 'string');
-    }
-  } catch { /* body buit, cap absent */ }
-
-  // Desa les absències
-  if (absentPlayerIds.length > 0) {
-    await db.insert(roundAbsences).values(
-      absentPlayerIds.map(pid => ({ roundId, playerId: pid }))
-    ).onConflictDoNothing();
-  }
-
-  // Carrega els jugadors actius del campionat (excloent absents)
-  const dbPlayersAll = await db
-    .select()
-    .from(players)
-    .where(and(eq(players.tournamentId, tournamentId), eq(players.isActive, true)));
-
-  const absentSet = new Set(absentPlayerIds);
-  const dbPlayers = dbPlayersAll.filter(p => !absentSet.has(p.id));
-
-  // Determina quines fases cal incloure per al càlcul de classificació
-  const carryPhaseIds = getCarryPhaseIds(phase.config as EnginePhase['config']);
-  const phaseIdsForStandings = [...carryPhaseIds, phase.id];
-
-  // Carrega totes les rondes de les fases rellevants
-  const relevantRounds = await db
-    .select()
-    .from(rounds)
-    .where(inArray(rounds.phaseId, phaseIdsForStandings));
-
-  const relevantRoundIds = relevantRounds.map((r) => r.id);
-
-  // Carrega els aparellaments amb resultats d'aquestes rondes
-  const allPairings = relevantRoundIds.length > 0
-    ? await db.select().from(pairings).where(inArray(pairings.roundId, relevantRoundIds))
+  const body = await req.json().catch(() => ({}));
+  const absentEntryIds: string[] = Array.isArray(body.absentEntryIds)
+    ? body.absentEntryIds.filter((x: unknown) => typeof x === 'string')
     : [];
 
-  // Construeix les rondes del motor d'aparellaments
-  const engineRounds: EngineRound[] = relevantRounds.map((r) => ({
-    id: r.id,
-    tournamentId: r.tournamentId,
-    phaseId: r.phaseId,
-    number: r.number,
-    isComplete: r.isComplete,
-    createdAt: new Date(r.createdAt as unknown as number * 1000),
-    pairings: allPairings
-      .filter((p) => p.roundId === r.id)
-      .map((p) => ({
-        id: p.id,
-        roundId: p.roundId,
-        tableNumber: p.tableNumber,
-        player1Id: p.player1Id,
-        player2Id: p.player2Id ?? null,
-        result: p.outcome1 ? {
-          p1Score: p.p1Score ?? 0,
-          p2Score: p.p2Score ?? null,
-          outcome1: p.outcome1,
-          outcome2: p.outcome2 ?? null,
-          reportedAt: new Date((p.reportedAt as unknown as number) * 1000),
-          reportedBy: p.reportedBy ?? null,
-        } : null,
-      })),
-  }));
+  // Aparellament manual: les taules ja vénen fetes (CSV o creades a l'app),
+  // no les decideix el motor (lib/pairing/methods/manual.ts).
+  const csvRows: CsvMatchRow[] | undefined = Array.isArray(body.rows)
+    ? body.rows
+        .map((r: unknown) => {
+          const row = r as { tableNumber?: unknown; entryIds?: unknown };
+          return {
+            tableNumber: Number(row.tableNumber),
+            entryIds: Array.isArray(row.entryIds) ? row.entryIds.filter((x: unknown) => typeof x === 'string') : [],
+          };
+        })
+        .filter((r: CsvMatchRow) => Number.isInteger(r.tableNumber) && r.entryIds.length > 0)
+    : undefined;
 
-  // Calcula la classificació actual
-  const playerIds = dbPlayers.map((p) => p.id);
-  const standings = computeStandings(
-    engineRounds,
-    playerIds,
-    phase.tiebreakers as EnginePhase['tiebreakers']
+  if (absentEntryIds.length > 0) {
+    await db
+      .insert(roundAbsences)
+      .values(absentEntryIds.map((entryId) => ({ roundId, entryId })))
+      .onConflictDoNothing();
+  }
+
+  const absent = new Set(absentEntryIds);
+  const entrants: Entrant[] = (await loadEntrants(tournamentId)).filter(
+    (e) => e.isActive && !absent.has(e.id)
   );
 
-  // Construeix l'historial d'aparellaments previs (inclou byes amb player2Id=null)
-  const previousPairings: PreviousPairing[] = allPairings.map((p) => {
-    const r = relevantRounds.find((rr) => rr.id === p.roundId)!;
-    return {
-      player1Id: p.player1Id,
-      player2Id: p.player2Id ?? null,
-      roundNumber: r.number,
-      phaseId: r.phaseId,
-      outcome1: (p.outcome1 as PreviousPairing['outcome1']) ?? null,
-    };
+  // La classificació de partida inclou les fases que la fase actual arrossega.
+  const carryPhaseIds = getCarryPhaseIds(phase.config as PhaseConfig);
+  const scoredMatches = await loadScoredMatches(tournamentId, {
+    phaseIds: [...carryPhaseIds, phase.id],
   });
+  const { metrics, answers } = await loadQuestionMetrics(tournamentId);
 
-  // Construeix el context del motor
-  const enginePlayers: EnginePlayer[] = dbPlayers.map((p) => ({
-    id: p.id,
-    tournamentId: p.tournamentId,
-    name: p.name,
-    rating: p.rating ?? null,
-    groupId: p.groupId ?? null,
-    isActive: p.isActive,
-    createdAt: new Date((p.createdAt as unknown as number) * 1000),
-  }));
+  const standings = computeStandings({
+    entryIds: entrants.map((e) => e.id),
+    matches: scoredMatches,
+    tiebreakers: phase.tiebreakers,
+    questionMetrics: metrics,
+    answers,
+  });
 
   const enginePhase: EnginePhase = {
     id: phase.id,
     tournamentId: phase.tournamentId,
     order: phase.order,
     name: phase.name,
-    method: phase.method as EnginePhase['method'],
+    method: phase.method,
+    config: phase.config,
+    participantsPerMatch: phase.participantsPerMatch,
+    scoring: phase.scoring,
+    tiebreakers: phase.tiebreakers,
+    standingsScope: phase.standingsScope,
+    teamAggregation: phase.teamAggregation,
     startRound: phase.startRound,
     endRound: phase.endRound,
-    tiebreakers: phase.tiebreakers as EnginePhase['tiebreakers'],
-    config: phase.config as EnginePhase['config'],
     isComplete: phase.isComplete,
   };
 
   const ctx: PairingContext = {
     phase: enginePhase,
     roundNumber: round.number,
-    players: enginePlayers,
+    entrants,
     standings,
-    previousPairings,
+    previousMatches: await loadPreviousMatches(tournamentId),
   };
 
-  // Genera els aparellaments
-  const result = generatePairings(ctx);
+  const result = generatePairings(ctx, csvRows);
 
-  // Desa els aparellaments en una transacció
-  const newPairings = result.pairings.map((p) => ({
+  // L'equip es desa a cada participació: és una instantània del moment de
+  // jugar, perquè un canvi d'equip no reescrigui la història (§12.9).
+  const teamByEntry = new Map(entrants.map((e) => [e.id, e.teamId ?? null]));
+
+  const newMatches = result.matches.map((generated) => ({
     id: uuid(),
     roundId: round.id,
-    tableNumber: p.tableNumber,
-    player1Id: p.player1Id,
-    player2Id: p.player2Id ?? null,
-    // Bye: resultat automàtic
-    ...(p.player2Id === null ? {
-      outcome1: 'bye' as const,
-      p1Score: null,
-      p2Score: null,
-    } : {}),
+    tableNumber: generated.tableNumber,
+    location: null,
+    comments: null,
+    createdAt: new Date(),
+    entryIds: generated.entryIds,
   }));
 
-  if (newPairings.length > 0) {
-    await db.insert(pairings).values(newPairings);
+  if (newMatches.length > 0) {
+    await db.insert(matches).values(
+      newMatches.map(({ entryIds: _entryIds, ...match }) => match)
+    );
+
+    await db.insert(matchParticipants).values(
+      newMatches.flatMap((match) =>
+        match.entryIds.map((entryId, seat) => ({
+          id: uuid(),
+          matchId: match.id,
+          entryId,
+          seat,
+          // El bye ja té resultat: una taula d'un sol participant.
+          rank: match.entryIds.length === 1 ? 1 : null,
+          score: null,
+          outcome: match.entryIds.length === 1 ? ('bye' as const) : null,
+          points: match.entryIds.length === 1 ? phase.scoring.byePoints : null,
+          teamId: teamByEntry.get(entryId) ?? null,
+        }))
+      )
+    );
   }
 
-  const playerInfoMap = new Map(enginePlayers.map((p) => [p.id, { name: p.name, rating: p.rating ?? null }]));
-  const seedingOrder = (result.seedingOrder ?? []).map((id, i) => ({
-    seed: i + 1,
-    playerId: id,
-    name: playerInfoMap.get(id)?.name ?? id,
-    rating: playerInfoMap.get(id)?.rating ?? null,
-  }));
+  const nameByEntry = new Map(entrants.map((e) => [e.id, e]));
 
-  return NextResponse.json({
-    roundId: round.id,
-    roundNumber: round.number,
-    pairings: newPairings,
-    warnings: result.warnings,
-    seedingOrder,
-  }, { status: 201 });
+  return NextResponse.json(
+    {
+      roundId: round.id,
+      roundNumber: round.number,
+      matches: newMatches.map((m) => ({
+        id: m.id,
+        tableNumber: m.tableNumber,
+        participants: m.entryIds.map((entryId) => ({
+          entryId,
+          displayName: nameByEntry.get(entryId)?.displayName ?? entryId,
+        })),
+      })),
+      warnings: result.warnings,
+      seedingOrder: (result.seedingOrder ?? []).map((entryId, i) => ({
+        seed: i + 1,
+        entryId,
+        displayName: nameByEntry.get(entryId)?.displayName ?? entryId,
+        rating: nameByEntry.get(entryId)?.rating ?? null,
+      })),
+    },
+    { status: 201 }
+  );
 }
 
-function getCarryPhaseIds(config: EnginePhase['config']): string[] {
-  if (config.method === 'swiss') return (config as SwissConfig).carryStandingsFromPhaseIds;
-  if (config.method === 'swiss_fide') return (config as SwissFideConfig).carryStandingsFromPhaseIds;
-  if (config.method === 'king_of_the_hill') return (config as KingOfTheHillConfig).carryStandingsFromPhaseIds;
+/** Fases de les quals aquesta arrossega la classificació. */
+function getCarryPhaseIds(config: PhaseConfig): string[] {
+  if (config.method === 'swiss' || config.method === 'swiss_fide' || config.method === 'king_of_the_hill') {
+    return config.carryStandingsFromPhaseIds ?? [];
+  }
   return [];
 }

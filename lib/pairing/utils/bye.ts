@@ -1,48 +1,44 @@
-import type { Player, Standing, ByeHandling, PreviousPairing } from '../types';
+import type { ByeHandling, Entrant, PreviousMatch, Standing } from '../types';
 import { countByes } from './rematch';
 
 /**
- * Selecciona el jugador que rep el bye, el retira de la llista de jugadors actius
- * i retorna tant el jugador com la llista restant.
+ * Tria qui es queda sense partida i el retira de la llista.
+ *
+ * El bye és, en el model nou, una partida amb un sol participant (§12.2).
  */
 export function assignBye(
-  players: Player[],
+  entrants: Entrant[],
   standings: Standing[],
-  previousPairings: PreviousPairing[],
+  previousMatches: PreviousMatch[],
   handling: ByeHandling
-): { byePlayerId: string; remaining: Player[] } {
-  // Ordenem els jugadors per la seva posició a la classificació (pitjor primer)
-  const standingMap = new Map(standings.map((s) => [s.playerId, s]));
-  const sorted = [...players].sort((a, b) => {
+): { byeEntryId: string; remaining: Entrant[] } {
+  const standingMap = new Map(standings.map((s) => [s.entryId, s]));
+
+  // Pitjor classificat primer
+  const sorted = [...entrants].sort((a, b) => {
     const ra = standingMap.get(a.id)?.rank ?? 9999;
     const rb = standingMap.get(b.id)?.rank ?? 9999;
-    return rb - ra; // pitjor classificat primer
+    return rb - ra;
   });
 
-  let byePlayerId: string;
+  let byeEntryId: string;
 
   if (handling === 'lowest_ranked') {
-    byePlayerId = sorted[0].id;
-  } else if (handling === 'least_byes') {
-    // Entre els jugadors del darrer grup de punts, el que menys byes ha rebut
-    const lowestPoints = standingMap.get(sorted[0].id)?.points ?? 0;
-    const lastGroup = sorted.filter(
-      (p) => (standingMap.get(p.id)?.points ?? 0) === lowestPoints
-    );
-    lastGroup.sort(
-      (a, b) =>
-        countByes(a.id, previousPairings) - countByes(b.id, previousPairings)
-    );
-    byePlayerId = lastGroup[0].id;
+    byeEntryId = sorted[0].id;
   } else {
-    // random_last_group
+    // Entre els del darrer grup de punts: el que menys byes ha rebut, o a l'atzar
     const lowestPoints = standingMap.get(sorted[0].id)?.points ?? 0;
-    const lastGroup = sorted.filter(
-      (p) => (standingMap.get(p.id)?.points ?? 0) === lowestPoints
-    );
-    byePlayerId = lastGroup[Math.floor(Math.random() * lastGroup.length)].id;
+    const lastGroup = sorted.filter((e) => (standingMap.get(e.id)?.points ?? 0) === lowestPoints);
+
+    if (handling === 'least_byes') {
+      lastGroup.sort(
+        (a, b) => countByes(a.id, previousMatches) - countByes(b.id, previousMatches)
+      );
+      byeEntryId = lastGroup[0].id;
+    } else {
+      byeEntryId = lastGroup[Math.floor(Math.random() * lastGroup.length)].id;
+    }
   }
 
-  const remaining = players.filter((p) => p.id !== byePlayerId);
-  return { byePlayerId, remaining };
+  return { byeEntryId, remaining: entrants.filter((e) => e.id !== byeEntryId) };
 }

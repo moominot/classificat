@@ -4,34 +4,40 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
-import Select from '@/components/ui/Select';
+import NomBarrufInput, { type BarrufResultat } from './NomBarrufInput';
+import TagInput from './TagInput';
 import { readError } from '@/lib/http';
+import type { Tag } from '@/lib/pairing/types';
 
-interface Grup { id: string; name: string }
 interface Jugador {
   id: string;
   name: string;
   rating: number | null;
-  groupId: string | null;
+  tagIds: string[];
   phone: string | null;
   club: string | null;
+  barrufNumero?: number | null;
   isActive: boolean;
 }
 
 interface JugadorFormProps {
   tournamentId: string;
-  grups: Grup[];
+  tags: Tag[];
   jugador?: Jugador;
   onDone?: () => void;
 }
 
-export default function JugadorForm({ tournamentId, grups, jugador, onDone }: JugadorFormProps) {
+export default function JugadorForm({ tournamentId, tags, jugador, onDone }: JugadorFormProps) {
   const router = useRouter();
   const [nom, setNom] = useState(jugador?.name ?? '');
   const [rating, setRating] = useState(jugador?.rating?.toString() ?? '');
-  const [grupId, setGrupId] = useState(jugador?.groupId ?? '');
+  const [tagsSeleccionades, setTagsSeleccionades] = useState<Tag[]>(
+    tags.filter((t) => jugador?.tagIds.includes(t.id))
+  );
   const [phone, setPhone] = useState(jugador?.phone ?? '');
   const [club, setClub] = useState(jugador?.club ?? '');
+  const [barrufNumero, setBarrufNumero] = useState<number | null>(jugador?.barrufNumero ?? null);
+  const [barrufNom, setBarrufNom] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -42,19 +48,20 @@ export default function JugadorForm({ tournamentId, grups, jugador, onDone }: Ju
     setError('');
 
     const url = jugador
-      ? `/api/tournaments/${tournamentId}/players/${jugador.id}`
-      : `/api/tournaments/${tournamentId}/players`;
+      ? `/api/tournaments/${tournamentId}/entries/${jugador.id}`
+      : `/api/tournaments/${tournamentId}/entries`;
     const method = jugador ? 'PATCH' : 'POST';
 
     const res = await fetch(url, {
       method,
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        name: nom.trim(),
+        displayName: nom.trim(),
         rating: rating ? parseInt(rating) : null,
-        groupId: grupId || null,
+        tagIds: tagsSeleccionades.map((t) => t.id),
         phone: phone.trim() || null,
         club: club.trim() || null,
+        barrufNumero,
       }),
     });
 
@@ -67,38 +74,55 @@ export default function JugadorForm({ tournamentId, grups, jugador, onDone }: Ju
     }
   }
 
+  function handleNomChange(v: string) {
+    setNom(v);
+    if (barrufNumero != null && v !== barrufNom) {
+      setBarrufNumero(null);
+      setBarrufNom(null);
+    }
+  }
+
+  function handleBarrufPick(b: BarrufResultat) {
+    setNom(b.nom);
+    if (b.club) setClub(b.club);
+    if (b.barruf != null) setRating(String(b.barruf));
+    setBarrufNumero(b.numero);
+    setBarrufNom(b.nom);
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-3">
-      <Input
+      <NomBarrufInput
         label="Nom"
         value={nom}
-        onChange={e => setNom(e.target.value)}
-        placeholder="Nom complet del jugador"
-        error={error}
+        onChange={handleNomChange}
+        onPick={handleBarrufPick}
+        placeholder="Nom complet del jugador — cerca automàticament al BARRUF"
         autoFocus
-        required
       />
-      <div className="grid grid-cols-2 gap-3">
-        <Input
-          label="BARRUF (opcional)"
-          type="number"
-          value={rating}
-          onChange={e => setRating(e.target.value)}
-          placeholder="ex. 1200"
-        />
-        {grups.length > 0 && (
-          <Select
-            label="Grup"
-            value={grupId}
-            onChange={e => setGrupId(e.target.value)}
+      {error && <p className="text-xs text-loss">{error}</p>}
+
+      {barrufNumero != null && (
+        <div className="flex items-center gap-2 bg-accent-tint text-accent-ink text-xs font-medium px-3 py-2 rounded-lg">
+          <span>Vinculat al BARRUF #{barrufNumero}{barrufNom ? ` · ${barrufNom}` : ''}</span>
+          <button
+            type="button"
+            onClick={() => { setBarrufNumero(null); setBarrufNom(null); }}
+            className="ml-auto text-accent-ink hover:opacity-70 cursor-pointer"
+            aria-label="Desvincula"
           >
-            <option value="">Sense grup</option>
-            {grups.map(g => (
-              <option key={g.id} value={g.id}>{g.name}</option>
-            ))}
-          </Select>
-        )}
-      </div>
+            ✕
+          </button>
+        </div>
+      )}
+
+      <Input
+        label="BARRUF (opcional)"
+        type="number"
+        value={rating}
+        onChange={e => setRating(e.target.value)}
+        placeholder="ex. 1200"
+      />
       <div className="grid grid-cols-2 gap-3">
         <Input
           label="Club (opcional)"
@@ -114,6 +138,13 @@ export default function JugadorForm({ tournamentId, grups, jugador, onDone }: Ju
           placeholder="ex. 612 345 678"
         />
       </div>
+      <TagInput
+        tournamentId={tournamentId}
+        value={tagsSeleccionades}
+        onChange={setTagsSeleccionades}
+        label="Etiquetes (opcional)"
+        placeholder="ex. Club Nord, Sub-16..."
+      />
       <div className="flex gap-2 pt-1">
         <Button type="submit" loading={loading} disabled={!nom.trim()}>
           {jugador ? 'Desar canvis' : 'Afegir jugador'}

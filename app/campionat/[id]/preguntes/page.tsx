@@ -27,6 +27,7 @@ export default async function PreguntesPage({ params }: { params: Promise<{ id: 
         label1: q.label1,
         label2: q.label2,
         answerType: q.answerType,
+        aggregate: q.aggregate,
         showInRanking: q.showInRanking,
         order: q.order,
       }))}

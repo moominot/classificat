@@ -1,90 +1,166 @@
 import type {
+  GeneratedMatch,
+  KingOfTheHillConfig,
   PairingContext,
   PairingEngineResult,
-  GeneratedPairing,
-  KingOfTheHillConfig,
+  PairingWarning,
+  PreviousMatch,
+  Standing,
 } from '../types';
 import { buildRematchSet, hasPlayed } from '../utils/rematch';
-import { buildComparator } from '../tiebreakers';
+import { partitionByTags } from './tag-partition';
+import { buildEntryExclusionSets } from './exclusion-partition';
+import type { EntryPairExclusion } from '@/db/types';
 
 /**
- * Motor d'aparellaments "Rei del turó" (King of the Hill).
+ * Rei del turó: 1r contra 2n, 3r contra 4t, etc.
  *
- * Ordena els jugadors per classificació actual i els aparella:
- *   1r vs 2n, 3r vs 4t, 5è vs 6è, etc.
+ * Si un aparellament fos revanxa, es busca el següent disponible que no ho
+ * sigui. L'últim sense parella rep bye.
  *
- * Si hi ha un nombre imparell de jugadors:
- * - El darrer rep un bye.
- *
- * Si un aparellament seria una revanxa, s'intenta canviar l'adversari
- * amb el que té el rang adjacent (p.ex. 1r vs 3r, 2n vs 4t).
+ * Només 1 contra 1: amb taules de més de dos, "el següent de la llista" deixa
+ * de definir un enfrontament.
  */
 export function generateKingOfTheHillPairings(ctx: PairingContext): PairingEngineResult {
   const config = ctx.phase.config as KingOfTheHillConfig;
-  const warnings = [];
 
-  const rematchSet = buildRematchSet(ctx.previousPairings);
-  const comparator = buildComparator(ctx.phase.tiebreakers);
+  // Cada etiqueta triada fa el seu propi "rei del turó" independent — topN
+  // s'aplica dins de cada bossa, no al conjunt sencer (docs/pla-rols.md
+  // §13.1 #8, Fase 2).
+  if (config.scope === 'intra_tag') {
+    const active = ctx.entrants.filter((e) => e.isActive);
+    const { partitions, warnings: tagWarnings } = partitionByTags(active, config.tagIds ?? []);
 
-  // Ordena per classificació
-  let sorted = [...ctx.standings]
-    .sort(comparator)
-    .map((s) => s.playerId);
+    const matches: GeneratedMatch[] = [];
+    const warnings: PairingWarning[] = [...tagWarnings];
 
-  // Restricció als N millors si s'ha configurat
-  if (config.topN != null && config.topN > 0) {
-    sorted = sorted.slice(0, config.topN);
+    for (const entryIds of partitions.values()) {
+      if (entryIds.length <= 1) {
+        if (entryIds.length === 1) {
+          warnings.push({
+            type: 'no_pairings_possible',
+            message: 'Una etiqueta té un sol jugador actiu: no hi ha cap aparellament possible.',
+            affectedEntryIds: entryIds,
+          });
+          matches.push({ tableNumber: -1, entryIds });
+        }
+        continue;
+      }
+      const idSet = new Set(entryIds);
+      const poolStandings = ctx.standings.filter((s) => idSet.has(s.entryId));
+      const result = pairPool(poolStandings, ctx.previousMatches, config.topN, config.entryExclusions);
+      matches.push(...result.matches);
+      warnings.push(...result.warnings);
+    }
+
+    renumberTables(matches);
+    return { matches, warnings };
   }
 
-  // Aparellament greedy respectant l'ordre de rang
-  const pairings: GeneratedPairing[] = [];
+  return pairPool(ctx.standings, ctx.previousMatches, config.topN, config.entryExclusions);
+}
+
+function pairPool(
+  standings: Standing[],
+  previousMatches: PreviousMatch[],
+  topN: number | null | undefined,
+  entryExclusions: EntryPairExclusion[] | undefined
+): PairingEngineResult {
+  const warnings: PairingWarning[] = [];
+  const rematchSet = buildRematchSet(previousMatches);
+  const { avoidSet, forbidSet } = buildEntryExclusionSets(entryExclusions);
+
+  // Les classificacions ja arriben ordenades i amb `rank` assignat: aquí només
+  // cal respectar-ne l'ordre (abans es reordenava amb un comparador propi).
+  let ordered = [...standings].sort((a, b) => a.rank - b.rank).map((s) => s.entryId);
+
+  if (topN != null && topN > 0) {
+    ordered = ordered.slice(0, topN);
+  }
+
+  if (ordered.length <= 1) {
+    if (ordered.length === 1) {
+      warnings.push({
+        type: 'no_pairings_possible',
+        message: 'Un sol jugador actiu: no hi ha cap aparellament possible.',
+        affectedEntryIds: ordered,
+      });
+      return { matches: [{ tableNumber: -1, entryIds: ordered }], warnings };
+    }
+    return { matches: [], warnings };
+  }
+
+  const matches: GeneratedMatch[] = [];
   const paired = new Set<string>();
   let tableNumber = 1;
 
-  for (let i = 0; i < sorted.length; i++) {
-    if (paired.has(sorted[i])) continue;
+  for (let i = 0; i < ordered.length; i++) {
+    const first = ordered[i];
+    if (paired.has(first)) continue;
 
-    const p1 = sorted[i];
-    let found = false;
-
-    // Primer intenta l'adversari natural (i+1), llavors els adjacents
-    for (let j = i + 1; j < sorted.length; j++) {
-      if (paired.has(sorted[j])) continue;
-      const p2 = sorted[j];
-
-      if (!hasPlayed(p1, p2, rematchSet)) {
-        pairings.push({ tableNumber: tableNumber++, player1Id: p1, player2Id: p2 });
-        paired.add(p1);
-        paired.add(p2);
-        found = true;
-        break;
-      }
+    const candidates = ordered.slice(i + 1).filter((id) => !paired.has(id));
+    if (candidates.length === 0) {
+      matches.push({ tableNumber: 0, entryIds: [first] });
+      paired.add(first);
+      continue;
     }
 
-    if (!found) {
-      // Revanxa inevitable: aparella amb el natural i avisa
-      for (let j = i + 1; j < sorted.length; j++) {
-        if (paired.has(sorted[j])) continue;
-        const p2 = sorted[j];
-        pairings.push({ tableNumber: tableNumber++, player1Id: p1, player2Id: p2 });
-        paired.add(p1);
-        paired.add(p2);
-        warnings.push({
-          type: 'rematch_forced' as const,
-          message: `Revanxa inevitable entre els jugadors ${p1} i ${p2}.`,
-          affectedPlayerIds: [p1, p2],
-        });
-        found = true;
-        break;
-      }
+    // Primer, cap col·lisió (revanxa, "evitar" o "prohibir").
+    let second = candidates.find(
+      (id) => !hasPlayed(first, id, rematchSet) && !hasPlayed(first, id, avoidSet) && !hasPlayed(first, id, forbidSet)
+    );
+
+    if (second === undefined) {
+      // Es relaxen revanxa/"evitar", però "prohibir" mai es relaxa.
+      second = candidates.find((id) => !hasPlayed(first, id, forbidSet));
     }
 
-    if (!found) {
-      // Jugador sense parella → bye
-      pairings.push({ tableNumber: 0, player1Id: p1, player2Id: null });
-      paired.add(p1);
+    if (second === undefined) {
+      // Tots els restants estan prohibits amb `first`: queda en bye.
+      warnings.push({
+        type: 'forbidden_bye',
+        message: 'Sense cap parella permesa per una exclusió "prohibir": se li assigna bye.',
+        affectedEntryIds: [first],
+      });
+      matches.push({ tableNumber: 0, entryIds: [first] });
+      paired.add(first);
+      continue;
     }
+
+    if (hasPlayed(first, second, rematchSet) || hasPlayed(first, second, avoidSet)) {
+      const isAvoid = !hasPlayed(first, second, rematchSet) && hasPlayed(first, second, avoidSet);
+      warnings.push({
+        type: isAvoid ? 'pair_excluded' : 'rematch_forced',
+        message: isAvoid
+          ? 'No s\'ha pogut evitar una parella marcada com a "evitar". S\'ha permès excepcionalment.'
+          : 'Revanxa inevitable en aquest aparellament.',
+        affectedEntryIds: [first, second],
+      });
+    }
+
+    matches.push({ tableNumber: tableNumber++, entryIds: [first, second] });
+    paired.add(first);
+    paired.add(second);
   }
 
-  return { pairings, warnings };
+  // Cada bye necessita una taula pròpia: amb exclusions "prohibir" hi pot
+  // haver més d'un bye a la mateixa ronda.
+  let nextByeTable = tableNumber;
+  for (const match of matches) {
+    if (match.entryIds.length === 1) match.tableNumber = nextByeTable++;
+  }
+
+  return { matches, warnings };
+}
+
+/** Renumera taula 1..N per a les jugades i deixa els byes a la darrera. */
+function renumberTables(matches: GeneratedMatch[]): void {
+  let tableNumber = 1;
+  for (const match of matches) {
+    if (match.entryIds.length > 1) match.tableNumber = tableNumber++;
+  }
+  let nextByeTable = tableNumber;
+  for (const match of matches) {
+    if (match.entryIds.length === 1) match.tableNumber = nextByeTable++;
+  }
 }

@@ -1,8 +1,5 @@
-import type {
-  PairingContext,
-  PairingEngineResult,
-  CsvPairingRow,
-} from './types';
+import type { CsvMatchRow, PairingContext, PairingEngineResult } from './types';
+import { tableSizeError } from './validation';
 import { generateSwissPairings } from './methods/swiss';
 import { generateSwissFidePairings } from './methods/swiss-fide';
 import { generateRoundRobinPairings } from './methods/round-robin';
@@ -10,20 +7,37 @@ import { generateKingOfTheHillPairings } from './methods/king-of-the-hill';
 import { generateManualPairings } from './methods/manual';
 
 /**
- * Motor d'aparellaments principal — orquestrador modular.
- *
- * Decideix quin algorisme d'aparellament aplicar en funció del mètode
- * configurat a la fase activa i delega al mòdul corresponent.
- *
- * @param ctx      Context complet amb fase, jugadors, classificació i historial
- * @param csvRows  Files CSV per a aparellament manual (opcional)
+ * Motor d'aparellaments: decideix quin algorisme toca segons la fase i hi
+ * delega. Afegir un sistema nou continua sent afegir un fitxer a `methods/` i
+ * una branca aquí.
  */
 export function generatePairings(
   ctx: PairingContext,
-  csvRows?: CsvPairingRow[]
+  csvRows?: CsvMatchRow[]
 ): PairingEngineResult {
-  const { method } = ctx.phase;
+  const { method, participantsPerMatch } = ctx.phase;
 
+  // La interfície no hauria d'oferir mètodes d'1v1 en fases de taules més
+  // grans; si hi arriben igualment, val més aturar-se que generar
+  // aparellaments que no volen dir res.
+  const sizeError = tableSizeError(method, participantsPerMatch);
+  if (sizeError) {
+    return {
+      matches: [],
+      warnings: [{ type: 'uneven_table', message: sizeError, affectedEntryIds: [] }],
+    };
+  }
+
+  const result = dispatch(method, ctx, csvRows);
+  normalizeByeTableNumbers(result);
+  return result;
+}
+
+function dispatch(
+  method: PairingContext['phase']['method'],
+  ctx: PairingContext,
+  csvRows?: CsvMatchRow[]
+): PairingEngineResult {
   switch (method) {
     case 'swiss':
       return generateSwissPairings(ctx);
@@ -40,12 +54,12 @@ export function generatePairings(
     case 'manual':
       if (!csvRows || csvRows.length === 0) {
         return {
-          pairings: [],
+          matches: [],
           warnings: [
             {
               type: 'incomplete_round_robin',
-              message: 'Aparellament manual: no s\'han proporcionat aparellaments.',
-              affectedPlayerIds: [],
+              message: "Aparellament manual: no s'han proporcionat taules.",
+              affectedEntryIds: [],
             },
           ],
         };
@@ -54,5 +68,20 @@ export function generatePairings(
 
     default:
       throw new Error(`Mètode d'aparellament desconegut: ${method}`);
+  }
+}
+
+/**
+ * Cada mètode marca els byes amb `tableNumber: -1` o `0` com a placeholder;
+ * (roundId, tableNumber) és únic a la base de dades, així que amb més d'un
+ * bye a la mateixa ronda (possible des que les exclusions "prohibir" poden
+ * forçar-ne diversos) calen números diferents abans de desar-los.
+ */
+function normalizeByeTableNumbers(result: PairingEngineResult): void {
+  const played = result.matches.filter((m) => m.entryIds.length > 1);
+  const maxPlayed = played.reduce((max, m) => Math.max(max, m.tableNumber), 0);
+  let nextByeTable = maxPlayed + 1;
+  for (const match of result.matches) {
+    if (match.entryIds.length === 1) match.tableNumber = nextByeTable++;
   }
 }

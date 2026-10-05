@@ -1,17 +1,26 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useIsDirector } from '@/components/DirectorContext';
+import { useCanManage } from '@/components/ViewerContext';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
-import { Card } from '@/components/ui/Card';
+import Modal from '@/components/ui/Modal';
 import EmptyState from '@/components/ui/EmptyState';
 import { readError } from '@/lib/http';
 
 type QType = 'value' | 'wordvalue' | 'image';
-type QScope = 'match' | 'player';
+type QScope = 'match' | 'participant';
 type AnswerType = 'text' | 'number';
+type QuestionAggregate = 'sum' | 'avg' | 'max' | 'count' | 'none';
+
+const AGGREGATE_LABEL: Record<QuestionAggregate, string> = {
+  none: 'No compta al rànquing',
+  sum: 'Suma',
+  avg: 'Mitjana',
+  max: 'Màxim',
+  count: 'Recompte',
+};
 
 interface Question {
   id: string;
@@ -23,6 +32,8 @@ interface Question {
   label1: string | null;
   label2: string | null;
   answerType: AnswerType | null;
+  /** Com s'agrega la resposta per convertir-la en mètrica de classificació (§12.1). */
+  aggregate: QuestionAggregate;
   showInRanking: boolean;
   order: number;
 }
@@ -40,7 +51,7 @@ function subLabel(q: Question) {
 }
 
 function canRank(scope: QScope, type: QType) {
-  return scope === 'player' && type !== 'image';
+  return scope === 'participant' && type !== 'image';
 }
 
 function tabClass(active: boolean) {
@@ -57,7 +68,7 @@ export default function PreguntesClient({
   initialQuestions: Question[];
 }) {
   const router = useRouter();
-  const isDirector = useIsDirector();
+  const canManage = useCanManage();
   const [questions, setQuestions] = useState(initialQuestions);
   const [panelOpen, setPanelOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -66,20 +77,16 @@ export default function PreguntesClient({
   const [label1, setLabel1] = useState('Paraula');
   const [label2, setLabel2] = useState('Punts');
   const [type, setType] = useState<QType>('value');
-  const [scope, setScope] = useState<QScope>('player');
+  const [scope, setScope] = useState<QScope>('participant');
   const [answerType, setAnswerType] = useState<AnswerType>('text');
   const [showInRanking, setShowInRanking] = useState(false);
+  const [aggregate, setAggregate] = useState<QuestionAggregate>('none');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
-  const panelRef = useRef<HTMLDivElement>(null);
 
   const editingQuestion = editingId ? questions.find(q => q.id === editingId) ?? null : null;
   const isBuiltinEditing = !!editingQuestion?.isBuiltin;
-
-  useEffect(() => {
-    if (panelOpen) panelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [panelOpen, editingId]);
 
   function openAdd() {
     setEditingId(null);
@@ -87,9 +94,10 @@ export default function PreguntesClient({
     setLabel1('Paraula');
     setLabel2('Punts');
     setType('value');
-    setScope('player');
+    setScope('participant');
     setAnswerType('text');
     setShowInRanking(false);
+    setAggregate('none');
     setError('');
     setPanelOpen(true);
   }
@@ -103,6 +111,7 @@ export default function PreguntesClient({
     setScope(q.scope);
     setAnswerType(q.answerType ?? 'text');
     setShowInRanking(q.showInRanking);
+    setAggregate(q.aggregate);
     setError('');
     setPanelOpen(true);
   }
@@ -126,6 +135,7 @@ export default function PreguntesClient({
           label1: type === 'wordvalue' ? label1 : null,
           label2: type === 'wordvalue' ? label2 : null,
           showInRanking: canRank(scope, type) && showInRanking,
+          aggregate: canRank(scope, type) ? aggregate : 'none',
         }
       : {
           type,
@@ -135,6 +145,7 @@ export default function PreguntesClient({
           label2: type === 'wordvalue' ? label2 : null,
           answerType: type === 'value' ? answerType : null,
           showInRanking: canRank(scope, type) && showInRanking,
+          aggregate: canRank(scope, type) ? aggregate : 'none',
         };
 
     const res = await fetch(
@@ -175,7 +186,7 @@ export default function PreguntesClient({
     setDeletingId(null);
   }
 
-  if (!isDirector) {
+  if (!canManage) {
     return (
       <div className="space-y-4">
         <div>
@@ -190,7 +201,7 @@ export default function PreguntesClient({
                   {TYPE_BADGE[q.type].label}
                 </span>
                 <span className="text-[10.5px] font-semibold px-2.5 py-1 rounded-full bg-surface-2 text-ink-3 whitespace-nowrap">
-                  {q.scope === 'match' ? 'Per partida' : 'Per jugador (×2)'}
+                  {q.scope === 'match' ? 'Per partida' : 'Per jugador'}
                 </span>
               </div>
               <div className="text-sm font-medium text-ink">{q.label}</div>
@@ -212,20 +223,19 @@ export default function PreguntesClient({
         </p>
       </div>
 
-      <div className="flex flex-col lg:flex-row gap-5 items-start">
-        <div className="flex-1 min-w-0 w-full space-y-2">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-ink-3 uppercase tracking-wide">
-              Preguntes del formulari ({questions.length})
-            </span>
-            <Button size="sm" onClick={openAdd}>+ Afegeix pregunta</Button>
-          </div>
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="text-xs font-semibold text-ink-3 uppercase tracking-wide">
+            Preguntes del formulari ({questions.length})
+          </span>
+          <Button size="sm" onClick={openAdd}>+ Afegeix pregunta</Button>
+        </div>
 
-          {questions.length === 0 ? (
-            <EmptyState title="Encara no hi ha preguntes" description="Afegeix la primera pregunta del formulari." />
-          ) : (
-            <div className="space-y-2">
-              {questions.map(q => (
+        {questions.length === 0 ? (
+          <EmptyState title="Encara no hi ha preguntes" description="Afegeix la primera pregunta del formulari." action={<Button onClick={openAdd}>+ Afegeix pregunta</Button>} />
+        ) : (
+          <div className="space-y-2">
+            {questions.map(q => (
                 <div key={q.id} className="bg-surface border border-border rounded-xl overflow-hidden">
                   <div className="p-3.5">
                     <div className="flex items-center gap-1.5 flex-wrap mb-1.5">
@@ -233,7 +243,7 @@ export default function PreguntesClient({
                         {TYPE_BADGE[q.type].label}
                       </span>
                       <span className="text-[10.5px] font-semibold px-2.5 py-1 rounded-full bg-surface-2 text-ink-3 whitespace-nowrap">
-                        {q.scope === 'match' ? 'Per partida' : 'Per jugador (×2)'}
+                        {q.scope === 'match' ? 'Per partida' : 'Per jugador'}
                       </span>
                       {q.showInRanking && (
                         <span title="Té pestanya de rànquing a Classificació" className="text-[10.5px] font-semibold text-accent-ink whitespace-nowrap">
@@ -269,18 +279,10 @@ export default function PreguntesClient({
               ))}
             </div>
           )}
-        </div>
+      </div>
 
-        {panelOpen && (
-          <div ref={panelRef} className="w-full lg:w-[360px] flex-shrink-0 scroll-mt-4">
-          <Card className="space-y-3.5">
-            <div className="flex items-center justify-between">
-              <span className="font-display font-bold text-sm">
-                {editingId ? 'Edita la pregunta' : 'Nova pregunta'}
-              </span>
-              <button onClick={closePanel} className="text-ink-3 hover:text-ink text-lg leading-none cursor-pointer">×</button>
-            </div>
-
+      <Modal open={panelOpen} onClose={closePanel} title={editingId ? 'Edita la pregunta' : 'Nova pregunta'}>
+          <div className="space-y-3.5">
             {isBuiltinEditing && (
               <p className="text-xs text-ink-3 bg-surface-2 rounded-lg px-3 py-2">
                 Pregunta bàsica del sistema: el tipus i l&apos;àmbit no es poden canviar.
@@ -299,8 +301,8 @@ export default function PreguntesClient({
                 </button>
                 <button
                   disabled={isBuiltinEditing}
-                  onClick={() => setScope('player')}
-                  className={`flex-1 text-center px-2 py-2 rounded-xl border text-xs font-semibold cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 ${tabClass(scope === 'player')}`}
+                  onClick={() => setScope('participant')}
+                  className={`flex-1 text-center px-2 py-2 rounded-xl border text-xs font-semibold cursor-pointer disabled:cursor-not-allowed disabled:opacity-60 ${tabClass(scope === 'participant')}`}
                 >
                   Per jugador<br /><span className="font-normal text-[10.5px]">2 respostes</span>
                 </button>
@@ -391,15 +393,38 @@ export default function PreguntesClient({
               </label>
             )}
 
+            {/*
+              L'agregació és el que converteix una pregunta en mètrica de
+              classificació: amb "Suma" o "Màxim", aquesta resposta pot ser
+              columna del rànquing i desempat sense tocar codi (§12.1).
+            */}
+            {canRank(scope, type) && (
+              <label className="block bg-surface-2 rounded-xl px-3 py-2.5">
+                <span className="block text-xs font-semibold text-ink">Com compta al rànquing</span>
+                <select
+                  value={aggregate}
+                  onChange={(e) => setAggregate(e.target.value as QuestionAggregate)}
+                  className="mt-1.5 block w-full rounded-lg border border-border bg-surface px-2.5 py-1.5 text-xs text-ink"
+                >
+                  {(Object.keys(AGGREGATE_LABEL) as QuestionAggregate[]).map((key) => (
+                    <option key={key} value={key}>
+                      {AGGREGATE_LABEL[key]}
+                    </option>
+                  ))}
+                </select>
+                <span className="block text-xs text-ink-3 mt-1.5">
+                  Si compta, la resposta també es pot fer servir com a desempat de la fase.
+                </span>
+              </label>
+            )}
+
             {error && <p className="text-xs text-loss">{error}</p>}
 
             <Button className="w-full" onClick={handleSave} loading={loading}>
               {editingId ? 'Desa els canvis' : 'Afegeix la pregunta'}
             </Button>
-          </Card>
           </div>
-        )}
-      </div>
+      </Modal>
     </div>
   );
 }

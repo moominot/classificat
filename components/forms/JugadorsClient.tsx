@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import Button from '@/components/ui/Button';
@@ -8,36 +8,38 @@ import Badge from '@/components/ui/Badge';
 import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
 import JugadorForm from './JugadorForm';
 import ImportarJugadors from './ImportarJugadors';
-import { useIsDirector } from '@/components/DirectorContext';
+import NomBarrufInput, { type BarrufResultat } from './NomBarrufInput';
+import { useCanManage } from '@/components/ViewerContext';
 import { readError } from '@/lib/http';
+import type { Tag } from '@/lib/pairing/types';
 
-interface Grup { id: string; name: string }
 interface Jugador {
   id: string;
   name: string;
   rating: number | null;
-  groupId: string | null;
+  tagIds: string[];
   phone: string | null;
   club: string | null;
+  barrufNumero: number | null;
   isActive: boolean;
 }
 
 export default function JugadorsClient({
   tournamentId,
   jugadors,
-  grups,
+  tags,
 }: {
   tournamentId: string;
   jugadors: Jugador[];
-  grups: Grup[];
+  tags: Tag[];
 }) {
   const router = useRouter();
-  const isDirector = useIsDirector();
-  const [mode, setMode] = useState<'llista' | 'nou' | 'importar'>('llista');
+  const canManage = useCanManage();
+  const [mode, setMode] = useState<'llista' | 'importar'>('llista');
   const [editant, setEditant] = useState<string | null>(null);
   const [ordre, setOrdre] = useState<'nom' | 'elo'>('nom');
 
-  const grupMap = new Map(grups.map(g => [g.id, g.name]));
+  const tagMap = new Map(tags.map(t => [t.id, t.name]));
 
   function sortJugadors(jj: Jugador[]) {
     if (ordre === 'elo') {
@@ -52,7 +54,7 @@ export default function JugadorsClient({
   }
 
   async function toggleActiu(jugador: Jugador) {
-    await fetch(`/api/tournaments/${tournamentId}/players/${jugador.id}`, {
+    await fetch(`/api/tournaments/${tournamentId}/entries/${jugador.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ isActive: !jugador.isActive }),
@@ -69,8 +71,7 @@ export default function JugadorsClient({
         </span>
         {mode === 'llista' ? (
           <>
-            {isDirector && <Button size="sm" onClick={() => setMode('nou')}>+ Afegir jugador</Button>}
-            {isDirector && (
+            {canManage && (
               <Button size="sm" variant="secondary" onClick={() => setMode('importar')}>
                 Importar CSV
               </Button>
@@ -95,23 +96,16 @@ export default function JugadorsClient({
         )}
       </div>
 
-      {/* Formulari nou jugador */}
-      {mode === 'nou' && (
-        <Card>
-          <CardHeader><CardTitle>Nou jugador</CardTitle></CardHeader>
-          <JugadorForm
-            tournamentId={tournamentId}
-            grups={grups}
-            onDone={() => setMode('llista')}
-          />
-        </Card>
+      {/* Afegir ràpidament: sempre visible per no haver de canviar de pantalla */}
+      {mode === 'llista' && canManage && (
+        <AfegeixRapid tournamentId={tournamentId} />
       )}
 
       {/* Formulari importació CSV */}
       {mode === 'importar' && (
         <Card>
           <CardHeader><CardTitle>Importar jugadors</CardTitle></CardHeader>
-          <ImportarJugadors tournamentId={tournamentId} grups={grups} />
+          <ImportarJugadors tournamentId={tournamentId} />
         </Card>
       )}
 
@@ -125,9 +119,9 @@ export default function JugadorsClient({
           <Card padding={false}>
             <JugadorsLlista
               jugadors={sortJugadors(jugadors)}
-              grupMap={grupMap}
+              tagMap={tagMap}
               tournamentId={tournamentId}
-              grups={grups}
+              tags={tags}
               editant={editant}
               setEditant={setEditant}
               toggleActiu={toggleActiu}
@@ -139,19 +133,107 @@ export default function JugadorsClient({
   );
 }
 
+/** Camp sempre visible a sobre del llistat: afegeix un jugador sense canviar de pantalla. */
+function AfegeixRapid({ tournamentId }: { tournamentId: string }) {
+  const router = useRouter();
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [nom, setNom] = useState('');
+  const [barrufNumero, setBarrufNumero] = useState<number | null>(null);
+  const [barrufNom, setBarrufNom] = useState<string | null>(null);
+  const [club, setClub] = useState<string | null>(null);
+  const [rating, setRating] = useState<number | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  function handleNomChange(v: string) {
+    setNom(v);
+    if (barrufNumero != null && v !== barrufNom) {
+      setBarrufNumero(null);
+      setBarrufNom(null);
+      setClub(null);
+      setRating(null);
+    }
+  }
+
+  function handlePick(b: BarrufResultat) {
+    setNom(b.nom);
+    setBarrufNumero(b.numero);
+    setBarrufNom(b.nom);
+    setClub(b.club ?? null);
+    setRating(b.barruf ?? null);
+  }
+
+  async function afegeix() {
+    if (!nom.trim() || loading) return;
+    setLoading(true);
+    setError('');
+    const res = await fetch(`/api/tournaments/${tournamentId}/entries`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ displayName: nom.trim(), club, rating, barrufNumero }),
+    });
+    if (res.ok) {
+      setNom('');
+      setBarrufNumero(null);
+      setBarrufNom(null);
+      setClub(null);
+      setRating(null);
+      router.refresh();
+      inputRef.current?.focus();
+    } else {
+      setError(await readError(res, 'Error en afegir el jugador'));
+    }
+    setLoading(false);
+  }
+
+  return (
+    <Card className="space-y-2">
+      <div className="flex items-end gap-2">
+        <div className="flex-1">
+          <NomBarrufInput
+            ref={inputRef}
+            value={nom}
+            onChange={handleNomChange}
+            onPick={handlePick}
+            placeholder="Nom del jugador — cerca automàticament al BARRUF…"
+            onKeyDownEnter={afegeix}
+          />
+        </div>
+        <Button onClick={afegeix} loading={loading} disabled={!nom.trim()}>
+          + Afegeix
+        </Button>
+      </div>
+      {barrufNumero != null && (
+        <div className="flex items-center gap-2 bg-accent-tint text-accent-ink text-xs font-medium px-3 py-2 rounded-lg">
+          <span>Vinculat al BARRUF #{barrufNumero}{club ? ` · ${club}` : ''}{rating != null ? ` · BARRUF ${rating}` : ''}</span>
+          <button
+            type="button"
+            onClick={() => { setBarrufNumero(null); setBarrufNom(null); setClub(null); setRating(null); }}
+            className="ml-auto text-accent-ink hover:opacity-70 cursor-pointer"
+            aria-label="Desvincula"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+      {error && <p className="text-xs text-loss">{error}</p>}
+    </Card>
+  );
+}
+
 function JugadorsLlista({
   jugadors,
-  grupMap,
+  tagMap,
   tournamentId,
-  grups,
+  tags,
   editant,
   setEditant,
   toggleActiu,
 }: {
   jugadors: Jugador[];
-  grupMap: Map<string, string>;
+  tagMap: Map<string, string>;
   tournamentId: string;
-  grups: Grup[];
+  tags: Tag[];
   editant: string | null;
   setEditant: (id: string | null) => void;
   toggleActiu: (j: Jugador) => void;
@@ -162,9 +244,9 @@ function JugadorsLlista({
         <JugadorRow
           key={j.id}
           jugador={j}
-          grupMap={grupMap}
+          tagMap={tagMap}
           tournamentId={tournamentId}
-          grups={grups}
+          tags={tags}
           editant={editant}
           setEditant={setEditant}
           toggleActiu={toggleActiu}
@@ -176,23 +258,23 @@ function JugadorsLlista({
 
 function JugadorRow({
   jugador: j,
-  grupMap,
+  tagMap,
   tournamentId,
-  grups,
+  tags,
   editant,
   setEditant,
   toggleActiu,
 }: {
   jugador: Jugador;
-  grupMap: Map<string, string>;
+  tagMap: Map<string, string>;
   tournamentId: string;
-  grups: Grup[];
+  tags: Tag[];
   editant: string | null;
   setEditant: (id: string | null) => void;
   toggleActiu: (j: Jugador) => void;
 }) {
   const router = useRouter();
-  const isDirector = useIsDirector();
+  const canManage = useCanManage();
   const [confirmDel, setConfirmDel] = useState(false);
   const [delError, setDelError] = useState('');
   const [deleting, setDeleting] = useState(false);
@@ -200,7 +282,7 @@ function JugadorRow({
   async function handleDelete() {
     setDeleting(true);
     setDelError('');
-    const res = await fetch(`/api/tournaments/${tournamentId}/players/${j.id}`, { method: 'DELETE' });
+    const res = await fetch(`/api/tournaments/${tournamentId}/entries/${j.id}`, { method: 'DELETE' });
     if (res.ok) {
       router.refresh();
     } else {
@@ -215,7 +297,7 @@ function JugadorRow({
       <li className="p-4">
         <JugadorForm
           tournamentId={tournamentId}
-          grups={grups}
+          tags={tags}
           jugador={j}
           onDone={() => setEditant(null)}
         />
@@ -241,13 +323,18 @@ function JugadorRow({
           </div>
           <div className="flex gap-3 text-xs text-ink-3 mt-0.5 flex-wrap">
             {j.rating && <span>BARRUF {j.rating}</span>}
-            {j.groupId && <span>Grup {grupMap.get(j.groupId)}</span>}
+            {j.barrufNumero && <span className="text-accent-ink font-medium">#{j.barrufNumero}</span>}
+            {j.tagIds.map((id) => (
+              <span key={id} className="px-1.5 py-0.5 rounded bg-accent-tint text-accent-ink">
+                {tagMap.get(id) ?? '?'}
+              </span>
+            ))}
             {j.club && <span>{j.club}</span>}
             {j.phone && <span>{j.phone}</span>}
           </div>
           {delError && <p className="text-xs text-loss mt-1">{delError}</p>}
         </div>
-        {isDirector && (
+        {canManage && (
           <div className="flex gap-1 flex-shrink-0 items-center">
             {confirmDel ? (
               <>

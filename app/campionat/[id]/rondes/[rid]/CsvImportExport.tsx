@@ -3,7 +3,7 @@
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
-import { useIsDirector } from '@/components/DirectorContext';
+import { useCanManage } from '@/components/ViewerContext';
 import { readError } from '@/lib/http';
 
 interface Props {
@@ -13,12 +13,19 @@ interface Props {
   rondaTancada: boolean;
 }
 
+/**
+ * Format ample (docs a app/api/.../csv/route.ts): una fila per partida, amb
+ * un bloc de columnes per jugador (nom, idBARRUF, punts, preguntes pròpies)
+ * i les preguntes comunes de partida al final. El parsing es fa al servidor
+ * perquè les columnes depenen de les preguntes configurades — aquí només es
+ * llegeix el fitxer i es reenvia tal qual.
+ */
 export default function CsvImportExport({ tournamentId, roundId, roundNumber, rondaTancada }: Props) {
   const router = useRouter();
-  const isDirector = useIsDirector();
+  const canManage = useCanManage();
   const fileRef = useRef<HTMLInputElement>(null);
 
-  if (!isDirector) return null;
+  if (!canManage) return null;
   const [importing, setImporting] = useState(false);
   const [missatge, setMissatge] = useState<{ tipus: 'ok' | 'error'; text: string } | null>(null);
 
@@ -33,29 +40,18 @@ export default function CsvImportExport({ tournamentId, roundId, roundNumber, ro
     setMissatge(null);
 
     try {
-      const text = await file.text();
-      const { rows, errors } = parseCsvResults(text);
-
-      if (errors.length > 0) {
-        setMissatge({ tipus: 'error', text: errors.join(' · ') });
-        return;
-      }
-      if (rows.length === 0) {
-        setMissatge({ tipus: 'error', text: "No s'han trobat resultats al CSV" });
-        return;
-      }
-
+      const csv = await file.text();
       const res = await fetch(`/api/tournaments/${tournamentId}/rounds/${roundId}/csv`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(rows),
+        body: JSON.stringify({ csv }),
       });
       if (!res.ok) {
         setMissatge({ tipus: 'error', text: await readError(res, 'Error en importar') });
       } else {
         const data = await res.json();
         const extres = data.errors?.length ? ` (${data.errors.length} errors)` : '';
-        setMissatge({ tipus: 'ok', text: `${data.updated} resultats importats${extres}` });
+        setMissatge({ tipus: 'ok', text: `${data.updated} partides actualitzades${extres}` });
         router.refresh();
       }
     } catch {
@@ -100,90 +96,4 @@ export default function CsvImportExport({ tournamentId, roundId, roundNumber, ro
       )}
     </div>
   );
-}
-
-// ─── Parser CSV client-side ───────────────────────────────────────────────────
-
-type ImportRow = {
-  pairingId: string;
-  p1Score: number;
-  p2Score: number;
-  p1Scrabbles: number | null;
-  p2Scrabbles: number | null;
-  p1BestWord: string | null;
-  p1BestWordScore: number | null;
-  p2BestWord: string | null;
-  p2BestWordScore: number | null;
-  location: string | null;
-  comments: string | null;
-};
-
-function parseCsvResults(csvText: string): { rows: ImportRow[]; errors: string[] } {
-  const lines = csvText.trim().split('\n').map((l) => l.trim()).filter(Boolean);
-  const errors: string[] = [];
-  const rows: ImportRow[] = [];
-
-  if (lines.length < 2) {
-    errors.push('El CSV és buit o no té dades');
-    return { rows, errors };
-  }
-
-  // Salta la capçalera (primera línia)
-  for (let i = 1; i < lines.length; i++) {
-    const parts = parseLine(lines[i]);
-    // id,taula,jugador1,jugador2,punts_j1,punts_j2,bingos_j1,bingos_j2,
-    // millor_j1,pts_millor_j1,millor_j2,pts_millor_j2,localitat,comentaris
-    const [id, , , , p1Str, p2Str, p1ScrStr, p2ScrStr, p1Word, p1WordPts, p2Word, p2WordPts, location, comments] = parts;
-
-    if (!id) continue;
-    if (p1Str === 'bye' || p2Str === '') continue; // saltem byes i files sense jugador2
-
-    const p1Score = parseInt(p1Str, 10);
-    const p2Score = parseInt(p2Str, 10);
-
-    if (isNaN(p1Score) || isNaN(p2Score)) {
-      errors.push(`Línia ${i + 1}: puntuacions invàlides ("${p1Str}", "${p2Str}")`);
-      continue;
-    }
-
-    rows.push({
-      pairingId: id,
-      p1Score,
-      p2Score,
-      p1Scrabbles: p1ScrStr ? parseInt(p1ScrStr, 10) || null : null,
-      p2Scrabbles: p2ScrStr ? parseInt(p2ScrStr, 10) || null : null,
-      p1BestWord: p1Word || null,
-      p1BestWordScore: p1WordPts ? parseInt(p1WordPts, 10) || null : null,
-      p2BestWord: p2Word || null,
-      p2BestWordScore: p2WordPts ? parseInt(p2WordPts, 10) || null : null,
-      location: location || null,
-      comments: comments || null,
-    });
-  }
-
-  return { rows, errors };
-}
-
-function parseLine(line: string): string[] {
-  const result: string[] = [];
-  let i = 0;
-  while (i <= line.length) {
-    if (line[i] === '"') {
-      let val = '';
-      i++;
-      while (i < line.length) {
-        if (line[i] === '"' && line[i + 1] === '"') { val += '"'; i += 2; }
-        else if (line[i] === '"') { i++; break; }
-        else { val += line[i++]; }
-      }
-      result.push(val);
-      if (line[i] === ',') i++;
-    } else {
-      const end = line.indexOf(',', i);
-      if (end === -1) { result.push(line.slice(i)); break; }
-      result.push(line.slice(i, end));
-      i = end + 1;
-    }
-  }
-  return result;
 }

@@ -3,29 +3,30 @@
 import { useRef, useState } from 'react';
 import { readError } from '@/lib/http';
 
-export interface OcrFields {
-  p1Score: number | null;
-  p2Score: number | null;
-  p1Scrabbles: number | null;
-  p2Scrabbles: number | null;
-  p1BestWord: string | null;
-  p2BestWord: string | null;
-  p1BestWordScore: number | null;
-  p2BestWordScore: number | null;
+/**
+ * El que l'OCR llegeix del full, **per participant** i en el mateix ordre que
+ * s'han enviat els noms. Amb taules de més de dos ja no hi caben camps fixos
+ * p1/p2 (docs/pla-rols.md §12.2).
+ */
+export interface OcrParticipantFields {
+  score: number | null;
+  bingos: number | null;
+  bestWord: string | null;
+  bestWordScore: number | null;
 }
 
 interface Props {
-  pairingId: string;
+  matchId: string;
   kind: 'sheet' | 'board';
-  p1Name: string;
-  p2Name: string;
+  /** Noms dels participants, en ordre de cadira. */
+  names: string[];
   currentUrl: string;
   disabled?: boolean;
-  onUploaded: (url: string, fields: OcrFields | null) => void;
+  onUploaded: (url: string, fields: OcrParticipantFields[] | null) => void;
   onRemove: () => void;
 }
 
-export default function PhotoStep({ pairingId, kind, p1Name, p2Name, currentUrl, disabled, onUploaded, onRemove }: Props) {
+export default function PhotoStep({ matchId, kind, names, currentUrl, disabled, onUploaded, onRemove }: Props) {
   const [status, setStatus] = useState<'idle' | 'processing' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -41,18 +42,17 @@ export default function PhotoStep({ pairingId, kind, p1Name, p2Name, currentUrl,
     try {
       const fd = new FormData();
       fd.append('file', file);
-      fd.append('pairingId', pairingId);
+      fd.append('matchId', matchId);
       fd.append('kind', kind);
-      fd.append('p1Name', p1Name);
-      fd.append('p2Name', p2Name);
+      fd.append('names', names.join('|'));
 
       const res = await fetch('/api/uploads/score-sheets', { method: 'POST', body: fd });
       if (!res.ok) {
         throw new Error(await readError(res, 'Error en processar la imatge'));
       }
-      const { url, fields } = await res.json();
+      const { url, participants } = await res.json();
       setStatus('idle');
-      onUploaded(url, kind === 'sheet' ? fields : null);
+      onUploaded(url, kind === 'sheet' ? participants : null);
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : 'Error desconegut');
       setStatus('error');

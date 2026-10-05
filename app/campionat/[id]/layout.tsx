@@ -1,15 +1,22 @@
-import { db } from '@/db';
-import { tournaments } from '@/db/schema';
 import { eq } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
-import { cookies } from 'next/headers';
-import { getIronSession } from 'iron-session';
-import { sessionOptions } from '@/lib/session';
-import type { SessionData } from '@/lib/session';
+import { db } from '@/db';
+import { tournaments } from '@/db/schema';
+import { canManageTournament, getCurrentAccount, getViewer } from '@/lib/authz';
+import { ViewerProvider } from '@/components/ViewerContext';
+import { SetHeaderTitle } from '@/components/HeaderTitleContext';
 import NavTabs from './NavTabs';
-import { DirectorProvider } from '@/components/DirectorContext';
-import QrCompartir from '@/components/QrCompartir';
+import ConfigSidebar from './ConfigSidebar';
 
+/**
+ * Cada campionat s'ha de sentir com una aplicació pròpia: el nom del
+ * campionat és el títol principal, i tota la navegació hi viu a sota —
+ * no repartida entre una capçalera genèrica, un fil d'Ariadna i les
+ * pestanyes. Al mòbil tot va en una barra de pestanyes que llisca; a
+ * l'escriptori, el que és "configuració" (Grups, Fases, Preguntes, BARRUF)
+ * passa a un panell lateral i només queda a dalt el contingut que es
+ * consulta sovint (Jugadors, Rondes, Classificació).
+ */
 export default async function CampionatLayout({
   children,
   params,
@@ -21,34 +28,27 @@ export default async function CampionatLayout({
   const [tournament] = await db.select().from(tournaments).where(eq(tournaments.id, id));
   if (!tournament) notFound();
 
-  const session = await getIronSession<SessionData>(await cookies(), sessionOptions);
-  const isDirector = session.isDirector ?? false;
+  const account = await getCurrentAccount();
+  const canManage = account ? await canManageTournament(account, id) : false;
+  const viewer = await getViewer(id);
 
   return (
-    <DirectorProvider isDirector={isDirector}>
-      <div className="space-y-5">
-        {/* Capçalera del campionat */}
-        <div className="flex items-center gap-2 text-sm text-ink-3">
-          {isDirector ? (
-            <a href="/" className="hover:text-accent-ink">Campionats</a>
-          ) : (
-            <span>Campionats</span>
-          )}
-          <span>/</span>
-          <span className="text-ink font-medium">{tournament.name}</span>
-          {isDirector && (
-            <div className="ml-auto">
-              <QrCompartir tournamentId={id} />
-            </div>
-          )}
+    <ViewerProvider
+      viewer={{
+        role: account?.role ?? null,
+        canManage,
+        displayName: account?.displayName ?? null,
+        entryId: viewer.entryId,
+      }}
+    >
+      <SetHeaderTitle name={tournament.name} id={id} />
+      <div className="lg:flex lg:gap-6 lg:items-start">
+        {canManage && <ConfigSidebar id={id} />}
+        <div className="flex-1 min-w-0 space-y-5">
+          <NavTabs id={id} />
+          {children}
         </div>
-
-        {/* Pestanyes de navegació */}
-        <NavTabs id={id} name={tournament.name} />
-
-        {/* Contingut */}
-        {children}
       </div>
-    </DirectorProvider>
+    </ViewerProvider>
   );
 }

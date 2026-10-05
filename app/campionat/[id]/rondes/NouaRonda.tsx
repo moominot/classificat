@@ -4,7 +4,8 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import Select from '@/components/ui/Select';
-import { useIsDirector } from '@/components/DirectorContext';
+import Modal from '@/components/ui/Modal';
+import { useCanManage } from '@/components/ViewerContext';
 import { readError } from '@/lib/http';
 
 interface Fase { id: string; name: string; startRound: number; endRound: number; order: number }
@@ -19,7 +20,7 @@ export default function NouaRonda({
   rondesExistents: number[];
 }) {
   const router = useRouter();
-  const isDirector = useIsDirector();
+  const canManage = useCanManage();
   const [obert, setObert] = useState(false);
   const [faseId, setFaseId] = useState(fases[0]?.id ?? '');
   const [loading, setLoading] = useState(false);
@@ -48,43 +49,40 @@ export default function NouaRonda({
     }
   }
 
-  if (!isDirector) return null;
+  if (!canManage) return null;
 
-  if (!obert) {
-    return (
+  return (
+    <>
       <Button size="sm" onClick={() => setObert(true)}>
         + Ronda {propera}
       </Button>
-    );
-  }
 
-  return (
-    <div className="flex items-end gap-2 bg-surface border border-border rounded-xl p-3 shadow-sm">
-      {fases.length > 1 && (
-        <Select
-          label="Fase"
-          value={faseId}
-          onChange={e => setFaseId(e.target.value)}
-          className="min-w-40"
-        >
-          {fases.map(f => (
-            <option key={f.id} value={f.id}>
-              {f.name} (rondes {f.startRound}–{f.endRound})
-            </option>
-          ))}
-        </Select>
-      )}
-      <div className="flex flex-col gap-1">
-        {error && <p className="text-xs text-loss">{error}</p>}
-        <div className="flex gap-2">
-          <Button onClick={crearRonda} loading={loading}>
-            Crear ronda {propera}
-          </Button>
-          <Button variant="ghost" onClick={() => setObert(false)}>
-            Cancel·lar
-          </Button>
+      <Modal open={obert} onClose={() => setObert(false)} title={`Crear ronda ${propera}`}>
+        <div className="space-y-4">
+          {fases.length > 1 && (
+            <Select
+              label="Fase"
+              value={faseId}
+              onChange={e => setFaseId(e.target.value)}
+            >
+              {fases.map(f => (
+                <option key={f.id} value={f.id}>
+                  {f.name} (rondes {f.startRound}–{f.endRound})
+                </option>
+              ))}
+            </Select>
+          )}
+          {error && <p className="text-sm text-loss">{error}</p>}
+          <div className="flex gap-2 pt-1">
+            <Button onClick={crearRonda} loading={loading} className="flex-1 sm:flex-none">
+              Crear ronda {propera}
+            </Button>
+            <Button variant="ghost" onClick={() => setObert(false)}>
+              Cancel·lar
+            </Button>
+          </div>
         </div>
-      </div>
-    </div>
+      </Modal>
+    </>
   );
 }

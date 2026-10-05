@@ -1,25 +1,58 @@
 /**
- * Tests bàsics del motor d'aparellaments.
+ * Tests del motor d'aparellaments.
  * Executa amb: npx tsx lib/pairing/__tests__/engine.test.ts
  */
 
-import { generatePairings } from '../engine';
-import { computeStandings } from '../standings';
-import { bergerSchedule } from '../methods/round-robin';
+// S'importen els mètodes directament i no des de '../engine': el motor arrossega
+// @echecs/swiss, que és només ESM i no es pot carregar amb tsx en mode CommonJS.
+// La tria de mètode i la validació de mida de taula es proven per separat.
+import { generateSwissPairings } from '../methods/swiss';
+import { generateKingOfTheHillPairings } from '../methods/king-of-the-hill';
+import { generateRoundRobinPairings, bergerSchedule, roundRobinTotalRounds } from '../methods/round-robin';
+import { supportsTableSize, tableSizeError } from '../validation';
 import type {
-  Phase, Player, Standing, Round, PairingContext,
-  SwissConfig, RoundRobinConfig, KingOfTheHillConfig,
+  Entrant,
+  GeneratedMatch,
+  KingOfTheHillConfig,
+  PairingContext,
+  Phase,
+  PhaseConfig,
+  PreviousMatch,
+  RoundRobinConfig,
+  Standing,
+  SwissConfig,
 } from '../types';
+import { DEFAULT_SCORING } from '@/db/types';
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
+let failed = 0;
 
-function makePlayer(id: string, groupId?: string): Player {
-  return { id, tournamentId: 't1', name: `Jugador ${id}`, isActive: true, groupId: groupId ?? null, createdAt: new Date() };
+function check(name: string, got: unknown, want: unknown) {
+  const ok = JSON.stringify(got) === JSON.stringify(want);
+  if (ok) {
+    console.log(`  ok   ${name}`);
+  } else {
+    failed++;
+    console.log(`  FALLA ${name}\n    obtingut: ${JSON.stringify(got)}\n    esperat:  ${JSON.stringify(want)}`);
+  }
 }
 
-function makeStanding(playerId: string, rank: number, points: number): Standing {
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+function makeEntrant(id: string, groupId?: string): Entrant {
   return {
-    playerId,
+    id,
+    tournamentId: 't1',
+    personId: `person-${id}`,
+    displayName: `Jugador ${id}`,
+    isActive: true,
+    groupId: groupId ?? null,
+    teamId: null,
+  };
+}
+
+function makeStanding(entryId: string, rank: number, points: number): Standing {
+  return {
+    entryId,
     rank,
     points,
     wins: points,
@@ -27,191 +60,205 @@ function makeStanding(playerId: string, rank: number, points: number): Standing 
     draws: 0,
     byes: 0,
     gamesPlayed: points,
-    spread: points * 10,
-    tiebreakers: { buchholz: 0, medianBuchholz: 0, berger: 0, cumulative: 0, avgScore: 0, spread: 0, wins: points, directEncounterResult: -1 },
+    metrics: { wins: points, spread: points * 10, total_score: 0, avg_score: 0 },
   };
 }
 
-function makePhase(method: Phase['method'], config: Phase['config']): Phase {
+function makePhase(
+  method: Phase['method'],
+  config: PhaseConfig,
+  participantsPerMatch = 2
+): Phase {
   return {
     id: 'phase1',
     tournamentId: 't1',
     order: 1,
     name: 'Fase de prova',
     method,
+    config,
+    participantsPerMatch,
+    scoring: DEFAULT_SCORING,
+    tiebreakers: ['spread', 'wins'],
+    standingsScope: ['global'],
     startRound: 1,
     endRound: 10,
-    tiebreakers: ['median_buchholz', 'buchholz', 'spread'],
-    config,
     isComplete: false,
   };
 }
 
-function makeCtx(phase: Phase, players: Player[], standings: Standing[]): PairingContext {
-  return { phase, roundNumber: 1, players, standings, previousPairings: [] };
+function makeCtx(
+  phase: Phase,
+  entrants: Entrant[],
+  standings: Standing[],
+  previousMatches: PreviousMatch[] = []
+): PairingContext {
+  return { phase, roundNumber: 1, entrants, standings, previousMatches };
 }
 
-// ─── Test 1: Berger schedule ──────────────────────────────────────────────────
+const SWISS_CONFIG: SwissConfig = {
+  method: 'swiss',
+  avoidRematches: true,
+  byeHandling: 'lowest_ranked',
+  scoreGroupWindowSize: 2,
+  carryStandingsFromPhaseIds: [],
+  scope: 'all',
+  tagIds: [],
+  entryExclusions: [],
+  seedingCriteria: ['points', 'elo', 'name'],
+};
 
-console.log('\n=== Test 1: Taula de Berger (Round Robin) ===');
+/** Tots els participants apareixen exactament un cop. */
+function coversEveryone(matches: GeneratedMatch[], entryIds: string[]): boolean {
+  const seen = matches.flatMap((m) => m.entryIds);
+  return seen.length === entryIds.length && new Set(seen).size === entryIds.length;
+}
+
+// ─── Taula de Berger ──────────────────────────────────────────────────────────
+
+console.log('\n=== Taula de Berger ===');
 {
-  const playerIds = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'];
-  const totalRounds = 5; // 6 jugadors → 5 rondes
+  const ids = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'];
+  check('6 jugadors → 5 rondes', roundRobinTotalRounds(6, false), 5);
 
-  for (let r = 1; r <= totalRounds; r++) {
-    const pairings = bergerSchedule(playerIds, r, false);
-    console.log(`  Ronda ${r}:`, pairings?.map(p => `${p.player1Id} vs ${p.player2Id ?? 'BYE'}`).join(', '));
-  }
-
-  // Verifica que cap parella es repeteix
   const seen = new Set<string>();
-  let hasRepeat = false;
-  for (let r = 1; r <= totalRounds; r++) {
-    const pairings = bergerSchedule(playerIds, r, false) ?? [];
-    for (const p of pairings) {
-      const key = [p.player1Id, p.player2Id].sort().join(':');
-      if (seen.has(key)) { hasRepeat = true; }
+  let repeats = 0;
+  let complete = true;
+
+  for (let round = 1; round <= 5; round++) {
+    const matches = bergerSchedule(ids, round, false) ?? [];
+    if (!coversEveryone(matches, ids)) complete = false;
+    for (const match of matches) {
+      const key = [...match.entryIds].sort().join(':');
+      if (seen.has(key)) repeats++;
       seen.add(key);
     }
   }
-  console.log(`  Cap revanxa: ${!hasRepeat ? '✓' : '✗ ERROR'}`);
+
+  check('cada ronda aparella tothom', complete, true);
+  check('cap revanxa en tot el round robin', repeats, 0);
+  check('les 15 parelles possibles s\'han jugat', seen.size, 15);
+  check('ronda més enllà del calendari', bergerSchedule(ids, 6, false), null);
 }
 
-// ─── Test 2: Round Robin amb nombre imparell ──────────────────────────────────
-
-console.log('\n=== Test 2: Berger amb 5 jugadors (imparell = bye) ===');
+console.log('\n=== Berger amb nombre imparell ===');
 {
-  const playerIds = ['P1', 'P2', 'P3', 'P4', 'P5'];
-  for (let r = 1; r <= 5; r++) {
-    const pairings = bergerSchedule(playerIds, r, false);
-    console.log(`  Ronda ${r}:`, pairings?.map(p => `${p.player1Id} vs ${p.player2Id ?? 'BYE'}`).join(', '));
+  const ids = ['P1', 'P2', 'P3', 'P4', 'P5'];
+  const byesPerRound = [];
+  for (let round = 1; round <= 5; round++) {
+    const matches = bergerSchedule(ids, round, false) ?? [];
+    byesPerRound.push(matches.filter((m) => m.entryIds.length === 1).length);
   }
+  check('exactament un bye per ronda', byesPerRound, [1, 1, 1, 1, 1]);
 }
 
-// ─── Test 3: Sistema suís bàsic ───────────────────────────────────────────────
+// ─── Sistema suís ─────────────────────────────────────────────────────────────
 
-console.log('\n=== Test 3: Sistema suís (6 jugadors, ronda 1) ===');
+console.log('\n=== Sistema suís ===');
 {
-  const players = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'].map(id => makePlayer(id));
-  const standings = players.map((p, i) => makeStanding(p.id, i + 1, 0)); // tots a 0 punts
+  const entrants = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'].map((id) => makeEntrant(id));
+  const standings = entrants.map((e, i) => makeStanding(e.id, i + 1, 0));
+  const result = generateSwissPairings(makeCtx(makePhase('swiss', SWISS_CONFIG), entrants, standings));
 
-  const phase = makePhase('swiss', {
-    method: 'swiss',
-    avoidRematches: true,
-    byeHandling: 'lowest_ranked',
-    scoreGroupWindowSize: 2,
-    carryStandingsFromPhaseIds: [],
-    seedingCriteria: ['points', 'elo', 'name'],
-  } as SwissConfig);
-
-  const ctx = makeCtx(phase, players, standings);
-  const result = generatePairings(ctx);
-
-  console.log('  Aparellaments:');
-  result.pairings.forEach(p => {
-    console.log(`    Taula ${p.tableNumber}: ${p.player1Id} vs ${p.player2Id ?? 'BYE'}`);
-  });
-  console.log(`  Avisos: ${result.warnings.length === 0 ? 'cap' : result.warnings.map(w => w.message).join(', ')}`);
+  check('3 taules amb 6 jugadors', result.matches.length, 3);
+  check('tothom aparellat un sol cop', coversEveryone(result.matches, entrants.map((e) => e.id)), true);
+  check('sense avisos', result.warnings.length, 0);
+  check('taules numerades des d\'1', result.matches.map((m) => m.tableNumber).sort(), [1, 2, 3]);
 }
 
-// ─── Test 4: Sistema suís amb revanxa forçada ─────────────────────────────────
-
-console.log('\n=== Test 4: Sistema suís (4 jugadors, 2a ronda amb revanxa) ===');
+console.log('\n=== Suís amb nombre imparell (bye) ===');
 {
-  const players = ['P1', 'P2', 'P3', 'P4'].map(id => makePlayer(id));
+  const entrants = ['P1', 'P2', 'P3', 'P4', 'P5'].map((id) => makeEntrant(id));
+  const standings = entrants.map((e, i) => makeStanding(e.id, i + 1, 0));
+  const result = generateSwissPairings(makeCtx(makePhase('swiss', SWISS_CONFIG), entrants, standings));
+
+  const byes = result.matches.filter((m) => m.entryIds.length === 1);
+  check('hi ha un bye', byes.length, 1);
+  check('el bye és per al darrer del sembrat', byes[0].entryIds, ['P5']);
+  check('ningú es queda fora', coversEveryone(result.matches, entrants.map((e) => e.id)), true);
+}
+
+console.log('\n=== Suís amb revanxa inevitable ===');
+{
+  const entrants = ['P1', 'P2', 'P3', 'P4'].map((id) => makeEntrant(id));
   const standings = [
-    makeStanding('P1', 1, 1),
-    makeStanding('P2', 2, 1),
-    makeStanding('P3', 3, 0),
-    makeStanding('P4', 4, 0),
+    makeStanding('P1', 1, 1), makeStanding('P2', 2, 1),
+    makeStanding('P3', 3, 0), makeStanding('P4', 4, 0),
   ];
-
-  const phase = makePhase('swiss', {
-    method: 'swiss',
-    avoidRematches: true,
-    byeHandling: 'lowest_ranked',
-    scoreGroupWindowSize: 2,
-    carryStandingsFromPhaseIds: [],
-    seedingCriteria: ['points', 'elo', 'name'],
-  } as SwissConfig);
-
-  // Tots ja s'han enfrontat a tots
-  const previousPairings = [
-    { player1Id: 'P1', player2Id: 'P2', roundNumber: 1, phaseId: 'phase1', outcome1: 'win' as const },
-    { player1Id: 'P3', player2Id: 'P4', roundNumber: 1, phaseId: 'phase1', outcome1: 'win' as const },
+  // Tothom ha jugat contra tothom: qualsevol aparellament serà revanxa.
+  const previous: PreviousMatch[] = [
+    { roundNumber: 1, phaseId: 'phase1', entryIds: ['P1', 'P2'], ranks: [1, 2] },
+    { roundNumber: 1, phaseId: 'phase1', entryIds: ['P3', 'P4'], ranks: [1, 2] },
+    { roundNumber: 2, phaseId: 'phase1', entryIds: ['P1', 'P3'], ranks: [1, 2] },
+    { roundNumber: 2, phaseId: 'phase1', entryIds: ['P2', 'P4'], ranks: [1, 2] },
+    { roundNumber: 3, phaseId: 'phase1', entryIds: ['P1', 'P4'], ranks: [1, 2] },
+    { roundNumber: 3, phaseId: 'phase1', entryIds: ['P2', 'P3'], ranks: [1, 2] },
   ];
+  const result = generateSwissPairings(makeCtx(makePhase('swiss', SWISS_CONFIG), entrants, standings, previous));
 
-  const ctx: PairingContext = { ...makeCtx(phase, players, standings), previousPairings };
-  const result = generatePairings(ctx);
-
-  console.log('  Aparellaments:');
-  result.pairings.forEach(p => {
-    console.log(`    Taula ${p.tableNumber}: ${p.player1Id} vs ${p.player2Id ?? 'BYE'}`);
-  });
-  if (result.warnings.length > 0) {
-    console.log(`  Avís: ${result.warnings[0].message}`);
-  }
+  check('genera aparellaments igualment', result.matches.length, 2);
+  check('i avisa de la revanxa', result.warnings[0]?.type, 'rematch_forced');
 }
 
-// ─── Test 5: Rei del turó ─────────────────────────────────────────────────────
+// ─── Rei del turó ─────────────────────────────────────────────────────────────
 
-console.log('\n=== Test 5: Rei del turó ===');
+console.log('\n=== Rei del turó ===');
 {
-  const players = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'].map(id => makePlayer(id));
+  const entrants = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'].map((id) => makeEntrant(id));
   const standings = [
-    makeStanding('P1', 1, 5),
-    makeStanding('P2', 2, 4),
-    makeStanding('P3', 3, 3),
-    makeStanding('P4', 4, 3),
-    makeStanding('P5', 5, 2),
-    makeStanding('P6', 6, 1),
+    makeStanding('P1', 1, 5), makeStanding('P2', 2, 4), makeStanding('P3', 3, 3),
+    makeStanding('P4', 4, 3), makeStanding('P5', 5, 2), makeStanding('P6', 6, 1),
   ];
-
-  const phase = makePhase('king_of_the_hill', {
+  const config: KingOfTheHillConfig = {
     method: 'king_of_the_hill',
     topN: null,
     carryStandingsFromPhaseIds: [],
-  } as KingOfTheHillConfig);
+    scope: 'all',
+    tagIds: [],
+    entryExclusions: [],
+  };
+  const result = generateKingOfTheHillPairings(makeCtx(makePhase('king_of_the_hill', config), entrants, standings));
 
-  const ctx = makeCtx(phase, players, standings);
-  const result = generatePairings(ctx);
-
-  console.log('  Aparellaments:');
-  result.pairings.forEach(p => {
-    console.log(`    Taula ${p.tableNumber}: ${p.player1Id} vs ${p.player2Id ?? 'BYE'}`);
-  });
+  check('1r amb 2n, 3r amb 4t, 5è amb 6è', result.matches.map((m) => m.entryIds), [
+    ['P1', 'P2'], ['P3', 'P4'], ['P5', 'P6'],
+  ]);
 }
 
-// ─── Test 6: Càlcul de classificació ─────────────────────────────────────────
+// ─── Taules de més de dos (§12.2) ─────────────────────────────────────────────
 
-console.log('\n=== Test 6: Càlcul de classificació amb Buchholz ===');
+console.log('\n=== Taules de quatre ===');
 {
-  // Simula 3 rondes amb 4 jugadors
-  const engineRounds: Round[] = [
-    {
-      id: 'r1', tournamentId: 't1', phaseId: 'p1', number: 1, isComplete: true, createdAt: new Date(),
-      pairings: [
-        { id: 'a1', roundId: 'r1', tableNumber: 1, player1Id: 'P1', player2Id: 'P2',
-          result: { p1Score: 350, p2Score: 280, outcome1: 'win', outcome2: 'loss', reportedAt: new Date(), reportedBy: null } },
-        { id: 'a2', roundId: 'r1', tableNumber: 2, player1Id: 'P3', player2Id: 'P4',
-          result: { p1Score: 320, p2Score: 310, outcome1: 'win', outcome2: 'loss', reportedAt: new Date(), reportedBy: null } },
-      ],
-    },
-    {
-      id: 'r2', tournamentId: 't1', phaseId: 'p1', number: 2, isComplete: true, createdAt: new Date(),
-      pairings: [
-        { id: 'a3', roundId: 'r2', tableNumber: 1, player1Id: 'P1', player2Id: 'P3',
-          result: { p1Score: 400, p2Score: 300, outcome1: 'win', outcome2: 'loss', reportedAt: new Date(), reportedBy: null } },
-        { id: 'a4', roundId: 'r2', tableNumber: 2, player1Id: 'P2', player2Id: 'P4',
-          result: { p1Score: 280, p2Score: 320, outcome1: 'loss', outcome2: 'win', reportedAt: new Date(), reportedBy: null } },
-      ],
-    },
-  ];
+  const entrants = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6', 'P7', 'P8'].map((id) => makeEntrant(id));
+  const standings = entrants.map((e, i) => makeStanding(e.id, i + 1, 0));
+  const config: RoundRobinConfig = { method: 'round_robin', scope: 'all', tagIds: [], doubleRound: false, tagExclusions: [] };
+  const result = generateRoundRobinPairings(makeCtx(makePhase('round_robin', config, 4), entrants, standings));
 
-  const standings = computeStandings(engineRounds, ['P1', 'P2', 'P3', 'P4'], ['buchholz', 'spread']);
-  standings.forEach(s => {
-    console.log(`  ${s.rank}. ${s.playerId}: ${s.points}pts, spread:${s.spread}, Buchholz:${s.tiebreakers.buchholz}`);
-  });
+  check('8 jugadors → 2 taules de 4', result.matches.map((m) => m.entryIds.length), [4, 4]);
+  check('tothom assegut un sol cop', coversEveryone(result.matches, entrants.map((e) => e.id)), true);
 }
 
-console.log('\n✓ Tots els tests completats.\n');
+console.log('\n=== Taules de quatre amb residu ===');
+{
+  const entrants = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'].map((id) => makeEntrant(id));
+  const standings = entrants.map((e, i) => makeStanding(e.id, i + 1, 0));
+  const config: RoundRobinConfig = { method: 'round_robin', scope: 'all', tagIds: [], doubleRound: false, tagExclusions: [] };
+  const result = generateRoundRobinPairings(makeCtx(makePhase('round_robin', config, 4), entrants, standings));
+
+  check('6 jugadors → una taula de 4 i una de 2', result.matches.map((m) => m.entryIds.length), [4, 2]);
+  check('i avisa de la taula incompleta', result.warnings.some((w) => w.type === 'uneven_table'), true);
+}
+
+console.log('\n=== Els mètodes d\'1v1 no accepten taules grans ===');
+{
+  // El suís es basa en la proximitat de punts entre dos: amb quatre a taula
+  // val més aturar-se que inventar-se un aparellament (§13.1 #8).
+  check('round robin admet taules de 4', supportsTableSize('round_robin', 4), true);
+  check('manual admet taules de 4', supportsTableSize('manual', 4), true);
+  check('el suís no', supportsTableSize('swiss', 4), false);
+  check('el suís FIDE tampoc', supportsTableSize('swiss_fide', 4), false);
+  check('ni el rei del turó', supportsTableSize('king_of_the_hill', 4), false);
+  check('tots admeten 1v1', ['swiss', 'swiss_fide', 'king_of_the_hill', 'round_robin', 'manual'].every((m) => supportsTableSize(m as never, 2)), true);
+  check('i ho explica', tableSizeError('swiss', 4)?.includes('només funciona amb taules de dos'), true);
+}
+
+console.log(failed === 0 ? '\n✓ Tots els tests passen.\n' : `\n✗ ${failed} fallades.\n`);
+process.exit(failed === 0 ? 0 : 1);

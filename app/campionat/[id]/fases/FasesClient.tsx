@@ -1,22 +1,24 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { useIsDirector } from '@/components/DirectorContext';
+import { useCanManage } from '@/components/ViewerContext';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import Badge from '@/components/ui/Badge';
-import { Card, CardHeader, CardTitle } from '@/components/ui/Card';
+import Modal from '@/components/ui/Modal';
 import EmptyState from '@/components/ui/EmptyState';
 import { readError } from '@/lib/http';
 import type {
-  PhaseConfig, Tiebreaker, SeedingCriterion,
+  PhaseConfig, SeedingCriterion, Tag,
   SwissConfig, SwissFideConfig, RoundRobinConfig, KingOfTheHillConfig,
 } from '@/lib/pairing/types';
+import type { EntryPairExclusion, ScoringConfig, StandingsScopeKey, TagPairExclusion, TeamAggregation } from '@/db/types';
+import { DEFAULT_SCORING } from '@/db/types';
 import { DEFAULT_SEEDING_CRITERIA } from '@/lib/pairing/types';
+import { availableTiebreakers } from '@/lib/pairing/tiebreakers';
 
-interface Grup { id: string; name: string }
 interface Fase {
   id: string;
   order: number;
@@ -24,9 +26,19 @@ interface Fase {
   method: string;
   startRound: number;
   endRound: number;
-  tiebreakers: Tiebreaker[];
+  tiebreakers: string[];
+  participantsPerMatch: number;
   config: PhaseConfig;
   isComplete: boolean;
+  standingsLive: boolean;
+  scoring: ScoringConfig;
+  standingsScope: StandingsScopeKey[];
+  teamAggregation: TeamAggregation | null;
+}
+
+interface EntrantOption {
+  id: string;
+  displayName: string;
 }
 
 const METODES = [
@@ -37,16 +49,299 @@ const METODES = [
   { value: 'manual',           label: 'Manual / CSV' },
 ];
 
-const DESEMPATS: { value: Tiebreaker; label: string }[] = [
-  { value: 'median_buchholz', label: 'Median Buchholz' },
-  { value: 'buchholz',        label: 'Buchholz' },
-  { value: 'berger',          label: 'Berger (Sonneborn-Berger)' },
-  { value: 'spread',          label: 'Diferència de puntuació (spread)' },
-  { value: 'wins',            label: 'Nombre de victòries' },
-  { value: 'cumulative',      label: 'Total punts a favor' },
-  { value: 'avg_score',       label: 'Mitjana de puntuació a favor' },
-  { value: 'direct_encounter', label: 'Encontre directe' },
-];
+/**
+ * Els desempats surten del registre, no d'una llista escrita a mà
+ * (docs/pla-rols.md §11.3), i es filtren per mida de taula: amb més de dos
+ * per partida, els que es basen en els oponents deixen de tenir sentit
+ * (§12.10).
+ */
+function desempatsDisponibles(participantsPerMatch: number) {
+  return availableTiebreakers({ participantsPerMatch }).map((def) => ({
+    value: def.key,
+    label: def.label,
+  }));
+}
+
+const TOTS_ELS_DESEMPATS = desempatsDisponibles(2);
+
+/** Estat del formulari de puntuació i classificacions d'una fase (text, perquè s'hi pugui escriure lliurement). */
+interface PuntuacioState {
+  positionPoints: string;
+  trailingPoints: string;
+  byePoints: string;
+  forfeitPoints: string;
+  scope: StandingsScopeKey[];
+  teamRule: TeamAggregation['rule'];
+  teamN: string;
+}
+
+function puntuacioInicial(
+  base?: { scoring: ScoringConfig; standingsScope: StandingsScopeKey[]; teamAggregation: TeamAggregation | null }
+): PuntuacioState {
+  const scoring = base?.scoring ?? DEFAULT_SCORING;
+  return {
+    positionPoints: scoring.positionPoints.join(', '),
+    trailingPoints: String(scoring.trailingPoints),
+    byePoints: String(scoring.byePoints),
+    forfeitPoints: String(scoring.forfeitPoints),
+    scope: base?.standingsScope ?? ['global'],
+    teamRule: base?.teamAggregation?.rule ?? 'sum',
+    teamN: String(base?.teamAggregation?.n ?? 3),
+  };
+}
+
+/** Converteix el formulari al que espera l'API, o un missatge d'error. */
+function puntuacioPayload(
+  st: PuntuacioState
+): { error: string } | { scoring: ScoringConfig; standingsScope: StandingsScopeKey[]; teamAggregation: TeamAggregation } {
+  const positionPoints = st.positionPoints.split(',').map((v) => v.trim()).filter(Boolean).map(Number);
+  if (positionPoints.length === 0 || positionPoints.some((n) => Number.isNaN(n))) {
+    return { error: 'Els punts per posició han de ser nombres separats per comes (p. ex. 1, 0)' };
+  }
+  const [trailingPoints, byePoints, forfeitPoints] = [st.trailingPoints, st.byePoints, st.forfeitPoints].map(Number);
+  if ([trailingPoints, byePoints, forfeitPoints].some((n) => Number.isNaN(n))) {
+    return { error: 'Els punts de bye, incompareixença i posicions restants han de ser nombres' };
+  }
+  const n = parseInt(st.teamN, 10);
+  if (st.teamRule === 'top_n' && !(n >= 1)) return { error: 'Indica quants membres compten per equip' };
+  return {
+    scoring: { positionPoints, trailingPoints, byePoints, forfeitPoints },
+    standingsScope: st.scope,
+    teamAggregation: st.teamRule === 'top_n' ? { rule: 'top_n', n } : { rule: st.teamRule },
+  };
+}
+
+/**
+ * Puntuació per posició i àmbits de classificació de la fase (docs/pla-rols.md
+ * §12.5 i §12.10). Plegat per defecte: és configuració que es toca poc.
+ */
+function PuntuacioPicker({ value, onChange }: { value: PuntuacioState; onChange: (v: PuntuacioState) => void }) {
+  const set = (patch: Partial<PuntuacioState>) => onChange({ ...value, ...patch });
+  const equips = value.scope.includes('team');
+  return (
+    <details className="rounded-xl border border-border p-3 space-y-3">
+      <summary className="cursor-pointer text-sm font-medium text-ink">Puntuació i classificacions</summary>
+      <div className="space-y-4 pt-3">
+        <div className="space-y-3">
+          <p className="text-xs font-semibold text-ink-3 uppercase tracking-wide">Puntuació</p>
+          <Input
+            label="Punts per posició"
+            hint="De la 1a posició cap avall, separats per comes. 1v1 clàssic: 1, 0"
+            value={value.positionPoints}
+            onChange={(e) => set({ positionPoints: e.target.value })}
+          />
+          <div className="grid grid-cols-3 gap-3">
+            <Input label="Posicions restants" type="number" step="any" value={value.trailingPoints}
+              onChange={(e) => set({ trailingPoints: e.target.value })} />
+            <Input label="Bye" type="number" step="any" value={value.byePoints}
+              onChange={(e) => set({ byePoints: e.target.value })} />
+            <Input label="Incompareixença" type="number" step="any" value={value.forfeitPoints}
+              onChange={(e) => set({ forfeitPoints: e.target.value })} />
+          </div>
+        </div>
+
+        <div className="space-y-3">
+          <p className="text-xs font-semibold text-ink-3 uppercase tracking-wide">Classificació per equips</p>
+          <label className="flex items-center gap-2 text-sm text-ink">
+            <input
+              type="checkbox"
+              className="accent-current text-accent"
+              checked={equips}
+              onChange={(e) =>
+                set({ scope: e.target.checked ? [...value.scope, 'team'] : value.scope.filter((k) => k !== 'team') })
+              }
+            />
+            Publica també la classificació d&apos;equips
+          </label>
+          {equips && (
+            <div className="grid grid-cols-2 gap-3">
+              <Select label="Com compten els membres" value={value.teamRule}
+                onChange={(e) => set({ teamRule: e.target.value as TeamAggregation['rule'] })}>
+                <option value="sum">Suma</option>
+                <option value="avg">Mitjana</option>
+                <option value="top_n">Els N millors</option>
+              </Select>
+              {value.teamRule === 'top_n' && (
+                <Input label="Membres que compten" type="number" min={1} value={value.teamN}
+                  onChange={(e) => set({ teamN: e.target.value })} />
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+    </details>
+  );
+}
+
+/** Si la classificació de la fase compta també les rondes obertes o només les tancades. */
+function ModeClassificacio({ value, onChange }: { value: boolean; onChange: (live: boolean) => void }) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-ink mb-1.5">Classificació</label>
+      <div className="flex gap-2">
+        {[
+          { live: false, label: 'Només rondes tancades' },
+          { live: true, label: 'En temps real' },
+        ].map((o) => (
+          <button
+            key={String(o.live)}
+            type="button"
+            onClick={() => onChange(o.live)}
+            className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-colors ${
+              value === o.live ? 'bg-accent text-surface' : 'bg-surface-2 text-ink-2 hover:text-ink'
+            }`}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+      <p className="text-xs text-ink-3 mt-1.5">
+        En temps real, els resultats de la ronda oberta ja compten a la classificació pública.
+      </p>
+    </div>
+  );
+}
+
+/** Treu files incompletes o amb el mateix jugador/etiqueta a banda i banda abans d'enviar. */
+function cleanEntryExclusions(rules: EntryPairExclusion[]): EntryPairExclusion[] {
+  return rules.filter(r => r.entryIds[0] && r.entryIds[1] && r.entryIds[0] !== r.entryIds[1]);
+}
+function cleanTagExclusions(rules: TagPairExclusion[]): TagPairExclusion[] {
+  return rules.filter(r => r.tagIds[0] && r.tagIds[1] && r.tagIds[0] !== r.tagIds[1]);
+}
+
+/**
+ * Tria i ordre de desempats, amb arrossegament.
+ *
+ * El drag-and-drop natiu d'HTML5 no funciona al mòbil (sense events táctils),
+ * així que es fa a mà amb Pointer Events — el mateix API serveix per a ratolí
+ * i dit. Els botons ▲▼ es mantenen al costat per precisió i accessibilitat.
+ */
+function DesempatsPicker({
+  participantsPerMatch,
+  value,
+  onChange,
+}: {
+  participantsPerMatch: number;
+  value: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const disponibles = desempatsDisponibles(participantsPerMatch);
+  const labelOf = (v: string) => disponibles.find(d => d.value === v)?.label ?? v;
+  const noSeleccionats = disponibles.filter(d => !value.includes(d.value));
+
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+  const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+
+  function handlePointerMove(e: React.PointerEvent) {
+    if (dragIndex === null) return;
+    for (const [idx, el] of itemRefs.current) {
+      const rect = el.getBoundingClientRect();
+      if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
+        setOverIndex(idx);
+        return;
+      }
+    }
+  }
+
+  function handlePointerUp() {
+    if (dragIndex !== null && overIndex !== null && dragIndex !== overIndex) {
+      const next = [...value];
+      const [moved] = next.splice(dragIndex, 1);
+      next.splice(overIndex, 0, moved);
+      onChange(next);
+    }
+    setDragIndex(null);
+    setOverIndex(null);
+  }
+
+  function move(v: string, dir: -1 | 1) {
+    const i = value.indexOf(v);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= value.length) return;
+    const next = [...value];
+    [next[i], next[j]] = [next[j], next[i]];
+    onChange(next);
+  }
+
+  function remove(v: string) {
+    onChange(value.filter(x => x !== v));
+  }
+
+  function add(v: string) {
+    onChange([...value, v]);
+  }
+
+  return (
+    <div>
+      <p className="text-sm font-medium text-ink-2 mb-2">
+        Ordre de desempats
+        <span className="font-normal text-ink-3 ml-2">Arrossega per reordenar</span>
+      </p>
+
+      {value.length === 0 ? (
+        <p className="text-xs text-ink-3 mb-2">Cap desempat triat — només es desempatarà per punts.</p>
+      ) : (
+        <div className="space-y-1 mb-2">
+          {value.map((v, i) => (
+            <div
+              key={v}
+              ref={el => { if (el) itemRefs.current.set(i, el); else itemRefs.current.delete(i); }}
+              className={`flex items-center gap-1.5 rounded-lg px-2 py-2 bg-accent-tint border transition-colors ${
+                dragIndex === i ? 'opacity-50' : overIndex === i && dragIndex !== null ? 'border-accent-ink' : 'border-accent'
+              }`}
+            >
+              <button
+                type="button"
+                onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); setDragIndex(i); }}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerUp}
+                className="touch-none cursor-grab active:cursor-grabbing text-accent-ink p-1.5 -ml-1 flex-shrink-0"
+                aria-label="Arrossega per reordenar"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="8" cy="6" r="1.6" /><circle cx="16" cy="6" r="1.6" />
+                  <circle cx="8" cy="12" r="1.6" /><circle cx="16" cy="12" r="1.6" />
+                  <circle cx="8" cy="18" r="1.6" /><circle cx="16" cy="18" r="1.6" />
+                </svg>
+              </button>
+              <span className="w-4 text-xs font-mono text-accent-ink flex-shrink-0">{i + 1}.</span>
+              <span className="text-sm flex-1 text-accent-ink font-medium truncate">{labelOf(v)}</span>
+              <div className="flex gap-0.5 flex-shrink-0">
+                <button type="button" onClick={() => move(v, -1)}
+                  className="p-1 text-accent-ink disabled:opacity-30" disabled={i === 0} aria-label="Puja">▲</button>
+                <button type="button" onClick={() => move(v, 1)}
+                  className="p-1 text-accent-ink disabled:opacity-30" disabled={i === value.length - 1} aria-label="Baixa">▼</button>
+              </div>
+              <button type="button" onClick={() => remove(v)}
+                className="p-1 text-accent-ink hover:text-loss flex-shrink-0" aria-label="Treu">✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {noSeleccionats.length > 0 && (
+        <div>
+          {value.length > 0 && <p className="text-xs text-ink-3 mb-1">Afegeix-ne:</p>}
+          <div className="flex flex-wrap gap-1.5">
+            {noSeleccionats.map(d => (
+              <button
+                key={d.value}
+                type="button"
+                onClick={() => add(d.value)}
+                className="px-2.5 py-1.5 rounded-lg border border-border text-xs text-ink-2 hover:border-ink-3 hover:bg-surface-2 transition-colors cursor-pointer"
+              >
+                + {d.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
 
 const METHOD_BADGES: Record<string, { label: string; color: 'blue' | 'green' | 'purple' | 'gray' }> = {
   swiss_fide:       { label: 'Suís FIDE',   color: 'blue' },
@@ -59,14 +354,16 @@ const METHOD_BADGES: Record<string, { label: string; color: 'blue' | 'green' | '
 export default function FasesClient({
   tournamentId,
   fases,
-  grups,
+  tags,
+  entrants,
 }: {
   tournamentId: string;
   fases: Fase[];
-  grups: Grup[];
+  tags: Tag[];
+  entrants: EntrantOption[];
 }) {
   const router = useRouter();
-  const isDirector = useIsDirector();
+  const canManage = useCanManage();
   const [mostrarForm, setMostrarForm] = useState(false);
 
   return (
@@ -75,29 +372,29 @@ export default function FasesClient({
         <p className="text-sm text-ink-3 flex-1">
           Defineix les fases del campionat. Cada fase cobreix un rang de rondes amb el seu sistema d&apos;aparellament.
         </p>
-        {isDirector && !mostrarForm && (
+        {canManage && !mostrarForm && (
           <Button size="sm" onClick={() => setMostrarForm(true)}>+ Nova fase</Button>
         )}
       </div>
 
-      {isDirector && mostrarForm && (
-        <Card>
-          <CardHeader><CardTitle>Nova fase</CardTitle></CardHeader>
+      {canManage && (
+        <Modal open={mostrarForm} onClose={() => setMostrarForm(false)} title="Nova fase" maxWidth="2xl">
           <NovaFaseForm
             tournamentId={tournamentId}
             fases={fases}
-            grups={grups}
+            tags={tags}
+            entrants={entrants}
             onDone={() => { setMostrarForm(false); router.refresh(); }}
             onCancel={() => setMostrarForm(false)}
           />
-        </Card>
+        </Modal>
       )}
 
       {fases.length === 0 && !mostrarForm ? (
         <EmptyState
           title="Sense fases"
           description="Afegeix fases per definir com es generaran els aparellaments. Exemple: rondes 1–20 Round Robin per grups, rondes 21–28 Sistema Suís."
-          action={isDirector ? <Button onClick={() => setMostrarForm(true)}>+ Nova fase</Button> : undefined}
+          action={canManage ? <Button onClick={() => setMostrarForm(true)}>+ Nova fase</Button> : undefined}
         />
       ) : (
         <div className="space-y-3">
@@ -105,7 +402,8 @@ export default function FasesClient({
             <FaseCard
               key={fase.id}
               fase={fase}
-              grups={grups}
+              tags={tags}
+              entrants={entrants}
               tournamentId={tournamentId}
               fases={fases}
               onRefresh={() => router.refresh()}
@@ -120,22 +418,23 @@ export default function FasesClient({
 // ─── Targeta de fase ──────────────────────────────────────────────────────────
 
 function FaseCard({
-  fase, grups, tournamentId, fases, onRefresh,
+  fase, tags, entrants, tournamentId, fases, onRefresh,
 }: {
   fase: Fase;
-  grups: Grup[];
+  tags: Tag[];
+  entrants: EntrantOption[];
   tournamentId: string;
   fases: Fase[];
   onRefresh: () => void;
 }) {
-  const isDirector = useIsDirector();
+  const canManage = useCanManage();
   const [mode, setMode] = useState<'view' | 'edit' | 'delete'>('view');
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState('');
 
   const badge = METHOD_BADGES[fase.method] ?? { label: fase.method, color: 'gray' as const };
-  const grupMap = new Map(grups.map(g => [g.id, g.name]));
-  const configInfo = describeConfig(fase.config, grupMap);
+  const tagMap = new Map(tags.map(t => [t.id, t.name]));
+  const configInfo = describeConfig(fase.config, tagMap);
 
   async function handleDelete() {
     setDeleting(true);
@@ -157,7 +456,8 @@ function FaseCard({
           tournamentId={tournamentId}
           fase={fase}
           fases={fases.filter(f => f.id !== fase.id)}
-          grups={grups}
+          tags={tags}
+          entrants={entrants}
           onDone={() => { setMode('view'); onRefresh(); }}
           onCancel={() => setMode('view')}
         />
@@ -199,16 +499,19 @@ function FaseCard({
             {fase.endRound - fase.startRound + 1} ronda{fase.endRound - fase.startRound + 1 !== 1 ? 'es' : ''}
           </p>
           {configInfo && <p className="text-xs text-ink-3 mt-1">{configInfo}</p>}
+          <p className="text-xs text-ink-3 mt-1">
+            Classificació: {fase.standingsLive ? 'en temps real' : 'només rondes tancades'}
+          </p>
           {fase.tiebreakers.length > 0 && (
             <p className="text-xs text-ink-3 mt-1 leading-relaxed">
               Desempats: {fase.tiebreakers.map(t =>
-                DESEMPATS.find(d => d.value === t)?.label ?? t
+                TOTS_ELS_DESEMPATS.find(d => d.value === t)?.label ?? t
               ).join(' → ')}
             </p>
           )}
         </div>
       </div>
-      {isDirector && (
+      {canManage && (
         <div className="border-t border-border px-3 py-2 flex gap-1">
           <Button size="sm" variant="ghost" onClick={() => setMode('edit')}>Editar</Button>
           <Button size="sm" variant="ghost" onClick={() => setMode('delete')}
@@ -219,26 +522,31 @@ function FaseCard({
   );
 }
 
-function describeConfig(config: PhaseConfig, grupMap: Map<string, string>): string {
+function describeConfig(config: PhaseConfig, tagMap: Map<string, string>): string {
+  const noms = (ids: string[]) => ids.map(id => tagMap.get(id) ?? '?').join(', ');
+
   if (config.method === 'round_robin') {
-    const scope = config.scope === 'intra_group' ? 'intra-grupal'
-      : config.scope === 'inter_group' ? 'inter-grupal' : 'global';
     const doble = config.doubleRound ? ' (doble volta)' : '';
-    return `Round Robin ${scope}${doble}`;
+    if (config.scope === 'intra_tag') return `Round Robin intra-etiqueta${doble} (${noms(config.tagIds)})`;
+    if (config.scope === 'inter_tag') return `Round Robin interetiquetes${doble} (${noms(config.tagIds)})`;
+    return `Round Robin global${doble}`;
   }
   if (config.method === 'swiss_fide') {
+    const base = config.scope === 'intra_tag' ? `FIDE Dutch per etiqueta (${noms(config.tagIds)})` : 'FIDE Dutch global';
     return config.carryStandingsFromPhaseIds.length > 0
-      ? 'FIDE Dutch · Hereta classificació de fases anteriors'
-      : 'FIDE Dutch · Classificació independent';
+      ? `${base} · Hereta classificació de fases anteriors`
+      : `${base} · Classificació independent`;
   }
   if (config.method === 'swiss') {
+    const base = config.scope === 'intra_tag' ? `Suís per etiqueta (${noms(config.tagIds)})` : 'Suís global';
     return config.carryStandingsFromPhaseIds.length > 0
-      ? 'Hereta classificació de fases anteriors'
-      : 'Classificació independent';
+      ? `${base} · Hereta classificació de fases anteriors`
+      : `${base} · Classificació independent`;
   }
   if (config.method === 'king_of_the_hill') {
     const top = config.topN ? `Top ${config.topN}` : 'Tots';
-    return `${top} · ${config.carryStandingsFromPhaseIds.length > 0 ? 'Hereta classificació' : 'Classificació independent'}`;
+    const base = config.scope === 'intra_tag' ? `${top} per etiqueta (${noms(config.tagIds)})` : top;
+    return `${base} · ${config.carryStandingsFromPhaseIds.length > 0 ? 'Hereta classificació' : 'Classificació independent'}`;
   }
   return '';
 }
@@ -249,21 +557,26 @@ function EditarFaseForm({
   tournamentId,
   fase,
   fases,
-  grups,
+  tags,
+  entrants,
   onDone,
   onCancel,
 }: {
   tournamentId: string;
   fase: Fase;
   fases: Fase[];
-  grups: Grup[];
+  tags: Tag[];
+  entrants: EntrantOption[];
   onDone: () => void;
   onCancel: () => void;
 }) {
   const [nom, setNom] = useState(fase.name);
   const [startRound, setStartRound] = useState(fase.startRound.toString());
   const [endRound, setEndRound] = useState(fase.endRound.toString());
-  const [desempats, setDesempats] = useState<Tiebreaker[]>(fase.tiebreakers);
+  const [desempats, setDesempats] = useState<string[]>(fase.tiebreakers);
+  const [standingsLive, setStandingsLive] = useState(fase.standingsLive ?? false);
+  const [puntuacio, setPuntuacio] = useState(() => puntuacioInicial(fase));
+  const [participantsPerMatch, setParticipantsPerMatch] = useState(fase.participantsPerMatch ?? 2);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -271,31 +584,45 @@ function EditarFaseForm({
   const [swissAvoidRematches, setSwissAvoidRematches] = useState(swissConfig?.avoidRematches ?? true);
   const [swissCarry, setSwissCarry] = useState<string[]>(swissConfig?.carryStandingsFromPhaseIds ?? []);
   const [swissSeedingCriteria, setSwissSeedingCriteria] = useState<SeedingCriterion[]>(
-    swissConfig?.seedingCriteria?.length ? swissConfig.seedingCriteria : DEFAULT_SEEDING_CRITERIA
+    swissConfig?.seedingCriteria?.length ? swissConfig.seedingCriteria : [...DEFAULT_SEEDING_CRITERIA]
   );
+  const [swissScope, setSwissScope] = useState<'all' | 'intra_tag'>(swissConfig?.scope ?? 'all');
+  const [swissTagIds, setSwissTagIds] = useState<string[]>(swissConfig?.tagIds ?? []);
+  const [swissExclusions, setSwissExclusions] = useState<EntryPairExclusion[]>(swissConfig?.entryExclusions ?? []);
 
   const swissFideConfig = fase.method === 'swiss_fide' ? (fase.config as SwissFideConfig) : null;
-  const [swissFideScope, setSwissFideScope] = useState<'all' | 'intra_group'>(swissFideConfig?.scope ?? 'all');
+  const [swissFideScope, setSwissFideScope] = useState<'all' | 'intra_tag'>(swissFideConfig?.scope ?? 'all');
+  const [swissFideTagIds, setSwissFideTagIds] = useState<string[]>(swissFideConfig?.tagIds ?? []);
   const [swissFideCarry, setSwissFideCarry] = useState<string[]>(swissFideConfig?.carryStandingsFromPhaseIds ?? []);
   const [swissFideExpectedRounds, setSwissFideExpectedRounds] = useState(
     swissFideConfig?.expectedRounds?.toString() ?? ''
   );
+  const [swissFideExclusions, setSwissFideExclusions] = useState<EntryPairExclusion[]>(
+    swissFideConfig?.entryExclusions ?? []
+  );
 
   const rrConfig = fase.method === 'round_robin' ? (fase.config as RoundRobinConfig) : null;
-  const [rrScope, setRrScope] = useState<'intra_group' | 'inter_group' | 'all'>(rrConfig?.scope ?? 'all');
+  const [rrScope, setRrScope] = useState<'all' | 'intra_tag' | 'inter_tag'>(rrConfig?.scope ?? 'all');
+  const [rrTagIds, setRrTagIds] = useState<string[]>(rrConfig?.tagIds ?? []);
   const [rrDoble, setRrDoble] = useState(rrConfig?.doubleRound ?? false);
+  const [rrTagExclusions, setRrTagExclusions] = useState<TagPairExclusion[]>(rrConfig?.tagExclusions ?? []);
 
   const kothConfig = fase.method === 'king_of_the_hill' ? (fase.config as KingOfTheHillConfig) : null;
   const [kothTopN, setKothTopN] = useState(kothConfig?.topN?.toString() ?? '');
+  const [kothScope, setKothScope] = useState<'all' | 'intra_tag'>(kothConfig?.scope ?? 'all');
+  const [kothTagIds, setKothTagIds] = useState<string[]>(kothConfig?.tagIds ?? []);
   const [kothCarry, setKothCarry] = useState<string[]>(kothConfig?.carryStandingsFromPhaseIds ?? []);
+  const [kothExclusions, setKothExclusions] = useState<EntryPairExclusion[]>(kothConfig?.entryExclusions ?? []);
 
   function buildConfig(): PhaseConfig {
     if (fase.method === 'swiss_fide') {
       return {
         method: 'swiss_fide',
         scope: swissFideScope,
+        tagIds: swissFideScope === 'all' ? [] : swissFideTagIds,
         carryStandingsFromPhaseIds: swissFideCarry,
         expectedRounds: swissFideExpectedRounds ? parseInt(swissFideExpectedRounds) : undefined,
+        entryExclusions: cleanEntryExclusions(swissFideExclusions),
       };
     }
     if (fase.method === 'swiss') {
@@ -306,35 +633,31 @@ function EditarFaseForm({
         scoreGroupWindowSize: swissConfig?.scoreGroupWindowSize ?? 2,
         carryStandingsFromPhaseIds: swissCarry,
         seedingCriteria: swissSeedingCriteria,
+        scope: swissScope,
+        tagIds: swissScope === 'all' ? [] : swissTagIds,
+        entryExclusions: cleanEntryExclusions(swissExclusions),
       };
     }
     if (fase.method === 'round_robin') {
-      return { method: 'round_robin', scope: rrScope, doubleRound: rrDoble };
+      return {
+        method: 'round_robin',
+        scope: rrScope,
+        tagIds: rrScope === 'all' ? [] : rrTagIds,
+        doubleRound: rrDoble,
+        tagExclusions: rrScope === 'inter_tag' ? cleanTagExclusions(rrTagExclusions) : [],
+      };
     }
     if (fase.method === 'king_of_the_hill') {
       return {
         method: 'king_of_the_hill',
         topN: kothTopN ? parseInt(kothTopN) : null,
         carryStandingsFromPhaseIds: kothCarry,
+        scope: kothScope,
+        tagIds: kothScope === 'all' ? [] : kothTagIds,
+        entryExclusions: cleanEntryExclusions(kothExclusions),
       };
     }
     return { method: 'manual', allowCsvImport: true };
-  }
-
-  function toggleDesempat(d: Tiebreaker) {
-    setDesempats(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]);
-  }
-
-  function moveDesempat(d: Tiebreaker, dir: -1 | 1) {
-    setDesempats(prev => {
-      const i = prev.indexOf(d);
-      if (i < 0) return prev;
-      const next = [...prev];
-      const j = i + dir;
-      if (j < 0 || j >= next.length) return prev;
-      [next[i], next[j]] = [next[j], next[i]];
-      return next;
-    });
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -342,6 +665,11 @@ function EditarFaseForm({
     setError('');
     if (!nom.trim() || !startRound || !endRound) {
       setError('Cal nom, ronda inicial i ronda final');
+      return;
+    }
+    const pp = puntuacioPayload(puntuacio);
+    if ('error' in pp) {
+      setError(pp.error);
       return;
     }
     setLoading(true);
@@ -353,6 +681,11 @@ function EditarFaseForm({
         startRound: parseInt(startRound),
         endRound: parseInt(endRound),
         tiebreakers: desempats,
+        standingsLive,
+        scoring: pp.scoring,
+        standingsScope: pp.standingsScope,
+        teamAggregation: pp.teamAggregation,
+        participantsPerMatch,
         config: buildConfig(),
       }),
     });
@@ -397,18 +730,37 @@ function EditarFaseForm({
             onChange={e => setEndRound(e.target.value)}
           />
         </div>
+        {/*
+          Mida de taula: amb més de dos, el suís i el rei del turó deixen de
+          ser aplicables i els desempats basats en oponents desapareixen de la
+          llista (docs/pla-rols.md §13.1 #8 i §12.10).
+        */}
+        <Input
+          label="Jugadors per partida"
+          type="number"
+          min={2}
+          max={8}
+          value={participantsPerMatch.toString()}
+          onChange={e => setParticipantsPerMatch(Math.max(2, parseInt(e.target.value) || 2))}
+          hint={participantsPerMatch > 2 ? 'Només round robin i manual' : undefined}
+        />
       </div>
 
       {fase.method === 'swiss_fide' && (
         <ConfigSwissFide
           scope={swissFideScope}
           setScope={setSwissFideScope}
+          tagIds={swissFideTagIds}
+          setTagIds={setSwissFideTagIds}
           carry={swissFideCarry}
           setCarry={setSwissFideCarry}
           expectedRounds={swissFideExpectedRounds}
           setExpectedRounds={setSwissFideExpectedRounds}
           fases={fases}
-          grups={grups}
+          tags={tags}
+          entrants={entrants}
+          exclusions={swissFideExclusions}
+          setExclusions={setSwissFideExclusions}
         />
       )}
       {fase.method === 'swiss' && (
@@ -419,63 +771,55 @@ function EditarFaseForm({
           setCarry={setSwissCarry}
           seedingCriteria={swissSeedingCriteria}
           setSeedingCriteria={setSwissSeedingCriteria}
+          scope={swissScope}
+          setScope={setSwissScope}
+          tagIds={swissTagIds}
+          setTagIds={setSwissTagIds}
           fases={fases}
+          tags={tags}
+          entrants={entrants}
+          exclusions={swissExclusions}
+          setExclusions={setSwissExclusions}
         />
       )}
       {fase.method === 'round_robin' && (
         <ConfigRoundRobin
           scope={rrScope}
           setScope={setRrScope}
+          tagIds={rrTagIds}
+          setTagIds={setRrTagIds}
           doble={rrDoble}
           setDoble={setRrDoble}
-          grups={grups}
+          tags={tags}
+          tagExclusions={rrTagExclusions}
+          setTagExclusions={setRrTagExclusions}
         />
       )}
       {fase.method === 'king_of_the_hill' && (
         <ConfigKotH
           topN={kothTopN}
           setTopN={setKothTopN}
+          scope={kothScope}
+          setScope={setKothScope}
+          tagIds={kothTagIds}
+          setTagIds={setKothTagIds}
           carry={kothCarry}
           setCarry={setKothCarry}
           fases={fases}
+          tags={tags}
+          entrants={entrants}
+          exclusions={kothExclusions}
+          setExclusions={setKothExclusions}
         />
       )}
 
       {fase.method !== 'manual' && (
-        <div>
-          <p className="text-sm font-medium text-ink-2 mb-2">
-            Ordre de desempats
-            <span className="font-normal text-ink-3 ml-2">Selecciona i ordena</span>
-          </p>
-          <div className="space-y-1">
-            {DESEMPATS.map(d => {
-              const idx = desempats.indexOf(d.value);
-              const actiu = idx >= 0;
-              return (
-                <div key={d.value} className={`flex items-center gap-2 rounded-lg px-3 py-2 ${actiu ? 'bg-accent-tint border border-accent' : 'bg-surface-2 border border-transparent'}`}>
-                  <input
-                    type="checkbox"
-                    checked={actiu}
-                    onChange={() => toggleDesempat(d.value)}
-                    className="accent-current text-accent"
-                  />
-                  <span className={`text-sm flex-1 ${actiu ? 'text-accent-ink font-medium' : 'text-ink-3'}`}>
-                    {actiu ? `${idx + 1}. ` : ''}{d.label}
-                  </span>
-                  {actiu && (
-                    <div className="flex gap-0.5">
-                      <button type="button" onClick={() => moveDesempat(d.value, -1)}
-                        className="p-0.5 text-accent-ink hover:text-accent-ink disabled:opacity-30" disabled={idx === 0}>▲</button>
-                      <button type="button" onClick={() => moveDesempat(d.value, 1)}
-                        className="p-0.5 text-accent-ink hover:text-accent-ink disabled:opacity-30" disabled={idx === desempats.length - 1}>▼</button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        <DesempatsPicker participantsPerMatch={participantsPerMatch} value={desempats} onChange={setDesempats} />
       )}
+
+      <ModeClassificacio value={standingsLive} onChange={setStandingsLive} />
+
+      <PuntuacioPicker value={puntuacio} onChange={setPuntuacio} />
 
       {error && <p className="text-sm text-loss">{error}</p>}
 
@@ -492,13 +836,15 @@ function EditarFaseForm({
 function NovaFaseForm({
   tournamentId,
   fases,
-  grups,
+  tags,
+  entrants,
   onDone,
   onCancel,
 }: {
   tournamentId: string;
   fases: Fase[];
-  grups: Grup[];
+  tags: Tag[];
+  entrants: EntrantOption[];
   onDone: () => void;
   onCancel: () => void;
 }) {
@@ -506,20 +852,33 @@ function NovaFaseForm({
   const [metode, setMetode] = useState<string>('swiss_fide');
   const [startRound, setStartRound] = useState('');
   const [endRound, setEndRound] = useState('');
-  const [desempats, setDesempats] = useState<Tiebreaker[]>(['median_buchholz', 'buchholz', 'spread']);
+  const [desempats, setDesempats] = useState<string[]>(['median_buchholz', 'buchholz', 'spread']);
+  const [standingsLive, setStandingsLive] = useState(false);
+  const [puntuacio, setPuntuacio] = useState(() => puntuacioInicial(fases[fases.length - 1]));
+  const [participantsPerMatch, setParticipantsPerMatch] = useState(2);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const [rrScope, setRrScope] = useState<'intra_group' | 'inter_group' | 'all'>('intra_group');
+  const [rrScope, setRrScope] = useState<'all' | 'intra_tag' | 'inter_tag'>('all');
+  const [rrTagIds, setRrTagIds] = useState<string[]>([]);
   const [rrDoble, setRrDoble] = useState(false);
+  const [rrTagExclusions, setRrTagExclusions] = useState<TagPairExclusion[]>([]);
   const [swissAvoidRematches, setSwissAvoidRematches] = useState(true);
   const [swissCarry, setSwissCarry] = useState<string[]>([]);
-  const [swissSeedingCriteria, setSwissSeedingCriteria] = useState<SeedingCriterion[]>(DEFAULT_SEEDING_CRITERIA);
-  const [swissFideScope, setSwissFideScope] = useState<'all' | 'intra_group'>('all');
+  const [swissSeedingCriteria, setSwissSeedingCriteria] = useState<SeedingCriterion[]>([...DEFAULT_SEEDING_CRITERIA]);
+  const [swissScope, setSwissScope] = useState<'all' | 'intra_tag'>('all');
+  const [swissTagIds, setSwissTagIds] = useState<string[]>([]);
+  const [swissExclusions, setSwissExclusions] = useState<EntryPairExclusion[]>([]);
+  const [swissFideScope, setSwissFideScope] = useState<'all' | 'intra_tag'>('all');
+  const [swissFideTagIds, setSwissFideTagIds] = useState<string[]>([]);
   const [swissFideCarry, setSwissFideCarry] = useState<string[]>([]);
   const [swissFideExpectedRounds, setSwissFideExpectedRounds] = useState('');
+  const [swissFideExclusions, setSwissFideExclusions] = useState<EntryPairExclusion[]>([]);
   const [kothTopN, setKothTopN] = useState('');
+  const [kothScope, setKothScope] = useState<'all' | 'intra_tag'>('all');
+  const [kothTagIds, setKothTagIds] = useState<string[]>([]);
   const [kothCarry, setKothCarry] = useState<string[]>([]);
+  const [kothExclusions, setKothExclusions] = useState<EntryPairExclusion[]>([]);
 
   const nextStart = fases.length > 0
     ? Math.max(...fases.map(f => f.endRound)) + 1
@@ -530,8 +889,10 @@ function NovaFaseForm({
       return {
         method: 'swiss_fide',
         scope: swissFideScope,
+        tagIds: swissFideScope === 'all' ? [] : swissFideTagIds,
         carryStandingsFromPhaseIds: swissFideCarry,
         expectedRounds: swissFideExpectedRounds ? parseInt(swissFideExpectedRounds) : undefined,
+        entryExclusions: cleanEntryExclusions(swissFideExclusions),
       };
     }
     if (metode === 'swiss') {
@@ -542,35 +903,31 @@ function NovaFaseForm({
         scoreGroupWindowSize: 2,
         carryStandingsFromPhaseIds: swissCarry,
         seedingCriteria: swissSeedingCriteria,
+        scope: swissScope,
+        tagIds: swissScope === 'all' ? [] : swissTagIds,
+        entryExclusions: cleanEntryExclusions(swissExclusions),
       };
     }
     if (metode === 'round_robin') {
-      return { method: 'round_robin', scope: rrScope, doubleRound: rrDoble };
+      return {
+        method: 'round_robin',
+        scope: rrScope,
+        tagIds: rrScope === 'all' ? [] : rrTagIds,
+        doubleRound: rrDoble,
+        tagExclusions: rrScope === 'inter_tag' ? cleanTagExclusions(rrTagExclusions) : [],
+      };
     }
     if (metode === 'king_of_the_hill') {
       return {
         method: 'king_of_the_hill',
         topN: kothTopN ? parseInt(kothTopN) : null,
         carryStandingsFromPhaseIds: kothCarry,
+        scope: kothScope,
+        tagIds: kothScope === 'all' ? [] : kothTagIds,
+        entryExclusions: cleanEntryExclusions(kothExclusions),
       };
     }
     return { method: 'manual', allowCsvImport: true };
-  }
-
-  function toggleDesempat(d: Tiebreaker) {
-    setDesempats(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]);
-  }
-
-  function moveDesempat(d: Tiebreaker, dir: -1 | 1) {
-    setDesempats(prev => {
-      const i = prev.indexOf(d);
-      if (i < 0) return prev;
-      const next = [...prev];
-      const j = i + dir;
-      if (j < 0 || j >= next.length) return prev;
-      [next[i], next[j]] = [next[j], next[i]];
-      return next;
-    });
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -578,6 +935,11 @@ function NovaFaseForm({
     setError('');
     if (!nom.trim() || !startRound || !endRound) {
       setError('Cal nom, ronda inicial i ronda final');
+      return;
+    }
+    const pp = puntuacioPayload(puntuacio);
+    if ('error' in pp) {
+      setError(pp.error);
       return;
     }
     setLoading(true);
@@ -590,6 +952,11 @@ function NovaFaseForm({
         startRound: parseInt(startRound),
         endRound: parseInt(endRound),
         tiebreakers: desempats,
+        standingsLive,
+        scoring: pp.scoring,
+        standingsScope: pp.standingsScope,
+        teamAggregation: pp.teamAggregation,
+        participantsPerMatch,
         config: buildConfig(),
       }),
     });
@@ -633,18 +1000,37 @@ function NovaFaseForm({
             onChange={e => setEndRound(e.target.value)}
           />
         </div>
+        {/*
+          Mida de taula: amb més de dos, el suís i el rei del turó deixen de
+          ser aplicables i els desempats basats en oponents desapareixen de la
+          llista (docs/pla-rols.md §13.1 #8 i §12.10).
+        */}
+        <Input
+          label="Jugadors per partida"
+          type="number"
+          min={2}
+          max={8}
+          value={participantsPerMatch.toString()}
+          onChange={e => setParticipantsPerMatch(Math.max(2, parseInt(e.target.value) || 2))}
+          hint={participantsPerMatch > 2 ? 'Només round robin i manual' : undefined}
+        />
       </div>
 
       {metode === 'swiss_fide' && (
         <ConfigSwissFide
           scope={swissFideScope}
           setScope={setSwissFideScope}
+          tagIds={swissFideTagIds}
+          setTagIds={setSwissFideTagIds}
           carry={swissFideCarry}
           setCarry={setSwissFideCarry}
           expectedRounds={swissFideExpectedRounds}
           setExpectedRounds={setSwissFideExpectedRounds}
           fases={fases}
-          grups={grups}
+          tags={tags}
+          entrants={entrants}
+          exclusions={swissFideExclusions}
+          setExclusions={setSwissFideExclusions}
         />
       )}
       {metode === 'swiss' && (
@@ -655,63 +1041,55 @@ function NovaFaseForm({
           setCarry={setSwissCarry}
           seedingCriteria={swissSeedingCriteria}
           setSeedingCriteria={setSwissSeedingCriteria}
+          scope={swissScope}
+          setScope={setSwissScope}
+          tagIds={swissTagIds}
+          setTagIds={setSwissTagIds}
           fases={fases}
+          tags={tags}
+          entrants={entrants}
+          exclusions={swissExclusions}
+          setExclusions={setSwissExclusions}
         />
       )}
       {metode === 'round_robin' && (
         <ConfigRoundRobin
           scope={rrScope}
           setScope={setRrScope}
+          tagIds={rrTagIds}
+          setTagIds={setRrTagIds}
           doble={rrDoble}
           setDoble={setRrDoble}
-          grups={grups}
+          tags={tags}
+          tagExclusions={rrTagExclusions}
+          setTagExclusions={setRrTagExclusions}
         />
       )}
       {metode === 'king_of_the_hill' && (
         <ConfigKotH
           topN={kothTopN}
           setTopN={setKothTopN}
+          scope={kothScope}
+          setScope={setKothScope}
+          tagIds={kothTagIds}
+          setTagIds={setKothTagIds}
           carry={kothCarry}
           setCarry={setKothCarry}
           fases={fases}
+          tags={tags}
+          entrants={entrants}
+          exclusions={kothExclusions}
+          setExclusions={setKothExclusions}
         />
       )}
 
       {metode !== 'manual' && (
-        <div>
-          <p className="text-sm font-medium text-ink-2 mb-2">
-            Ordre de desempats
-            <span className="font-normal text-ink-3 ml-2">Selecciona i ordena</span>
-          </p>
-          <div className="space-y-1">
-            {DESEMPATS.map(d => {
-              const idx = desempats.indexOf(d.value);
-              const actiu = idx >= 0;
-              return (
-                <div key={d.value} className={`flex items-center gap-2 rounded-lg px-3 py-2 ${actiu ? 'bg-accent-tint border border-accent' : 'bg-surface-2 border border-transparent'}`}>
-                  <input
-                    type="checkbox"
-                    checked={actiu}
-                    onChange={() => toggleDesempat(d.value)}
-                    className="accent-current text-accent"
-                  />
-                  <span className={`text-sm flex-1 ${actiu ? 'text-accent-ink font-medium' : 'text-ink-3'}`}>
-                    {actiu ? `${idx + 1}. ` : ''}{d.label}
-                  </span>
-                  {actiu && (
-                    <div className="flex gap-0.5">
-                      <button type="button" onClick={() => moveDesempat(d.value, -1)}
-                        className="p-0.5 text-accent-ink hover:text-accent-ink disabled:opacity-30" disabled={idx === 0}>▲</button>
-                      <button type="button" onClick={() => moveDesempat(d.value, 1)}
-                        className="p-0.5 text-accent-ink hover:text-accent-ink disabled:opacity-30" disabled={idx === desempats.length - 1}>▼</button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </div>
+        <DesempatsPicker participantsPerMatch={participantsPerMatch} value={desempats} onChange={setDesempats} />
       )}
+
+      <ModeClassificacio value={standingsLive} onChange={setStandingsLive} />
+
+      <PuntuacioPicker value={puntuacio} onChange={setPuntuacio} />
 
       {error && <p className="text-sm text-loss">{error}</p>}
 
@@ -725,6 +1103,244 @@ function NovaFaseForm({
 
 // ─── Sub-configuracions per mètode ───────────────────────────────────────────
 
+/**
+ * Tria de l'àmbit per etiqueta, compartida pels quatre mètodes automàtics
+ * (docs/pla-rols.md §13.1 #8, Fase 2 de la migració grups→etiquetes): quines
+ * etiquetes actuen de partició aquesta fase. Només Round Robin ofereix
+ * "interetiquetes" (`allowInter`); als altres, partir és calcular-hi dins
+ * una classificació independent per partició.
+ */
+const TAG_PICKER_COLORS = {
+  accent: 'bg-accent-tint border-accent text-accent-ink',
+  win: 'bg-win-tint border-win text-win',
+} as const;
+
+function TagScopePicker<S extends 'all' | 'intra_tag' | 'inter_tag'>({
+  scope, setScope, tagIds, setTagIds, tags, allowInter, color = 'accent',
+}: {
+  scope: S;
+  setScope: (v: S) => void;
+  tagIds: string[];
+  setTagIds: (v: string[]) => void;
+  tags: Tag[];
+  allowInter?: boolean;
+  color?: keyof typeof TAG_PICKER_COLORS;
+}) {
+  function toggleTag(id: string) {
+    setTagIds(tagIds.includes(id) ? tagIds.filter(t => t !== id) : [...tagIds, id]);
+  }
+
+  return (
+    <div>
+      <Select label="Àmbit" value={scope} onChange={e => setScope(e.target.value as S)}>
+        <option value="all">Tots els jugadors (global)</option>
+        <option value="intra_tag" disabled={tags.length === 0}>
+          Per etiqueta (independent dins de cada una)
+        </option>
+        {allowInter && (
+          <option value="inter_tag" disabled={tags.length < 2}>
+            Interetiquetes (una etiqueta contra una altra)
+          </option>
+        )}
+      </Select>
+      {tags.length === 0 && scope !== 'all' && (
+        <p className="text-xs text-accent-ink bg-accent-tint rounded p-2 mt-2">
+          Cal crear etiquetes primer (pestanya Etiquetes).
+        </p>
+      )}
+      {scope !== 'all' && tags.length > 0 && (
+        <div className="mt-2">
+          <p className="text-sm font-medium text-ink-2 mb-1">
+            Etiquetes que actuen de partició
+            {scope === 'inter_tag' && <span className="font-normal text-ink-3"> (cal triar-ne com a mínim 2)</span>}
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {tags.map(t => {
+              const actiu = tagIds.includes(t.id);
+              return (
+                <button
+                  key={t.id}
+                  type="button"
+                  onClick={() => toggleTag(t.id)}
+                  className={`px-2.5 py-1.5 rounded-lg border text-xs font-semibold cursor-pointer transition-colors ${
+                    actiu ? TAG_PICKER_COLORS[color] : 'border-border text-ink-2 hover:border-ink-3'
+                  }`}
+                >
+                  {t.name}
+                </button>
+              );
+            })}
+          </div>
+          {tagIds.length === 0 && (
+            <p className="text-xs text-loss mt-1">Tria almenys una etiqueta.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Exclusió de parella concreta (dos jugadors), amb evitar/prohibir: "evitar"
+ * és una restricció tova que el motor relaxa si cal (mai deixa ningú sense
+ * jugar); "prohibir" és dura i pot deixar algú en bye. Disponible a Suís,
+ * Suís FIDE i Rei del turó (docs/pla-rols.md, avisos i exclusions
+ * d'aparellament).
+ */
+function EntryExclusionsEditor({
+  entrants, rules, setRules,
+}: {
+  entrants: EntrantOption[];
+  rules: EntryPairExclusion[];
+  setRules: (v: EntryPairExclusion[]) => void;
+}) {
+  function updateRow(i: number, patch: Partial<EntryPairExclusion>) {
+    setRules(rules.map((r, idx) => (idx === i ? { ...r, ...patch } : r)));
+  }
+  function updateEntry(i: number, slot: 0 | 1, entryId: string) {
+    const next: [string, string] = [...rules[i].entryIds] as [string, string];
+    next[slot] = entryId;
+    updateRow(i, { entryIds: next });
+  }
+
+  return (
+    <div>
+      <p className="text-sm font-medium text-ink-2 mb-1">Exclusions de parella concreta</p>
+      <div className="space-y-1.5">
+        {rules.map((r, i) => (
+          <div key={i} className="flex items-center gap-1.5 flex-wrap">
+            <select
+              value={r.entryIds[0]}
+              onChange={e => updateEntry(i, 0, e.target.value)}
+              className="text-sm border border-border rounded-lg px-2 py-1.5 bg-surface flex-1 min-w-[8rem]"
+            >
+              <option value="">Jugador…</option>
+              {entrants.filter(p => p.id !== r.entryIds[1]).map(p => (
+                <option key={p.id} value={p.id}>{p.displayName}</option>
+              ))}
+            </select>
+            <span className="text-xs text-ink-3">vs</span>
+            <select
+              value={r.entryIds[1]}
+              onChange={e => updateEntry(i, 1, e.target.value)}
+              className="text-sm border border-border rounded-lg px-2 py-1.5 bg-surface flex-1 min-w-[8rem]"
+            >
+              <option value="">Jugador…</option>
+              {entrants.filter(p => p.id !== r.entryIds[0]).map(p => (
+                <option key={p.id} value={p.id}>{p.displayName}</option>
+              ))}
+            </select>
+            <div className="flex rounded-lg border border-border overflow-hidden text-xs font-semibold flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => updateRow(i, { mode: 'avoid' })}
+                className={`px-2 py-1.5 cursor-pointer ${r.mode === 'avoid' ? 'bg-accent-tint text-accent-ink' : 'text-ink-3'}`}
+              >
+                Evitar
+              </button>
+              <button
+                type="button"
+                onClick={() => updateRow(i, { mode: 'forbid' })}
+                className={`px-2 py-1.5 cursor-pointer ${r.mode === 'forbid' ? 'bg-loss-tint text-loss' : 'text-ink-3'}`}
+              >
+                Prohibir
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => setRules(rules.filter((_, idx) => idx !== i))}
+              className="text-loss text-sm px-1.5 cursor-pointer flex-shrink-0"
+              aria-label="Treure exclusió"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => setRules([...rules, { mode: 'avoid', entryIds: ['', ''] }])}
+        className="text-sm text-accent-ink font-medium mt-1.5 cursor-pointer"
+      >
+        + Afegeix exclusió
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Exclusió entre dues etiquetes, només a Round Robin interetiquetes: és
+ * l'únic mètode on dues etiquetes s'enfronten directament. Sense
+ * commutador evitar/prohibir — aquí no hi ha cap cerca alternativa a
+ * relaxar, així que sempre és una prohibició.
+ */
+function TagExclusionsEditor({
+  tags, chosenTagIds, rules, setRules,
+}: {
+  tags: Tag[];
+  chosenTagIds: string[];
+  rules: TagPairExclusion[];
+  setRules: (v: TagPairExclusion[]) => void;
+}) {
+  const disponibles = tags.filter(t => chosenTagIds.includes(t.id));
+
+  function updateTag(i: number, slot: 0 | 1, tagId: string) {
+    const next: [string, string] = [...rules[i].tagIds] as [string, string];
+    next[slot] = tagId;
+    setRules(rules.map((r, idx) => (idx === i ? { ...r, tagIds: next } : r)));
+  }
+
+  if (disponibles.length < 2) return null;
+
+  return (
+    <div>
+      <p className="text-sm font-medium text-ink-2 mb-1">Exclou aquesta parella d&apos;etiquetes</p>
+      <div className="space-y-1.5">
+        {rules.map((r, i) => (
+          <div key={i} className="flex items-center gap-1.5 flex-wrap">
+            <select
+              value={r.tagIds[0]}
+              onChange={e => updateTag(i, 0, e.target.value)}
+              className="text-sm border border-border rounded-lg px-2 py-1.5 bg-surface flex-1 min-w-[8rem]"
+            >
+              <option value="">Etiqueta…</option>
+              {disponibles.filter(t => t.id !== r.tagIds[1]).map(t => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+            <span className="text-xs text-ink-3">vs</span>
+            <select
+              value={r.tagIds[1]}
+              onChange={e => updateTag(i, 1, e.target.value)}
+              className="text-sm border border-border rounded-lg px-2 py-1.5 bg-surface flex-1 min-w-[8rem]"
+            >
+              <option value="">Etiqueta…</option>
+              {disponibles.filter(t => t.id !== r.tagIds[0]).map(t => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              onClick={() => setRules(rules.filter((_, idx) => idx !== i))}
+              className="text-loss text-sm px-1.5 cursor-pointer flex-shrink-0"
+              aria-label="Treure exclusió"
+            >
+              ✕
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={() => setRules([...rules, { tagIds: ['', ''] }])}
+        className="text-sm text-win font-medium mt-1.5 cursor-pointer"
+      >
+        + Afegeix exclusió
+      </button>
+    </div>
+  );
+}
+
 const SEEDING_CRITERION_LABELS: Record<SeedingCriterion, string> = {
   points: 'Punts',
   elo:    'BARRUF',
@@ -733,9 +1349,136 @@ const SEEDING_CRITERION_LABELS: Record<SeedingCriterion, string> = {
 };
 const ALL_SEEDING_CRITERIA: SeedingCriterion[] = ['points', 'elo', 'rank', 'name'];
 
+/**
+ * Tria i ordre dels criteris de seeding, amb arrossegament — mateix patró
+ * que `DesempatsPicker` (Pointer Events perquè funcioni també al mòbil):
+ * es mostren en l'ordre triat, no en un ordre fix amb número al costat.
+ */
+function SeedingCriteriaPicker({
+  value, onChange,
+}: {
+  value: SeedingCriterion[];
+  onChange: (next: SeedingCriterion[]) => void;
+}) {
+  const noSeleccionats = ALL_SEEDING_CRITERIA.filter(c => !value.includes(c));
+
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
+  const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
+
+  function handlePointerMove(e: React.PointerEvent) {
+    if (dragIndex === null) return;
+    for (const [idx, el] of itemRefs.current) {
+      const rect = el.getBoundingClientRect();
+      if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
+        setOverIndex(idx);
+        return;
+      }
+    }
+  }
+
+  function handlePointerUp() {
+    if (dragIndex !== null && overIndex !== null && dragIndex !== overIndex) {
+      const next = [...value];
+      const [moved] = next.splice(dragIndex, 1);
+      next.splice(overIndex, 0, moved);
+      onChange(next);
+    }
+    setDragIndex(null);
+    setOverIndex(null);
+  }
+
+  function move(c: SeedingCriterion, dir: -1 | 1) {
+    const i = value.indexOf(c);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= value.length) return;
+    const next = [...value];
+    [next[i], next[j]] = [next[j], next[i]];
+    onChange(next);
+  }
+
+  function remove(c: SeedingCriterion) {
+    onChange(value.filter(x => x !== c));
+  }
+
+  function add(c: SeedingCriterion) {
+    onChange([...value, c]);
+  }
+
+  return (
+    <div>
+      <p className="text-sm font-medium text-ink-2 mb-2">
+        Ordre de seeding
+        <span className="font-normal text-ink-3 ml-2">Arrossega per reordenar</span>
+      </p>
+
+      {value.length === 0 ? (
+        <p className="text-xs text-ink-3 mb-2">Cap criteri triat.</p>
+      ) : (
+        <div className="space-y-1 mb-2">
+          {value.map((c, i) => (
+            <div
+              key={c}
+              ref={el => { if (el) itemRefs.current.set(i, el); else itemRefs.current.delete(i); }}
+              className={`flex items-center gap-1.5 rounded-lg px-2 py-2 bg-accent-tint border transition-colors ${
+                dragIndex === i ? 'opacity-50' : overIndex === i && dragIndex !== null ? 'border-accent-ink' : 'border-accent'
+              }`}
+            >
+              <button
+                type="button"
+                onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); setDragIndex(i); }}
+                onPointerMove={handlePointerMove}
+                onPointerUp={handlePointerUp}
+                onPointerCancel={handlePointerUp}
+                className="touch-none cursor-grab active:cursor-grabbing text-accent-ink p-1.5 -ml-1 flex-shrink-0"
+                aria-label="Arrossega per reordenar"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                  <circle cx="8" cy="6" r="1.6" /><circle cx="16" cy="6" r="1.6" />
+                  <circle cx="8" cy="12" r="1.6" /><circle cx="16" cy="12" r="1.6" />
+                  <circle cx="8" cy="18" r="1.6" /><circle cx="16" cy="18" r="1.6" />
+                </svg>
+              </button>
+              <span className="w-4 text-xs font-mono text-accent-ink flex-shrink-0">{i + 1}.</span>
+              <span className="text-sm flex-1 text-accent-ink font-medium truncate">{SEEDING_CRITERION_LABELS[c]}</span>
+              <div className="flex gap-0.5 flex-shrink-0">
+                <button type="button" onClick={() => move(c, -1)}
+                  className="p-1 text-accent-ink disabled:opacity-30" disabled={i === 0} aria-label="Puja">▲</button>
+                <button type="button" onClick={() => move(c, 1)}
+                  className="p-1 text-accent-ink disabled:opacity-30" disabled={i === value.length - 1} aria-label="Baixa">▼</button>
+              </div>
+              <button type="button" onClick={() => remove(c)}
+                className="p-1 text-accent-ink hover:text-loss flex-shrink-0" aria-label="Treu">✕</button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {noSeleccionats.length > 0 && (
+        <div>
+          {value.length > 0 && <p className="text-xs text-ink-3 mb-1">Afegeix-ne:</p>}
+          <div className="flex flex-wrap gap-1.5">
+            {noSeleccionats.map(c => (
+              <button
+                key={c}
+                type="button"
+                onClick={() => add(c)}
+                className="px-2.5 py-1.5 rounded-lg border border-border text-xs text-ink-2 hover:border-ink-3 hover:bg-surface-2 transition-colors cursor-pointer"
+              >
+                + {SEEDING_CRITERION_LABELS[c]}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ConfigSwiss({
   avoidRematches, setAvoidRematches, carry, setCarry,
-  seedingCriteria, setSeedingCriteria, fases,
+  seedingCriteria, setSeedingCriteria, scope, setScope, tagIds, setTagIds, fases, tags,
+  entrants, exclusions, setExclusions,
 }: {
   avoidRematches: boolean;
   setAvoidRematches: (v: boolean) => void;
@@ -743,26 +1486,16 @@ function ConfigSwiss({
   setCarry: (v: string[]) => void;
   seedingCriteria: SeedingCriterion[];
   setSeedingCriteria: (v: SeedingCriterion[]) => void;
+  scope: 'all' | 'intra_tag';
+  setScope: (v: 'all' | 'intra_tag') => void;
+  tagIds: string[];
+  setTagIds: (v: string[]) => void;
   fases: Fase[];
+  tags: Tag[];
+  entrants: EntrantOption[];
+  exclusions: EntryPairExclusion[];
+  setExclusions: (v: EntryPairExclusion[]) => void;
 }) {
-  function toggleCriterion(c: SeedingCriterion) {
-    setSeedingCriteria(
-      seedingCriteria.includes(c)
-        ? seedingCriteria.filter(x => x !== c)
-        : [...seedingCriteria, c]
-    );
-  }
-
-  function moveCriterion(c: SeedingCriterion, dir: -1 | 1) {
-    const i = seedingCriteria.indexOf(c);
-    if (i < 0) return;
-    const next = [...seedingCriteria];
-    const j = i + dir;
-    if (j < 0 || j >= next.length) return;
-    [next[i], next[j]] = [next[j], next[i]];
-    setSeedingCriteria(next);
-  }
-
   return (
     <div className="bg-accent-tint rounded-lg p-4 space-y-3">
       <p className="text-xs font-semibold text-accent-ink uppercase tracking-wide">Configuració Suís</p>
@@ -771,37 +1504,11 @@ function ConfigSwiss({
         Evitar revanxes
       </label>
 
-      <div>
-        <p className="text-sm font-medium text-ink-2 mb-1">Ordre de seeding</p>
-        <div className="space-y-1">
-          {ALL_SEEDING_CRITERIA.map(c => {
-            const active = seedingCriteria.includes(c);
-            const pos = seedingCriteria.indexOf(c);
-            return (
-              <div key={c} className={`flex items-center gap-2 rounded px-2 py-1 text-sm ${active ? 'bg-accent-tint text-accent-ink' : 'text-ink-3'}`}>
-                <input
-                  type="checkbox"
-                  checked={active}
-                  onChange={() => toggleCriterion(c)}
-                  className="accent-current text-accent flex-shrink-0"
-                />
-                {active && (
-                  <span className="w-4 text-xs font-mono text-accent-ink flex-shrink-0">{pos + 1}.</span>
-                )}
-                <span className={active ? '' : 'ml-4'}>{SEEDING_CRITERION_LABELS[c]}</span>
-                {active && (
-                  <div className="ml-auto flex gap-0.5">
-                    <button type="button" onClick={() => moveCriterion(c, -1)} disabled={pos === 0}
-                      className="px-1 text-accent-ink hover:text-accent-ink disabled:opacity-30 text-xs">▲</button>
-                    <button type="button" onClick={() => moveCriterion(c, 1)} disabled={pos === seedingCriteria.length - 1}
-                      className="px-1 text-accent-ink hover:text-accent-ink disabled:opacity-30 text-xs">▼</button>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      <TagScopePicker scope={scope} setScope={setScope} tagIds={tagIds} setTagIds={setTagIds} tags={tags} />
+
+      <EntryExclusionsEditor entrants={entrants} rules={exclusions} setRules={setExclusions} />
+
+      <SeedingCriteriaPicker value={seedingCriteria} onChange={setSeedingCriteria} />
 
       {fases.length > 0 && (
         <div>
@@ -824,16 +1531,22 @@ function ConfigSwiss({
 }
 
 function ConfigSwissFide({
-  scope, setScope, carry, setCarry, expectedRounds, setExpectedRounds, fases, grups,
+  scope, setScope, tagIds, setTagIds, carry, setCarry, expectedRounds, setExpectedRounds, fases, tags,
+  entrants, exclusions, setExclusions,
 }: {
-  scope: 'all' | 'intra_group';
-  setScope: (v: 'all' | 'intra_group') => void;
+  scope: 'all' | 'intra_tag';
+  setScope: (v: 'all' | 'intra_tag') => void;
+  tagIds: string[];
+  setTagIds: (v: string[]) => void;
   carry: string[];
   setCarry: (v: string[]) => void;
   expectedRounds: string;
   setExpectedRounds: (v: string) => void;
   fases: Fase[];
-  grups: Grup[];
+  tags: Tag[];
+  entrants: EntrantOption[];
+  exclusions: EntryPairExclusion[];
+  setExclusions: (v: EntryPairExclusion[]) => void;
 }) {
   return (
     <div className="bg-accent-tint rounded-lg p-4 space-y-3">
@@ -841,21 +1554,8 @@ function ConfigSwissFide({
       <p className="text-xs text-accent-ink">
         Usa l&apos;algorisme holandès FIDE amb matching global òptim (blossom). Gestiona automàticament revanxes, floats i bye.
       </p>
-      <Select
-        label="Àmbit"
-        value={scope}
-        onChange={e => setScope(e.target.value as 'all' | 'intra_group')}
-      >
-        <option value="all">Tots els jugadors (global)</option>
-        <option value="intra_group" disabled={grups.length === 0}>
-          Per grups (Swiss independent dins de cada grup)
-        </option>
-      </Select>
-      {grups.length === 0 && scope === 'intra_group' && (
-        <p className="text-xs text-accent-ink bg-accent-tint rounded p-2">
-          Cal crear grups primer per usar el mode per grups.
-        </p>
-      )}
+      <TagScopePicker scope={scope} setScope={setScope} tagIds={tagIds} setTagIds={setTagIds} tags={tags} />
+      <EntryExclusionsEditor entrants={entrants} rules={exclusions} setRules={setExclusions} />
       <Input
         label="Total de rondes previstes (opcional)"
         type="number"
@@ -888,34 +1588,37 @@ function ConfigSwissFide({
 }
 
 function ConfigRoundRobin({
-  scope, setScope, doble, setDoble, grups,
+  scope, setScope, tagIds, setTagIds, doble, setDoble, tags, tagExclusions, setTagExclusions,
 }: {
-  scope: 'intra_group' | 'inter_group' | 'all';
-  setScope: (v: 'intra_group' | 'inter_group' | 'all') => void;
+  scope: 'all' | 'intra_tag' | 'inter_tag';
+  setScope: (v: 'all' | 'intra_tag' | 'inter_tag') => void;
+  tagIds: string[];
+  setTagIds: (v: string[]) => void;
   doble: boolean;
   setDoble: (v: boolean) => void;
-  grups: Grup[];
+  tags: Tag[];
+  tagExclusions: TagPairExclusion[];
+  setTagExclusions: (v: TagPairExclusion[]) => void;
 }) {
   return (
     <div className="bg-win-tint rounded-lg p-4 space-y-3">
       <p className="text-xs font-semibold text-win uppercase tracking-wide">Configuració Round Robin</p>
-      <Select
-        label="Àmbit"
-        value={scope}
-        onChange={e => setScope(e.target.value as typeof scope)}
-      >
-        <option value="all">Tots els jugadors (sense grups)</option>
-        <option value="intra_group" disabled={grups.length === 0}>
-          Intra-grupal (round robin dins de cada grup)
-        </option>
-        <option value="inter_group" disabled={grups.length < 2}>
-          Inter-grupal (jugadors d&apos;un grup contra els d&apos;un altre)
-        </option>
-      </Select>
-      {grups.length === 0 && scope !== 'all' && (
-        <p className="text-xs text-accent-ink bg-accent-tint rounded p-2">
-          Cal crear grups primer per usar els modes intra/inter-grupal.
-        </p>
+      <TagScopePicker
+        scope={scope}
+        setScope={setScope}
+        tagIds={tagIds}
+        setTagIds={setTagIds}
+        tags={tags}
+        allowInter
+        color="win"
+      />
+      {scope === 'inter_tag' && (
+        <TagExclusionsEditor
+          tags={tags}
+          chosenTagIds={tagIds}
+          rules={tagExclusions}
+          setRules={setTagExclusions}
+        />
       )}
       <label className="flex items-center gap-2 text-sm text-ink-2">
         <input type="checkbox" checked={doble} onChange={e => setDoble(e.target.checked)} className="accent-current text-win" />
@@ -926,13 +1629,22 @@ function ConfigRoundRobin({
 }
 
 function ConfigKotH({
-  topN, setTopN, carry, setCarry, fases,
+  topN, setTopN, scope, setScope, tagIds, setTagIds, carry, setCarry, fases, tags,
+  entrants, exclusions, setExclusions,
 }: {
   topN: string;
   setTopN: (v: string) => void;
+  scope: 'all' | 'intra_tag';
+  setScope: (v: 'all' | 'intra_tag') => void;
+  tagIds: string[];
+  setTagIds: (v: string[]) => void;
   carry: string[];
   setCarry: (v: string[]) => void;
   fases: Fase[];
+  tags: Tag[];
+  entrants: EntrantOption[];
+  exclusions: EntryPairExclusion[];
+  setExclusions: (v: EntryPairExclusion[]) => void;
 }) {
   return (
     <div className="bg-accent-tint rounded-lg p-4 space-y-3">
@@ -945,6 +1657,8 @@ function ConfigKotH({
         onChange={e => setTopN(e.target.value)}
         placeholder="ex. 8"
       />
+      <TagScopePicker scope={scope} setScope={setScope} tagIds={tagIds} setTagIds={setTagIds} tags={tags} />
+      <EntryExclusionsEditor entrants={entrants} rules={exclusions} setRules={setExclusions} />
       {fases.length > 0 && (
         <div>
           <p className="text-sm font-medium text-ink-2 mb-1">Heretar classificació de:</p>
