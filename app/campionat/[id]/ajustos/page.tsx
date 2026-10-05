@@ -26,6 +26,7 @@ export default async function AjustosPage({ params }: { params: Promise<{ id: st
       visibilitat={tournament.visibility ?? DEFAULT_VISIBILITY}
       currentAccountId={account.id}
       pendentsCompten={tournament.presencePendingAs}
+      preguntaPresencia={tournament.askPresence}
     />
   );
 }

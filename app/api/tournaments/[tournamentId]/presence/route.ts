@@ -4,6 +4,7 @@ import {
   clearPresence,
   entryBelongsTo,
   lastPlannedRound,
+  presenceAsked,
   loadPresence,
   roundAwaitingPresence,
   roundIsPaired,
@@ -53,6 +54,10 @@ export async function POST(req: Request, { params }: Params) {
 
   const viewer = await getViewer(tournamentId);
   const manages = viewer.account ? await canManageTournament(viewer.account, tournamentId) : false;
+
+  if (!manages && !(await presenceAsked(tournamentId))) {
+    return NextResponse.json({ error: 'La pregunta de presència està desactivada' }, { status: 409 });
+  }
 
   const entryId: string | null = manages && typeof body.entryId === 'string' ? body.entryId : viewer.entryId;
   if (!entryId) {

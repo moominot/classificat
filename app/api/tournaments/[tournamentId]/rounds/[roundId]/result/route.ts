@@ -6,7 +6,7 @@ import { matchParticipants, matchRevisions, matches, phases, rounds } from '@/db
 import { canManageTournament, canReportResult, getViewer } from '@/lib/authz';
 import { scoreMatch } from '@/lib/pairing/scoring';
 import { saveAnswers, type AnswerInput } from '@/lib/pairing/match-answers';
-import { lastPlannedRound, roundIsPaired, setPresence } from '@/lib/presence';
+import { lastPlannedRound, presenceAsked, roundIsPaired, setPresence } from '@/lib/presence';
 
 type Params = { params: Promise<{ tournamentId: string; roundId: string }> };
 
@@ -138,7 +138,7 @@ export async function PUT(req: Request, { params }: Params) {
 
   // El botó d'home mort: en acabar la partida, la taula diu qui continua. Amb
   // un mòbil per taula n'hi ha prou (el company confirma per l'altre).
-  if (continues && typeof continues === 'object') {
+  if (continues && typeof continues === 'object' && (await presenceAsked(tournamentId))) {
     const next = round.number + 1;
     if (next <= (await lastPlannedRound(tournamentId)) && !(await roundIsPaired(tournamentId, next))) {
       for (const participant of existingParticipants) {

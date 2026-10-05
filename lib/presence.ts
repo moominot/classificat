@@ -27,11 +27,22 @@ export async function lastPlannedRound(tournamentId: string): Promise<number> {
   return row?.last ?? 0;
 }
 
+/** El director pot desactivar la pregunta «jugaràs la ronda següent?» a tota la competició. */
+export async function presenceAsked(tournamentId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ ask: tournaments.askPresence })
+    .from(tournaments)
+    .where(eq(tournaments.id, tournamentId));
+  return row?.ask ?? true;
+}
+
 /**
  * La ronda que el director acaba de crear i encara no té aparellaments: és el
- * moment de preguntar als jugadors si hi seran. `null` si no n'hi ha cap.
+ * moment de preguntar als jugadors si hi seran. `null` si no n'hi ha cap o si
+ * la pregunta està desactivada.
  */
 export async function roundAwaitingPresence(tournamentId: string): Promise<number | null> {
+  if (!(await presenceAsked(tournamentId))) return null;
   const [round] = await db
     .select({ id: rounds.id, number: rounds.number })
     .from(rounds)
@@ -124,9 +135,11 @@ export async function clearPresence(tournamentId: string, roundNumber: number, e
 
 export async function loadPendingPolicy(tournamentId: string): Promise<PresencePendingAs> {
   const [row] = await db
-    .select({ policy: tournaments.presencePendingAs })
+    .select({ policy: tournaments.presencePendingAs, ask: tournaments.askPresence })
     .from(tournaments)
     .where(eq(tournaments.id, tournamentId));
+  // Sense pregunta ningú pot confirmar: tothom és pendent i ha de comptar com a present.
+  if (row && !row.ask) return 'present';
   return row?.policy ?? 'present';
 }
 

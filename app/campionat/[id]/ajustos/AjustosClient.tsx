@@ -47,6 +47,7 @@ export default function AjustosClient({
   visibilitat,
   currentAccountId,
   pendentsCompten,
+  preguntaPresencia,
 }: {
   tournamentId: string;
   nom: string;
@@ -54,13 +55,14 @@ export default function AjustosClient({
   visibilitat: TournamentVisibility;
   currentAccountId: string;
   pendentsCompten: PresencePendingAs;
+  preguntaPresencia: boolean;
 }) {
   return (
     <div className="space-y-6 max-w-3xl">
       <General tournamentId={tournamentId} nom={nom} estat={estat} />
       <ClassificacioPublica tournamentId={tournamentId} visibilitat={visibilitat} />
       <PublicacioRondes tournamentId={tournamentId} visibilitat={visibilitat} />
-      <PresenciaRondes tournamentId={tournamentId} pendentsCompten={pendentsCompten} />
+      <PresenciaRondes tournamentId={tournamentId} pendentsCompten={pendentsCompten} preguntaPresencia={preguntaPresencia} />
       <Administradors tournamentId={tournamentId} currentAccountId={currentAccountId} />
       <ZonaPerill tournamentId={tournamentId} nom={nom} />
     </div>
@@ -260,9 +262,18 @@ function PublicacioRondes({ tournamentId, visibilitat }: { tournamentId: string;
   );
 }
 
-function PresenciaRondes({ tournamentId, pendentsCompten }: { tournamentId: string; pendentsCompten: PresencePendingAs }) {
+function PresenciaRondes({
+  tournamentId,
+  pendentsCompten,
+  preguntaPresencia,
+}: {
+  tournamentId: string;
+  pendentsCompten: PresencePendingAs;
+  preguntaPresencia: boolean;
+}) {
   const router = useRouter();
   const [valor, setValor] = useState<PresencePendingAs>(pendentsCompten);
+  const [pregunta, setPregunta] = useState(preguntaPresencia);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [desat, setDesat] = useState(false);
@@ -270,7 +281,7 @@ function PresenciaRondes({ tournamentId, pendentsCompten }: { tournamentId: stri
   async function desa() {
     setLoading(true);
     setDesat(false);
-    const err = await patchCompeticio(tournamentId, { presencePendingAs: valor });
+    const err = await patchCompeticio(tournamentId, { presencePendingAs: valor, askPresence: pregunta });
     setError(err);
     setDesat(!err);
     setLoading(false);
@@ -282,6 +293,12 @@ function PresenciaRondes({ tournamentId, pendentsCompten }: { tournamentId: stri
       titol="Presència a la ronda següent"
       descripcio="Els jugadors diuen si continuen (a l'inici en crear la ronda i en enviar el resultat). Qui no ha dit res és pendent."
     >
+      <Interruptor
+        label="Preguntar als jugadors si jugaran la ronda següent"
+        hint="Controla la targeta de l'inici, el modal i el pas del formulari de resultat. Desactivat, tothom compta com a present (el director pot seguir passant llista)."
+        value={pregunta}
+        onChange={setPregunta}
+      />
       <Select
         label="En aparellar, els pendents compten com a"
         value={valor}

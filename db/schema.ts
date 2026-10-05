@@ -110,6 +110,8 @@ export const tournaments = sqliteTable('tournaments', {
   visibility:    text('visibility', { mode: 'json' }).$type<TournamentVisibility>().notNull(),
   // Com compta, en aparellar, qui no ha dit si juga la ronda (vegeu `roundPresence`).
   presencePendingAs: text('presence_pending_as').$type<PresencePendingAs>().notNull().default('present'),
+  // Si es pregunta als jugadors que hi seran a la ronda següent (inici, modal i formulari de resultat).
+  askPresence:   integer('ask_presence', { mode: 'boolean' }).notNull().default(true),
   createdAt:     integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt:     integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 }, (t) => [
