@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -56,22 +56,49 @@ export default function GenerarAparellaments({
   // Absents per defecte: els que han dit que no hi seran, els pendents si la
   // política ho vol, i els de la ronda anterior que no han confirmat que
   // tornen. Es calcula a cada render perquè les respostes dels jugadors
-  // arriben mentre el director té la pantalla oberta; el que el director toca
-  // a mà (`manual`) mana sobre el que digui la presència.
-  const [manual, setManual] = useState<Map<string, boolean>>(new Map());
+  // arriben mentre el director té la pantalla oberta. El que marca el director
+  // es desa al servidor (`source = admin`) i el veuen els altres dispositius i
+  // administradors; `pendent` només estalvia l'espera fins que el refresc
+  // porta la resposta del servidor.
+  const [pendent, setPendent] = useState<Map<string, boolean>>(new Map());
   const absentPerDefecte = (id: string) =>
     presencia[id]
       ? presencia[id] === 'absent'
       : pendentsCompten === 'absent' || previousAbsentIds.includes(id);
-  const absentIds = new Set(players.filter((p) => manual.get(p.id) ?? absentPerDefecte(p.id)).map((p) => p.id));
+  const absentIds = new Set(players.filter((p) => pendent.get(p.id) ?? absentPerDefecte(p.id)).map((p) => p.id));
+
+  // Quan el servidor ja reflecteix la marca, l'optimista sobra.
+  useEffect(() => {
+    if (pendent.size === 0) return;
+    setPendent((prev) => {
+      const next = new Map(prev);
+      for (const [id, absent] of prev) if (presencia[id] === (absent ? 'absent' : 'present')) next.delete(id);
+      return next.size === prev.size ? prev : next;
+    });
+  }, [presencia, pendent.size]);
   const confirmats = players.filter((p) => presencia[p.id] === 'present').length;
   const noHiSeran = players.filter((p) => presencia[p.id] === 'absent').length;
   const pendents = players.length - confirmats - noHiSeran;
 
   if (!canManage) return null;
 
-  function toggleAbsent(id: string) {
-    setManual(prev => new Map(prev).set(id, !absentIds.has(id)));
+  async function toggleAbsent(id: string) {
+    const absent = !absentIds.has(id);
+    setPendent(prev => new Map(prev).set(id, absent));
+    const res = await fetch(`/api/tournaments/${tournamentId}/presence`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ roundNumber, entryId: id, status: absent ? 'absent' : 'present' }),
+    });
+    if (!res.ok) {
+      // No s'ha desat: es desfà el canvi visible en lloc de deixar-lo enganyar.
+      setPendent(prev => {
+        const next = new Map(prev);
+        next.delete(id);
+        return next;
+      });
+    }
+    router.refresh();
   }
 
   const playing = players.filter(p => !absentIds.has(p.id));
