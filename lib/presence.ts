@@ -16,7 +16,6 @@ export interface PresenceRow {
   entryId: string;
   status: PresenceStatus;
   source: PresenceSource;
-  updatedAt: Date;
 }
 
 /** L'última ronda prevista: el final de la darrera fase. */
@@ -32,45 +31,21 @@ export async function lastPlannedRound(tournamentId: string): Promise<number> {
  * La ronda que el director acaba de crear i encara no té aparellaments: és el
  * moment de preguntar als jugadors si hi seran. `null` si no n'hi ha cap.
  */
-export async function awaitingRound(tournamentId: string): Promise<{ number: number; createdAt: Date } | null> {
+export async function roundAwaitingPresence(tournamentId: string): Promise<number | null> {
   const [round] = await db
-    .select({ id: rounds.id, number: rounds.number, createdAt: rounds.createdAt })
+    .select({ id: rounds.id, number: rounds.number })
     .from(rounds)
     .where(and(eq(rounds.tournamentId, tournamentId), eq(rounds.status, 'draft')))
     .orderBy(desc(rounds.number))
     .limit(1);
   if (!round) return null;
   const [match] = await db.select({ id: matches.id }).from(matches).where(eq(matches.roundId, round.id)).limit(1);
-  return match ? null : { number: round.number, createdAt: round.createdAt };
-}
-
-export async function roundAwaitingPresence(tournamentId: string): Promise<number | null> {
-  return (await awaitingRound(tournamentId))?.number ?? null;
-}
-
-/**
- * Cal tornar a preguntar-li-ho al jugador?
- *
- * Sí si no ha dit res, i també si el «sí» és anterior a la creació de la ronda:
- * el formulari de resultat ja el marca per defecte, però això és una
- * previsió de fa estona, no la confirmació de qui encara és aquí quan el
- * director obre la ronda. Un «no» no es torna a preguntar, i el que marca el
- * director mana.
- */
-export function needsAnswer(row: PresenceRow | undefined, roundCreatedAt: Date): boolean {
-  if (!row) return true;
-  if (row.source === 'admin' || row.status === 'absent') return false;
-  return row.updatedAt < roundCreatedAt;
+  return match ? null : round.number;
 }
 
 export async function loadPresence(tournamentId: string, roundNumber: number): Promise<Map<string, PresenceRow>> {
   const rows = await db
-    .select({
-      entryId: roundPresence.entryId,
-      status: roundPresence.status,
-      source: roundPresence.source,
-      updatedAt: roundPresence.updatedAt,
-    })
+    .select({ entryId: roundPresence.entryId, status: roundPresence.status, source: roundPresence.source })
     .from(roundPresence)
     .where(and(eq(roundPresence.tournamentId, tournamentId), eq(roundPresence.roundNumber, roundNumber)));
   return new Map(rows.map((r) => [r.entryId, r]));
