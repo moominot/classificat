@@ -16,6 +16,19 @@ export function phaseGroupTagIds(config: PhaseConfig): string[] {
   return config.tagIds ?? [];
 }
 
+/**
+ * Les etiquetes per apilar la classificació d'una fase. Un cop tancada una
+ * eliminatòria per posicions, els jugadors ja no tenen les etiquetes amb què
+ * es va aparellar: tenen les que n'han sortit.
+ */
+export function standingsGroupTagIds(phase: { config: PhaseConfig; isComplete: boolean }): string[] {
+  const config = phase.config;
+  if (phase.isComplete && config.method === 'round_robin' && config.resultTagIds?.length) {
+    return config.resultTagIds;
+  }
+  return phaseGroupTagIds(config);
+}
+
 /** Ordre natural pel nom: «2» abans que «10», «9-16» abans que «17-32». */
 export function sortGroupTags(tags: Tag[]): Tag[] {
   return [...tags].sort((a, b) => a.name.localeCompare(b.name, 'ca', { numeric: true }));

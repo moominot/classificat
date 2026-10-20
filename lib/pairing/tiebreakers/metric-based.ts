@@ -49,7 +49,7 @@ export const wins = metricTiebreaker('wins', 'Victòries', {
  */
 export const spread = metricTiebreaker('spread', 'Diferència de punts', {
   description:
-    'Suma, partida a partida, dels punts que has fet menys els del rival (amb més de dos a la taula, menys la mitjana dels altres). Una victòria 420-380 suma +40; una derrota 350-400 resta 50. El bye no hi compta.',
+    'Suma, partida a partida, dels punts que has fet menys els del rival (amb més de dos a la taula, menys la mitjana dels altres). Una victòria 420-380 suma +40; una derrota 350-400 resta 50. El bye suma la diferència que fixi la fase (per defecte, 0).',
 });
 
 /** Suma de la puntuació pròpia (l'antic "cumulative"). */

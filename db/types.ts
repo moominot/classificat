@@ -79,6 +79,11 @@ export interface ScoringConfig {
   trailingPoints: number;
   byePoints: number;
   forfeitPoints: number;
+  /**
+   * Diferència de punts que dona un bye (p. ex. 50). No compta com a partida
+   * jugada, així que no altera la mitjana. Absent = 0.
+   */
+  byeSpread?: number;
 }
 
 /** L'1v1 clàssic: victòria 1, derrota 0, empat 0,5 pel repartiment. */
@@ -170,6 +175,15 @@ export interface RoundRobinConfig {
    * (docs/eliminatoria-per-posicions.md). No admet `inter_tag`.
    */
   randomDraw?: boolean;
+  /**
+   * Eliminatòria per posicions (només amb `randomDraw`): en tancar la fase,
+   * cada grup es parteix per la meitat, guanyadors a dalt, i la fase següent
+   * passa a aparellar dins dels grups nous. Es juguen totes les partides:
+   * la generació no té en compte les absències.
+   */
+  splitGroups?: boolean;
+  /** Els grups que han sortit en tancar la fase, en ordre. Els escriu el tancament. */
+  resultTagIds?: string[];
 }
 
 export interface KingOfTheHillConfig {

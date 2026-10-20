@@ -109,6 +109,20 @@ check('punts de la taula de 4', s4.map((s) => [s.entryId, s.points]), [['a', 3],
 // ─── Desempats ────────────────────────────────────────────────────────────────
 
 console.log('\n=== Desempats ===');
+// El bye pot donar diferència de punts, però no compta per a la mitjana.
+{
+  const ambBye = computeStandings({
+    entryIds: ['A'],
+    matches: [
+      makeMatch('mb1', [['A', 1, 400, 'win'], ['X', 2, 300, 'loss']], SCRABBLE),
+      makeMatch('mb2', [['A', 1, 0, 'bye']], { ...SCRABBLE, byeSpread: 50 }),
+    ],
+    tiebreakers: [],
+  });
+  check('el bye suma la diferència de la fase', ambBye[0].metrics.spread, 150);
+  check('i no altera la mitjana', ambBye[0].metrics.avg_score, 400);
+}
+
 const tied = computeStandings({
   entryIds: ['a', 'b'],
   tiebreakers: ['spread'],

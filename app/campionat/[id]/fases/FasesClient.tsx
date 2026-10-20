@@ -71,6 +71,7 @@ interface PuntuacioState {
   positionPoints: string;
   trailingPoints: string;
   byePoints: string;
+  byeSpread: string;
   forfeitPoints: string;
   scope: StandingsScopeKey[];
   teamRule: TeamAggregation['rule'];
@@ -85,6 +86,7 @@ function puntuacioInicial(
     positionPoints: scoring.positionPoints.join(', '),
     trailingPoints: String(scoring.trailingPoints),
     byePoints: String(scoring.byePoints),
+    byeSpread: String(scoring.byeSpread ?? 0),
     forfeitPoints: String(scoring.forfeitPoints),
     scope: base?.standingsScope ?? ['global'],
     teamRule: base?.teamAggregation?.rule ?? 'sum',
@@ -100,14 +102,14 @@ function puntuacioPayload(
   if (positionPoints.length === 0 || positionPoints.some((n) => Number.isNaN(n))) {
     return { error: 'Els punts per posició han de ser nombres separats per comes (p. ex. 1, 0)' };
   }
-  const [trailingPoints, byePoints, forfeitPoints] = [st.trailingPoints, st.byePoints, st.forfeitPoints].map(Number);
-  if ([trailingPoints, byePoints, forfeitPoints].some((n) => Number.isNaN(n))) {
+  const [trailingPoints, byePoints, byeSpread, forfeitPoints] = [st.trailingPoints, st.byePoints, st.byeSpread, st.forfeitPoints].map(Number);
+  if ([trailingPoints, byePoints, byeSpread, forfeitPoints].some((n) => Number.isNaN(n))) {
     return { error: 'Els punts de bye, incompareixença i posicions restants han de ser nombres' };
   }
   const n = parseInt(st.teamN, 10);
   if (st.teamRule === 'top_n' && !(n >= 1)) return { error: 'Indica quants membres compten per equip' };
   return {
-    scoring: { positionPoints, trailingPoints, byePoints, forfeitPoints },
+    scoring: { positionPoints, trailingPoints, byePoints, forfeitPoints, ...(byeSpread ? { byeSpread } : {}) },
     standingsScope: st.scope,
     teamAggregation: st.teamRule === 'top_n' ? { rule: 'top_n', n } : { rule: st.teamRule },
   };
@@ -132,11 +134,14 @@ function PuntuacioPicker({ value, onChange }: { value: PuntuacioState; onChange:
             value={value.positionPoints}
             onChange={(e) => set({ positionPoints: e.target.value })}
           />
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
             <Input label="Posicions restants" type="number" step="any" value={value.trailingPoints}
               onChange={(e) => set({ trailingPoints: e.target.value })} />
             <Input label="Bye" type="number" step="any" value={value.byePoints}
               onChange={(e) => set({ byePoints: e.target.value })} />
+            <Input label="Diferència per bye" type="number" step="any" value={value.byeSpread}
+              hint="Suma a la diferència de punts; no compta per a la mitjana"
+              onChange={(e) => set({ byeSpread: e.target.value })} />
             <Input label="Incompareixença" type="number" step="any" value={value.forfeitPoints}
               onChange={(e) => set({ forfeitPoints: e.target.value })} />
           </div>
@@ -501,7 +506,7 @@ function FaseCard({
           <p className="text-sm text-ink-3 mt-1">
             Rondes {fase.startRound}–{fase.endRound}
             {' · '}
-            {fase.endRound - fase.startRound + 1} ronda{fase.endRound - fase.startRound + 1 !== 1 ? 'es' : ''}
+            {fase.endRound - fase.startRound + 1} {fase.endRound - fase.startRound + 1 !== 1 ? 'rondes' : 'ronda'}
           </p>
           {configInfo && <p className="text-xs text-ink-3 mt-1">{configInfo}</p>}
           <p className="text-xs text-ink-3 mt-1">
@@ -516,6 +521,9 @@ function FaseCard({
           )}
         </div>
       </div>
+      {canManage && fase.config.method === 'round_robin' && fase.config.splitGroups && !fase.isComplete && (
+        <TancarEliminatoria tournamentId={tournamentId} fase={fase} onDone={onRefresh} />
+      )}
       {canManage && (
         <div className="border-t border-border px-3 py-2 flex gap-1">
           <Button size="sm" variant="ghost" onClick={() => setMode('edit')}>Editar</Button>
@@ -527,14 +535,99 @@ function FaseCard({
   );
 }
 
+interface EmpatPendent {
+  key: string;
+  entries: { id: string; name: string; total: number }[];
+}
+
+/**
+ * Tanca una eliminatòria per posicions (docs/eliminatoria-per-posicions.md
+ * §4.5). Si alguna eliminatòria empata en tot, demana a l'admin qui passa i
+ * torna a enviar-ho amb la decisió.
+ */
+function TancarEliminatoria({ tournamentId, fase, onDone }: { tournamentId: string; fase: Fase; onDone: () => void }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [empats, setEmpats] = useState<EmpatPendent[]>([]);
+  const [decisions, setDecisions] = useState<Record<string, string>>({});
+
+  async function tanca() {
+    setLoading(true);
+    setError('');
+    const res = await fetch(`/api/tournaments/${tournamentId}/phases/${fase.id}/close`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ decisions }),
+    });
+    setLoading(false);
+    if (res.ok) {
+      setEmpats([]);
+      onDone();
+      return;
+    }
+    const data = await res.json().catch(() => ({}));
+    if (Array.isArray(data.unresolvedTies)) {
+      setEmpats(data.unresolvedTies);
+      return;
+    }
+    setError(data.error ?? "Error en tancar l'eliminatòria");
+  }
+
+  const totsDecidits = empats.every((e) => decisions[e.key]);
+
+  return (
+    <div className="border-t border-border px-4 py-3 space-y-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Button size="sm" loading={loading} onClick={tanca}>
+          Tanca l&apos;eliminatòria i parteix els grups
+        </Button>
+        <span className="text-xs text-ink-3">Cal que totes les partides de la fase tinguin resultat.</span>
+      </div>
+      {error && <p className="text-sm text-loss">{error}</p>}
+
+      <Modal open={empats.length > 0} onClose={() => setEmpats([])} title="Eliminatòries empatades">
+        <div className="space-y-4">
+          <p className="text-sm text-ink-2">
+            Aquestes eliminatòries han empatat en punts, en mitjana de punts a favor i en bingos. Tria qui passa a la
+            meitat de dalt.
+          </p>
+          {empats.map((empat) => (
+            <fieldset key={empat.key} className="space-y-1.5">
+              {empat.entries.map((e) => (
+                <label key={e.id} className="flex items-center gap-2 text-sm text-ink cursor-pointer">
+                  <input
+                    type="radio"
+                    name={empat.key}
+                    checked={decisions[empat.key] === e.id}
+                    onChange={() => setDecisions({ ...decisions, [empat.key]: e.id })}
+                    className="accent-accent"
+                  />
+                  {e.name} <span className="text-ink-3 tabular-nums">({e.total} punts)</span>
+                </label>
+              ))}
+            </fieldset>
+          ))}
+          <div className="flex gap-2">
+            <Button onClick={tanca} loading={loading} disabled={!totsDecidits}>
+              Confirma i tanca
+            </Button>
+            <Button variant="ghost" onClick={() => setEmpats([])}>Cancel·lar</Button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  );
+}
+
 function describeConfig(config: PhaseConfig, tagMap: Map<string, string>): string {
   const noms = (ids: string[]) => ids.map(id => tagMap.get(id) ?? '?').join(', ');
 
   if (config.method === 'round_robin' && config.randomDraw) {
     const voltes = config.doubleRound ? ' · anada i tornada' : '';
+    const partir = config.splitGroups ? ' · eliminatòria per posicions' : '';
     return config.scope === 'intra_tag'
-      ? `Sorteig per etiqueta (${noms(config.tagIds)})${voltes}`
-      : `Sorteig global${voltes}`;
+      ? `Sorteig per etiqueta (${noms(config.tagIds)})${voltes}${partir}`
+      : `Sorteig global${voltes}${partir}`;
   }
   if (config.method === 'round_robin') {
     const doble = config.doubleRound ? ' (doble volta)' : '';
@@ -617,6 +710,7 @@ function EditarFaseForm({
   const [rrTagIds, setRrTagIds] = useState<string[]>(rrConfig?.tagIds ?? []);
   const [rrDoble, setRrDoble] = useState(rrConfig?.doubleRound ?? false);
   const [rrSorteig, setRrSorteig] = useState(rrConfig?.randomDraw ?? false);
+  const [rrPartir, setRrPartir] = useState(rrConfig?.splitGroups ?? false);
   const [rrTagExclusions, setRrTagExclusions] = useState<TagPairExclusion[]>(rrConfig?.tagExclusions ?? []);
 
   const kothConfig = fase.method === 'king_of_the_hill' ? (fase.config as KingOfTheHillConfig) : null;
@@ -658,6 +752,8 @@ function EditarFaseForm({
         doubleRound: rrDoble,
         tagExclusions: rrScope === 'inter_tag' ? cleanTagExclusions(rrTagExclusions) : [],
         randomDraw: rrSorteig && rrScope !== 'inter_tag',
+        splitGroups: rrSorteig && rrPartir && rrScope !== 'inter_tag',
+        ...(rrConfig?.resultTagIds ? { resultTagIds: rrConfig.resultTagIds } : {}),
       };
     }
     if (fase.method === 'king_of_the_hill') {
@@ -805,6 +901,8 @@ function EditarFaseForm({
           setDoble={setRrDoble}
           sorteig={rrSorteig}
           setSorteig={setRrSorteig}
+          partir={rrPartir}
+          setPartir={setRrPartir}
           tags={tags}
           tagExclusions={rrTagExclusions}
           setTagExclusions={setRrTagExclusions}
@@ -878,6 +976,7 @@ function NovaFaseForm({
   const [rrTagIds, setRrTagIds] = useState<string[]>([]);
   const [rrDoble, setRrDoble] = useState(false);
   const [rrSorteig, setRrSorteig] = useState(false);
+  const [rrPartir, setRrPartir] = useState(false);
   const [rrTagExclusions, setRrTagExclusions] = useState<TagPairExclusion[]>([]);
   const [swissAvoidRematches, setSwissAvoidRematches] = useState(true);
   const [swissCarry, setSwissCarry] = useState<string[]>([]);
@@ -932,6 +1031,7 @@ function NovaFaseForm({
         doubleRound: rrDoble,
         tagExclusions: rrScope === 'inter_tag' ? cleanTagExclusions(rrTagExclusions) : [],
         randomDraw: rrSorteig && rrScope !== 'inter_tag',
+        splitGroups: rrSorteig && rrPartir && rrScope !== 'inter_tag',
       };
     }
     if (metode === 'king_of_the_hill') {
@@ -1079,6 +1179,8 @@ function NovaFaseForm({
           setDoble={setRrDoble}
           sorteig={rrSorteig}
           setSorteig={setRrSorteig}
+          partir={rrPartir}
+          setPartir={setRrPartir}
           tags={tags}
           tagExclusions={rrTagExclusions}
           setTagExclusions={setRrTagExclusions}
@@ -1607,7 +1709,7 @@ function ConfigSwissFide({
 }
 
 function ConfigRoundRobin({
-  scope, setScope, tagIds, setTagIds, doble, setDoble, sorteig, setSorteig, tags, tagExclusions, setTagExclusions,
+  scope, setScope, tagIds, setTagIds, doble, setDoble, sorteig, setSorteig, partir, setPartir, tags, tagExclusions, setTagExclusions,
 }: {
   scope: 'all' | 'intra_tag' | 'inter_tag';
   setScope: (v: 'all' | 'intra_tag' | 'inter_tag') => void;
@@ -1617,6 +1719,8 @@ function ConfigRoundRobin({
   setDoble: (v: boolean) => void;
   sorteig: boolean;
   setSorteig: (v: boolean) => void;
+  partir: boolean;
+  setPartir: (v: boolean) => void;
   tags: Tag[];
   tagExclusions: TagPairExclusion[];
   setTagExclusions: (v: TagPairExclusion[]) => void;
@@ -1670,6 +1774,20 @@ function ConfigRoundRobin({
           'Doble volta (cada parella juga dos cops)'
         )}
       </label>
+      {sorteig && (
+        <label className="flex items-start gap-2 text-sm text-ink-2">
+          <input type="checkbox" checked={partir} onChange={e => setPartir(e.target.checked)} className="mt-1 accent-current text-win" />
+          <span>
+            <span className="block">Eliminatòria per posicions</span>
+            <span className="block text-xs text-ink-3">
+              Guanya qui suma més punts a les partides de la fase; si empaten, la mitjana de punts a favor del
+              campionat i després els bingos. En tancar la fase, cada grup es parteix per la meitat (guanyadors a
+              dalt) i la fase següent aparella dins dels grups nous. Es juguen totes les partides: no es tenen en
+              compte les absències, i qui abandona es dona de baixa (el rival fa bye i passa).
+            </span>
+          </span>
+        </label>
+      )}
       {sorteig && (
         <p className="text-xs text-ink-3">La fase ha de tenir {doble ? 'dues rondes' : 'una ronda'}.</p>
       )}

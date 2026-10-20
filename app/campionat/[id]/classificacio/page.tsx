@@ -13,7 +13,7 @@ import {
 } from '@/lib/db-helpers';
 import { loadStandings } from '@/lib/standings-service';
 import { resolveTiebreaker } from '@/lib/pairing/tiebreakers';
-import { phaseGroupTagIds, sortGroupTags, stackByGroups } from '@/lib/tag-groups';
+import { sortGroupTags, stackByGroups, standingsGroupTagIds } from '@/lib/tag-groups';
 import RanquingMetrica from './RanquingMetrica';
 import ClassificacioGeneral from './ClassificacioGeneral';
 import ClassificacioPerGrups from './ClassificacioPerGrups';
@@ -200,7 +200,7 @@ export default async function ClassificacioPage({
   const faseGrups = faseSeleccionada
     ? faseReferencia
     : ([...totes_fases].reverse().find((f) => totes_rondes.some((r) => r.phaseId === f.id)) ?? faseReferencia);
-  const idsGrups = new Set(faseGrups ? phaseGroupTagIds(faseGrups.config) : []);
+  const idsGrups = new Set(faseGrups ? standingsGroupTagIds(faseGrups) : []);
   const etiquetesGrup = sortGroupTags(totesEtiquetes.filter((t) => idsGrups.has(t.id)));
   const blocsGrups = vista.standings.some((s) => s.tagIds.some((t) => idsGrups.has(t)))
     ? stackByGroups(vista.standings, etiquetesGrup)

@@ -18,6 +18,12 @@ export default function ClassificacioPerGrups({
   blocs: GroupBlock<StandingRow>[];
   desempats: DesempatCol[];
 }) {
+  // Al final de l'eliminatòria cada grup és una posició: una capçalera per
+  // jugador no aporta res, i la taula única ja té les posicions contínues.
+  if (blocs.every((b) => b.tag !== null && b.rows.length === 1)) {
+    return <ClassificacioGeneral tournamentId={tournamentId} standings={blocs.flatMap((b) => b.rows)} desempats={desempats} />;
+  }
+
   // El bloc «Sense grup» no compta per decidir quin és l'últim grup.
   const totalGrups = blocs.filter((b) => b.tag !== null).length;
 

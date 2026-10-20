@@ -9,6 +9,8 @@ import { generatePairings } from '@/lib/pairing/engine';
 import { computeStandings } from '@/lib/pairing/standings';
 import type { CsvMatchRow, Entrant, PairingContext, Phase as EnginePhase } from '@/lib/pairing/types';
 import { loadEntrants, loadPreviousMatches, loadQuestionMetrics, loadScoredMatches } from '@/lib/db-helpers';
+import { loadBracketGroups, splitGroupsConfig } from '@/lib/position-groups-service';
+import { isPowerOfTwo } from '@/lib/position-split';
 
 type Params = { params: Promise<{ tournamentId: string; roundId: string }> };
 
@@ -38,7 +40,18 @@ export async function POST(req: Request, { params }: Params) {
   if (!phase) return NextResponse.json({ error: 'Fase no trobada' }, { status: 404 });
 
   const body = await req.json().catch(() => ({}));
-  const absentEntryIds: string[] = Array.isArray(body.absentEntryIds)
+
+  // Eliminatòria per posicions: es juguen totes les partides, així que no
+  // hi ha absències (qui abandona es dona de baixa i el rival fa bye), cal
+  // haver tancat la fase anterior i els grups han de poder-se partir fins al
+  // final (docs/eliminatoria-per-posicions.md §3.4).
+  const split = splitGroupsConfig(phase);
+  if (split) {
+    const blocked = await splitGroupsBlocker(tournamentId, phase, round.number);
+    if (blocked) return NextResponse.json({ error: blocked }, { status: 409 });
+  }
+
+  const absentEntryIds: string[] = !split && Array.isArray(body.absentEntryIds)
     ? body.absentEntryIds.filter((x: unknown) => typeof x === 'string')
     : [];
 
@@ -171,6 +184,37 @@ export async function POST(req: Request, { params }: Params) {
     },
     { status: 201 }
   );
+}
+
+/**
+ * Per què no es pot generar una ronda d'una eliminatòria per posicions, o
+ * null si es pot.
+ */
+async function splitGroupsBlocker(
+  tournamentId: string,
+  phase: typeof phases.$inferSelect,
+  roundNumber: number
+): Promise<string | null> {
+  // L'ordre pot tenir forats si s'ha esborrat alguna fase.
+  const previous = (await db.select().from(phases).where(eq(phases.tournamentId, tournamentId)))
+    .filter((p) => p.order < phase.order)
+    .sort((a, b) => b.order - a.order)[0];
+  if (previous && splitGroupsConfig(previous) && !previous.isComplete) {
+    return `Cal tancar l'eliminatòria de la fase «${previous.name}» abans de començar aquesta.`;
+  }
+
+  if (roundNumber !== phase.startRound) return null;
+  const { groups, outside } = await loadBracketGroups(tournamentId, phase);
+  if (outside.length > 0) {
+    return `No tenen cap de les etiquetes de la fase: ${outside.map((e) => e.displayName).join(', ')}.`;
+  }
+  const wrong = groups.filter((g) => !isPowerOfTwo(g.memberIds.length));
+  if (wrong.length > 0) {
+    return `No es pot començar: ${wrong
+      .map((g) => `${g.name ?? 'el campionat'} té ${g.memberIds.length} jugadors`)
+      .join(', ')}. Cal que cada grup en tingui 2, 4, 8, 16, 32…`;
+  }
+  return null;
 }
 
 /** Fases de les quals aquesta arrossega la classificació. */

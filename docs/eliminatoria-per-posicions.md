@@ -184,9 +184,24 @@ Peces genèriques, reutilitzables fora d'aquest format:
    - treu l'etiqueta de grup `a-b` i posa `a-m` al guanyador i `m+1-b` al
      perdedor (creant-les si cal);
    - posa aquestes etiquetes noves com a `tagIds` de la fase següent.
-6. **Forçar partides**: en aquest format, `askPresence` desactivat, la
-   generació ignora absències i no es pot generar la fase següent sense el
-   pas 5.
+
+   Implementat com a opció `splitGroups` del Round Robin amb sorteig
+   («Eliminatòria per posicions») i el botó «Tanca l'eliminatòria i parteix
+   els grups» a Fases (`POST /phases/[id]/close`, lògica a
+   `lib/position-split.ts`). Detalls:
+   - Els noms dels grups nous surten de les posicions de la classificació
+     apilada: «1-4», «5-8»… i, a l'última fase, «1», «2»…
+   - La fase tancada desa els grups que n'han sortit (`resultTagIds`): la
+     classificació els fa servir, perquè els jugadors ja no tenen les
+     etiquetes amb què es va aparellar.
+   - Membres d'un grup: els actius i els inactius que ja han jugat (qui
+     abandona continua ocupant plaça, sempre a baix).
+   - Les etiquetes dels grups antics queden buides, però no s'esborren.
+   - No hi ha «reobrir»: si després de tancar es corregeix un resultat de la
+     fase, cal refer els grups a mà (moure etiquetes).
+6. **Forçar partides**: a les fases amb `splitGroups`, la generació ignora
+   les absències, no es pot generar si la fase anterior és una eliminatòria
+   sense tancar, i la primera ronda exigeix grups de 2, 4, 8, 16…
 
 ### Plantilles de campionat
 
@@ -231,7 +246,8 @@ pot portar un paràmetre «nombre de jugadors» que generi les fases.
    l'esquema.
 2. ✅ Sorteig + anada i tornada (`randomDraw` al Round Robin, amb
    `doubleRound` com a tornada; formulari de Fases).
-3. Tancar eliminatòria i partir grups (+ forçar partides).
+3. ✅ Tancar eliminatòria i partir grups (+ forçar partides i diferència per
+   bye, `byeSpread`).
 4. Plantilles: desar i crear; plantilla de sèrie «Eliminatòria per posicions (32)».
 
 Amb 1–3 ja es pot jugar el campionat configurant les fases a mà.
