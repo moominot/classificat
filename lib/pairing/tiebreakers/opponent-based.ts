@@ -14,6 +14,8 @@ import { emptyValues, matchesOf, opponentPoints, opponentsIn, pointsOf } from '.
 export const buchholz: TiebreakerDef = {
   key: 'buchholz',
   label: 'Buchholz',
+  description:
+    'Suma dels punts de classificació de tots els rivals que has tingut. Mesura la duresa del calendari: qui ha jugat contra rivals més forts queda davant. El bye no hi suma res.',
   higherIsBetter: true,
   scopes: ['global', 'group'],
   opponentBased: true,
@@ -30,6 +32,8 @@ export const buchholz: TiebreakerDef = {
 export const medianBuchholz: TiebreakerDef = {
   key: 'median_buchholz',
   label: 'Buchholz mediana',
+  description:
+    "Com el Buchholz, però descartant el rival amb més punts i el que en té menys (si n'has tingut almenys tres). Així un sol rival excepcional o molt fluix no decideix l'empat.",
   higherIsBetter: true,
   scopes: ['global', 'group'],
   opponentBased: true,
@@ -49,6 +53,8 @@ export const medianBuchholz: TiebreakerDef = {
 export const berger: TiebreakerDef = {
   key: 'berger',
   label: 'Sonneborn-Berger',
+  description:
+    'Suma dels punts de classificació dels rivals que has guanyat, més la meitat dels punts dels rivals amb qui has empatat. Premia haver guanyat els rivals forts.',
   higherIsBetter: true,
   scopes: ['global', 'group'],
   opponentBased: true,
@@ -79,6 +85,8 @@ export const berger: TiebreakerDef = {
 export const directEncounter: TiebreakerDef = {
   key: 'direct_encounter',
   label: 'Encontre directe',
+  description:
+    "Es fa una mini-classificació només amb les partides que els empatats han jugat entre ells, i queda davant qui hi ha fet més punts. Si no s'han enfrontat, no desempata i es passa al criteri següent. Entre tres o més, compten les partides que hagin jugat entre ells encara que no s'hagin enfrontat tots.",
   higherIsBetter: true,
   scopes: ['global', 'group'],
   opponentBased: true,

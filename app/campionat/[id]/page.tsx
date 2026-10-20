@@ -11,6 +11,7 @@ import { loadEntrants, loadTags } from '@/lib/db-helpers';
 import { loadStandings } from '@/lib/standings-service';
 import { resolveTiebreaker } from '@/lib/pairing/tiebreakers';
 import { findViewerRequest, loadPendingRequests, toSollicitud } from '@/lib/registrations';
+import ExplicacioDesempats from '@/components/ExplicacioDesempats';
 import PresenciaJugador from './PresenciaJugador';
 import InscripcioJugador from './InscripcioJugador';
 import InfoCampionat from './InfoCampionat';
@@ -72,6 +73,18 @@ export default async function CampionatInici({ params }: { params: Promise<{ id:
   const obertes = tournament.status === 'registration';
   const pendents = obertes || canManage ? await loadPendingRequests(id) : [];
   const sollicitud = obertes && !canManage && !viewer.entryId ? await findViewerRequest(id, viewer) : null;
+
+  // L'explicació dels desempats que fan servir les fases. Amb una sola fase
+  // es mostra en l'ordre en què s'apliquen; amb diverses, cada un un cop.
+  const desempatsUsats = [
+    ...new Map(
+      totesFases
+        .flatMap((f) => f.tiebreakers)
+        .map((key) => resolveTiebreaker(key))
+        .filter((def) => def !== null)
+        .map((def) => [def.key, { key: def.key, label: def.label, description: def.description }])
+    ).values(),
+  ];
 
   const statusBadge = STATUS_BADGE[tournament.status] ?? STATUS_BADGE.draft;
   const rondesTancades = totesRondes.filter((r) => r.status === 'closed').length;
@@ -190,6 +203,7 @@ export default async function CampionatInici({ params }: { params: Promise<{ id:
                 )}
               </div>
             ))}
+            <ExplicacioDesempats desempats={desempatsUsats} ordenats={totesFases.length === 1} />
           </div>
         )}
       </Card>

@@ -11,12 +11,20 @@ import type { StandingsScopeKey, TiebreakerDef } from '../types';
 export function metricTiebreaker(
   key: string,
   label: string,
-  opts: { metric?: string; scopes?: StandingsScopeKey[]; higherIsBetter?: boolean } = {}
+  opts: {
+    metric?: string;
+    scopes?: StandingsScopeKey[];
+    higherIsBetter?: boolean;
+    description?: string;
+  } = {}
 ): TiebreakerDef {
   const metric = opts.metric ?? key;
   return {
     key,
     label,
+    description:
+      opts.description ??
+      `Es desempata per «${label}», que surt d'una de les preguntes del formulari de resultat.`,
     higherIsBetter: opts.higherIsBetter ?? true,
     scopes: opts.scopes ?? ['global', 'group', 'team'],
     opponentBased: false,
@@ -30,17 +38,26 @@ export function metricTiebreaker(
   };
 }
 
-export const wins = metricTiebreaker('wins', 'Victòries');
+export const wins = metricTiebreaker('wins', 'Victòries', {
+  description: 'Nombre de partides guanyades. El bye (descans) compta com una victòria.',
+});
 
 /**
  * Diferència de puntuació. Amb més de dos participants és la puntuació pròpia
  * menys **la mitjana dels altres** de la taula, de manera que a l'1v1 continua
  * sent exactament l'spread de tota la vida (§12.11).
  */
-export const spread = metricTiebreaker('spread', 'Diferència de punts');
+export const spread = metricTiebreaker('spread', 'Diferència de punts', {
+  description:
+    'Suma, partida a partida, dels punts que has fet menys els del rival (amb més de dos a la taula, menys la mitjana dels altres). Una victòria 420-380 suma +40; una derrota 350-400 resta 50. El bye no hi compta.',
+});
 
 /** Suma de la puntuació pròpia (l'antic "cumulative"). */
-export const totalScore = metricTiebreaker('total_score', 'Punts a favor');
+export const totalScore = metricTiebreaker('total_score', 'Punts a favor', {
+  description: 'Suma de tots els punts que has fet a les partides, sense restar res. El bye no hi compta.',
+});
 
 /** Mitjana de puntuació per partida jugada, sense comptar els byes. */
-export const avgScore = metricTiebreaker('avg_score', 'Mitjana per partida');
+export const avgScore = metricTiebreaker('avg_score', 'Mitjana per partida', {
+  description: 'Punts a favor dividits per les partides jugades (sense comptar el bye). Afavoreix la regularitat i no penalitza qui ha jugat menys partides.',
+});

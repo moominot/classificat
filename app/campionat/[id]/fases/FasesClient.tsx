@@ -8,6 +8,7 @@ import Input from '@/components/ui/Input';
 import Select from '@/components/ui/Select';
 import Badge from '@/components/ui/Badge';
 import Modal from '@/components/ui/Modal';
+import ExplicacioDesempats from '@/components/ExplicacioDesempats';
 import EmptyState from '@/components/ui/EmptyState';
 import { readError } from '@/lib/http';
 import type {
@@ -59,6 +60,7 @@ function desempatsDisponibles(participantsPerMatch: number) {
   return availableTiebreakers({ participantsPerMatch }).map((def) => ({
     value: def.key,
     label: def.label,
+    description: def.description,
   }));
 }
 
@@ -279,6 +281,9 @@ function DesempatsPicker({
         Ordre de desempats
         <span className="font-normal text-ink-3 ml-2">Arrossega per reordenar</span>
       </p>
+      <div className="mb-2">
+        <ExplicacioDesempats desempats={disponibles.map((d) => ({ key: d.value, label: d.label, description: d.description }))} />
+      </div>
 
       {value.length === 0 ? (
         <p className="text-xs text-ink-3 mb-2">Cap desempat triat — només es desempatarà per punts.</p>

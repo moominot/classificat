@@ -171,6 +171,8 @@ export interface TeamStanding {
 export interface TiebreakerDef {
   key: string;
   label: string;
+  /** Explicació per als jugadors (Fases i inici del campionat). */
+  description: string;
   higherIsBetter: boolean;
   /** Àmbits on té sentit. El directe, per exemple, no en té per a equips. */
   scopes: StandingsScopeKey[];
