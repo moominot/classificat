@@ -78,7 +78,9 @@ export async function loadEntrants(tournamentId: string): Promise<Entrant[]> {
     })
     .from(entries)
     .innerJoin(people, eq(people.id, entries.personId))
-    .where(eq(entries.tournamentId, tournamentId));
+    .where(eq(entries.tournamentId, tournamentId))
+    // Ordre estable: el round robin en deriva el calendari de Berger.
+    .orderBy(asc(entries.createdAt), asc(entries.id));
 
   const tagIdsByEntry = await loadTagIdsByEntry(rows.map((r) => r.id));
   return rows.map((r) => ({ ...r, tagIds: tagIdsByEntry.get(r.id) ?? [] }));

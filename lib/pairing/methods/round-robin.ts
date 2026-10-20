@@ -1,4 +1,5 @@
 import type {
+  Entrant,
   GeneratedMatch,
   PairingContext,
   PairingEngineResult,
@@ -18,6 +19,12 @@ import { isTagPairExcluded } from './exclusion-partition';
  * Amb taules de més de dos, un round robin complet no sempre existeix (és el
  * problema del "social golfer"), de manera que es fan taules que **minimitzen
  * les repeticions** i s'avisa. Vegeu `generateMultiTables()`.
+ *
+ * El calendari de l'1v1 es calcula sobre `ctx.roster` (tots els actius, en
+ * ordre estable), no sobre els presents: així una absència no mou els rivals
+ * de les altres rondes. Qui es queda sense rival perquè l'altre és absent fa
+ * bye (`byePoints`), com amb el bye del nombre senar; l'absent no juga ni
+ * puntua, igual que als altres mètodes. Vegeu `withoutAbsentees()`.
  */
 export function generateRoundRobinPairings(ctx: PairingContext): PairingEngineResult {
   const config = ctx.phase.config as RoundRobinConfig;
@@ -29,14 +36,16 @@ export function generateRoundRobinPairings(ctx: PairingContext): PairingEngineRe
   }
 
   let matches: GeneratedMatch[];
+  const present = new Set(ctx.entrants.filter((e) => e.isActive).map((e) => e.id));
+  const roster = (ctx.roster ?? ctx.entrants).filter((e) => e.isActive);
+  const absenceByes: string[] = [];
 
   if (config.scope === 'intra_tag') {
-    matches = intraTag(ctx, relativeRound, config, warnings);
+    matches = intraTag(roster, present, absenceByes, relativeRound, config, warnings);
   } else if (config.scope === 'inter_tag') {
-    matches = interTag(ctx, relativeRound, config, warnings);
+    matches = interTag(roster, present, absenceByes, relativeRound, config, warnings);
   } else {
-    const active = ctx.entrants.filter((e) => e.isActive);
-    const schedule = bergerSchedule(active.map((e) => e.id), relativeRound, config.doubleRound);
+    const schedule = bergerSchedule(roster.map((e) => e.id), relativeRound, config.doubleRound);
     if (schedule === null) {
       warnings.push({
         type: 'incomplete_round_robin',
@@ -48,11 +57,52 @@ export function generateRoundRobinPairings(ctx: PairingContext): PairingEngineRe
       // bergerSchedule() numera totes les taules a 0 (no sap de numeració
       // global); cal renumerar-les aquí o l'inserció xoca amb l'únic
       // (roundId, tableNumber) en repetir el 0 a totes les files.
-      matches = schedule.map((match, i) => ({ ...match, tableNumber: i + 1 }));
+      matches = withoutAbsentees(schedule, present, absenceByes).map((match, i) => ({
+        ...match,
+        tableNumber: i + 1,
+      }));
     }
   }
 
+  if (absenceByes.length > 0) {
+    warnings.push({
+      type: 'opponent_absent',
+      message:
+        absenceByes.length !== 1
+          ? `${absenceByes.length} jugadors no tenen rival aquesta ronda perquè el que els tocava és absent: se'ls assigna bye.`
+          : `1 jugador no té rival aquesta ronda perquè el que li tocava és absent: se li assigna bye.`,
+      affectedEntryIds: absenceByes,
+    });
+  }
+
   return { matches, warnings };
+}
+
+/**
+ * Treu els absents d'un calendari fet sobre tots els inscrits.
+ *
+ * - Tots dos presents: la partida es manté.
+ * - Un absent: el present fa bye (taula d'un), que la ruta desa amb
+ *   `byePoints`. No es crea la partida per resoldre-la després com a
+ *   incompareixença: el motor de puntuació no sap derivar `forfeit` ni
+ *   aplicar `forfeitPoints`, i deixaria una taula pendent que ningú jugarà.
+ * - Tots dos absents, o l'absent tenia el bye del nombre senar: no hi ha taula.
+ *
+ * Els presents que fan bye per aquest motiu s'afegeixen a `absenceByes`.
+ */
+function withoutAbsentees(
+  matches: GeneratedMatch[],
+  present: Set<string>,
+  absenceByes: string[]
+): GeneratedMatch[] {
+  const result: GeneratedMatch[] = [];
+  for (const match of matches) {
+    const here = match.entryIds.filter((id) => present.has(id));
+    if (here.length === 0) continue;
+    if (here.length < match.entryIds.length) absenceByes.push(...here);
+    result.push({ ...match, entryIds: here });
+  }
+  return result;
 }
 
 // ─── Taules de més de dos ─────────────────────────────────────────────────────
@@ -127,7 +177,9 @@ function generateMultiTables(ctx: PairingContext, warnings: PairingWarning[]): P
 // ─── Round robin dins de cada etiqueta ────────────────────────────────────────
 
 function intraTag(
-  ctx: PairingContext,
+  roster: Entrant[],
+  present: Set<string>,
+  absenceByes: string[],
   relativeRound: number,
   config: RoundRobinConfig,
   warnings: PairingWarning[]
@@ -135,7 +187,7 @@ function intraTag(
   const result: GeneratedMatch[] = [];
   let tableNumber = 1;
 
-  const { partitions, warnings: tagWarnings } = partitionByTags(ctx.entrants, config.tagIds ?? []);
+  const { partitions, warnings: tagWarnings } = partitionByTags(roster, config.tagIds ?? []);
   warnings.push(...tagWarnings);
 
   for (const [tagId, entryIds] of partitions) {
@@ -149,7 +201,7 @@ function intraTag(
       continue;
     }
 
-    for (const match of schedule) {
+    for (const match of withoutAbsentees(schedule, present, absenceByes)) {
       result.push({ ...match, tableNumber: tableNumber++ });
     }
   }
@@ -160,12 +212,14 @@ function intraTag(
 // ─── Round robin entre etiquetes ──────────────────────────────────────────────
 
 function interTag(
-  ctx: PairingContext,
+  roster: Entrant[],
+  present: Set<string>,
+  absenceByes: string[],
   relativeRound: number,
   config: RoundRobinConfig,
   warnings: PairingWarning[]
 ): GeneratedMatch[] {
-  const { partitions, warnings: tagWarnings } = partitionByTags(ctx.entrants, config.tagIds ?? []);
+  const { partitions, warnings: tagWarnings } = partitionByTags(roster, config.tagIds ?? []);
   warnings.push(...tagWarnings);
   // Ordre determinista: el que ha triat el director, no l'alfabètic.
   const keys = (config.tagIds ?? []).filter((t) => partitions.has(t));
@@ -179,8 +233,9 @@ function interTag(
     return [];
   }
 
-  const result: GeneratedMatch[] = [];
-  let tableNumber = 1;
+  // Les parelles es fan amb tots els inscrits perquè la rotació no depengui
+  // de qui falta; els absents es treuen al final.
+  const pairs: GeneratedMatch[] = [];
   const matched = new Set<string>();
 
   for (let i = 0; i < keys.length; i++) {
@@ -197,17 +252,23 @@ function interTag(
         // combinació de parelles aquesta ronda: un cop ja aparellat, no se'l
         // torna a fer jugar una segona vegada la mateixa ronda.
         if (matched.has(first[k]) || matched.has(rotated[k])) continue;
-        result.push({ tableNumber: tableNumber++, entryIds: [first[k], rotated[k]] });
+        pairs.push({ tableNumber: 0, entryIds: [first[k], rotated[k]] });
         matched.add(first[k]);
         matched.add(rotated[k]);
       }
     }
   }
 
+  let tableNumber = 1;
+  const result: GeneratedMatch[] = withoutAbsentees(pairs, present, absenceByes).map((match) => ({
+    ...match,
+    tableNumber: match.entryIds.length > 1 ? tableNumber++ : -1,
+  }));
+
   // Una exclusió entre etiquetes pot deixar algú (o tota una etiqueta) sense
   // cap aparellament aquesta ronda: no es deixa en silenci.
   for (const key of keys) {
-    const ids = partitions.get(key)!;
+    const ids = partitions.get(key)!.filter((id) => present.has(id));
     if (ids.length === 0) continue;
     const unmatched = ids.filter((id) => !matched.has(id));
     if (unmatched.length === 0) continue;

@@ -64,9 +64,9 @@ export async function POST(req: Request, { params }: Params) {
   }
 
   const absent = new Set(absentEntryIds);
-  const entrants: Entrant[] = (await loadEntrants(tournamentId)).filter(
-    (e) => e.isActive && !absent.has(e.id)
-  );
+  // Tots els actius, absents inclosos: el round robin hi calcula el calendari.
+  const roster: Entrant[] = (await loadEntrants(tournamentId)).filter((e) => e.isActive);
+  const entrants = roster.filter((e) => !absent.has(e.id));
 
   // La classificació de partida inclou les fases que la fase actual arrossega.
   const carryPhaseIds = getCarryPhaseIds(phase.config as PhaseConfig);
@@ -105,6 +105,7 @@ export async function POST(req: Request, { params }: Params) {
     phase: enginePhase,
     roundNumber: round.number,
     entrants,
+    roster,
     standings,
     previousMatches: await loadPreviousMatches(tournamentId),
   };

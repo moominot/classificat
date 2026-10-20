@@ -151,6 +151,145 @@ console.log('\n=== Berger amb nombre imparell ===');
   check('exactament un bye per ronda', byesPerRound, [1, 1, 1, 1, 1]);
 }
 
+// ─── Round robin amb absències ────────────────────────────────────────────────
+
+const RR_CONFIG: RoundRobinConfig = { method: 'round_robin', scope: 'all', tagIds: [], doubleRound: false, tagExclusions: [] };
+
+/**
+ * Rival de cada inscrit a la ronda: l'id de l'altre, 'bye' si seu sol, o
+ * '-' si no té taula (absent).
+ */
+function rivals(matches: GeneratedMatch[], ids: string[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const id of ids) {
+    const match = matches.find((m) => m.entryIds.includes(id));
+    out[id] = !match ? '-' : match.entryIds.length === 1 ? 'bye' : match.entryIds.find((x) => x !== id)!;
+  }
+  return out;
+}
+
+/** Ronda `round` del round robin amb `absent` fora de la ronda però dins del calendari. */
+function rrRound(
+  config: RoundRobinConfig,
+  roster: Entrant[],
+  round: number,
+  absent: string[] = [],
+  withRoster = true
+) {
+  const entrants = roster.filter((e) => !absent.includes(e.id));
+  const ctx: PairingContext = {
+    phase: makePhase('round_robin', config),
+    roundNumber: round,
+    entrants,
+    ...(withRoster ? { roster } : {}),
+    standings: [],
+    previousMatches: [],
+  };
+  return generateRoundRobinPairings(ctx);
+}
+
+console.log('\n=== Round robin: una absència no mou el calendari ===');
+{
+  const roster = ['P1', 'P2', 'P3', 'P4', 'P5', 'P6'].map((id) => makeEntrant(id));
+  const ids = roster.map((e) => e.id);
+  const base = [1, 2, 3, 4, 5].map((r) => rivals(rrRound(RR_CONFIG, roster, r).matches, ids));
+  const withAbsence = [1, 2, 3, 4, 5].map((r) =>
+    rivals(rrRound(RR_CONFIG, roster, r, r === 2 ? ['P3'] : []).matches, ids)
+  );
+
+  const rivalOfP3 = base[1].P3;
+  check('ronda 2: P3 no té taula', withAbsence[1].P3, '-');
+  check('ronda 2: el rival de P3 fa bye', withAbsence[1][rivalOfP3], 'bye');
+  check(
+    'ronda 2: la resta de taules no canvien',
+    ids.filter((id) => id !== 'P3' && id !== rivalOfP3).map((id) => withAbsence[1][id]),
+    ids.filter((id) => id !== 'P3' && id !== rivalOfP3).map((id) => base[1][id])
+  );
+  check('rondes 3+ idèntiques al calendari sense absències', withAbsence.slice(2), base.slice(2));
+
+  // Al llarg de tot el round robin: cap rival repetit i només es perd la
+  // partida que no s'ha jugat.
+  const pairs = withAbsence.flatMap((round) =>
+    Object.entries(round)
+      .filter(([, rival]) => rival !== 'bye' && rival !== '-')
+      .map(([id, rival]) => [id, rival].sort().join(':'))
+  );
+  const unique = new Set(pairs);
+  check('cap rival repetit', pairs.length, unique.size * 2);
+  check('14 de les 15 parelles jugades', unique.size, 14);
+  check('la que falta és P3 contra el seu rival de la ronda 2', unique.has(['P3', rivalOfP3].sort().join(':')), false);
+
+  const warning = rrRound(RR_CONFIG, roster, 2, ['P3']).warnings.find((w) => w.type === 'opponent_absent');
+  check('avisa del bye per absència', warning?.affectedEntryIds, [rivalOfP3]);
+
+  // Sense `roster` el calendari es fa sobre els presents i la ronda 2 canvia
+  // de dalt a baix: és el comportament que s'ha corregit.
+  const legacy = rivals(rrRound(RR_CONFIG, roster, 2, ['P3'], false).matches, ids);
+  check('sense roster, la ronda 2 es desquadra', JSON.stringify(legacy) !== JSON.stringify(withAbsence[1]), true);
+}
+
+console.log('\n=== Round robin: absència del que tenia el bye ===');
+{
+  const roster = ['P1', 'P2', 'P3', 'P4', 'P5'].map((id) => makeEntrant(id));
+  const ids = roster.map((e) => e.id);
+  const base = rivals(rrRound(RR_CONFIG, roster, 2).matches, ids);
+  const byeHolder = ids.find((id) => base[id] === 'bye')!;
+  const result = rrRound(RR_CONFIG, roster, 2, [byeHolder]);
+
+  check('no es crea cap taula per a l\'absent', rivals(result.matches, ids)[byeHolder], '-');
+  check('la resta juga igual', result.matches.length, 2);
+  check('sense avís de bye per absència', result.warnings.some((w) => w.type === 'opponent_absent'), false);
+}
+
+console.log('\n=== Round robin: els dos de la taula absents ===');
+{
+  const roster = ['P1', 'P2', 'P3', 'P4'].map((id) => makeEntrant(id));
+  const ids = roster.map((e) => e.id);
+  const base = rivals(rrRound(RR_CONFIG, roster, 2).matches, ids);
+  const result = rrRound(RR_CONFIG, roster, 2, ['P1', base.P1]);
+
+  check('només queda una taula', result.matches.map((m) => m.entryIds.length), [2]);
+  check('i cap bye', result.warnings.some((w) => w.type === 'opponent_absent'), false);
+}
+
+console.log('\n=== Round robin intraetiqueta amb absència ===');
+{
+  const tagged = (id: string, tag: string): Entrant => ({ ...makeEntrant(id), tagIds: [tag] });
+  const roster = [
+    ...['A1', 'A2', 'A3', 'A4'].map((id) => tagged(id, 'A')),
+    ...['B1', 'B2', 'B3', 'B4'].map((id) => tagged(id, 'B')),
+  ];
+  const ids = roster.map((e) => e.id);
+  const config: RoundRobinConfig = { ...RR_CONFIG, scope: 'intra_tag', tagIds: ['A', 'B'] };
+  const base = [1, 2, 3].map((r) => rivals(rrRound(config, roster, r).matches, ids));
+  const withAbsence = [1, 2, 3].map((r) =>
+    rivals(rrRound(config, roster, r, r === 2 ? ['A2'] : []).matches, ids)
+  );
+
+  check('ronda 2: el rival d\'A2 fa bye', withAbsence[1][base[1].A2], 'bye');
+  check('ronda 3 idèntica', withAbsence[2], base[2]);
+}
+
+console.log('\n=== Round robin interetiquetes amb absència ===');
+{
+  const tagged = (id: string, tag: string): Entrant => ({ ...makeEntrant(id), tagIds: [tag] });
+  const roster = [
+    ...['A1', 'A2', 'A3'].map((id) => tagged(id, 'A')),
+    ...['B1', 'B2', 'B3'].map((id) => tagged(id, 'B')),
+  ];
+  const ids = roster.map((e) => e.id);
+  const config: RoundRobinConfig = { ...RR_CONFIG, scope: 'inter_tag', tagIds: ['A', 'B'] };
+  const base = [1, 2, 3].map((r) => rivals(rrRound(config, roster, r).matches, ids));
+  const withAbsence = [1, 2, 3].map((r) =>
+    rivals(rrRound(config, roster, r, r === 2 ? ['B1'] : []).matches, ids)
+  );
+
+  check('ronda 2: el rival de B1 fa bye', withAbsence[1][base[1].B1], 'bye');
+  const others = ids.filter((id) => id !== 'B1' && id !== base[1].B1);
+  check('ronda 2: la resta igual', others.map((id) => withAbsence[1][id]), others.map((id) => base[1][id]));
+  check('ronda 3 idèntica', withAbsence[2], base[2]);
+}
+
 // ─── Sistema suís ─────────────────────────────────────────────────────────────
 
 console.log('\n=== Sistema suís ===');

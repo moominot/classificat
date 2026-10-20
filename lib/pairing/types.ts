@@ -220,7 +220,16 @@ export interface PreviousMatch {
 export interface PairingContext {
   phase: Phase;
   roundNumber: number;
+  /** Qui juga aquesta ronda: els actius sense els absents. */
   entrants: Entrant[];
+  /**
+   * Tots els inscrits actius, absents de la ronda inclosos, en ordre estable
+   * (`loadEntrants()` ordena per `createdAt` i `id`). El round robin hi
+   * calcula el calendari: si el fes sobre `entrants`, una absència
+   * canviaria la llista de Berger i desquadraria totes les rondes següents.
+   * Si no hi és, es fa servir `entrants`.
+   */
+  roster?: Entrant[];
   standings: Standing[];
   previousMatches: PreviousMatch[];
 }
@@ -248,7 +257,8 @@ export interface PairingWarning {
     | 'multiple_tag_match'
     | 'pair_excluded'
     | 'forbidden_bye'
-    | 'no_pairings_possible';
+    | 'no_pairings_possible'
+    | 'opponent_absent';
   message: string;
   affectedEntryIds: string[];
 }
