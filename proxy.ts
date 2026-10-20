@@ -23,9 +23,10 @@ const PUBLIC_API_WRITES = new Set([
   '/api/invitations',
 ]);
 
-// Identificar-se i dir si es juga la ronda següent són accions de jugador sense
-// compte: cada ruta decideix qui hi pot fer què (`getViewer()`).
-const PLAYER_ACTIONS = /^\/api\/tournaments\/[^/]+\/(presence|identify)$/;
+// Identificar-se, dir si es juga la ronda següent i demanar inscriure's són
+// accions de jugador sense compte: cada ruta decideix qui hi pot fer què
+// (`getViewer()`). Validar una inscripció (`registrations/<id>`) no hi entra.
+const PLAYER_ACTIONS = /^\/api\/tournaments\/[^/]+\/(presence|identify|registrations)$/;
 
 const RESULT_SUBMISSION = /^\/api\/tournaments\/[^/]+\/rounds\/[^/]+\/result$/;
 

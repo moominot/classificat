@@ -1,4 +1,7 @@
 import { NextResponse } from 'next/server';
+import { eq } from 'drizzle-orm';
+import { db } from '@/db';
+import { tournaments } from '@/db/schema';
 import { requireRole } from '@/lib/authz';
 import { getBarrufConfig } from '@/lib/settings';
 
@@ -6,7 +9,9 @@ import { getBarrufConfig } from '@/lib/settings';
  * Cerca al registre de jugadors del BARRUF (docs/api.md), per vincular-los
  * en donar d'alta un inscrit. La lectura és pública riu amunt, però aquí es
  * manté darrere `requireRole` perquè és una eina de gestió, no un cercador
- * obert a qualsevol visitant.
+ * obert a qualsevol visitant. L'única excepció és el formulari d'inscripció:
+ * amb `?torneig=<id>` d'una competició amb les inscripcions obertes, el
+ * jugador hi pot cercar el seu nom.
  */
 
 interface BarrufJugador {
@@ -36,8 +41,11 @@ async function loadRegistre(apiUrl: string): Promise<BarrufJugador[]> {
 }
 
 export async function GET(req: Request) {
-  const guard = await requireRole('admin');
-  if (guard.error) return guard.error;
+  const url = new URL(req.url);
+  if (!(await inscripcionsObertes(url.searchParams.get('torneig')))) {
+    const guard = await requireRole('admin');
+    if (guard.error) return guard.error;
+  }
 
   const config = await getBarrufConfig();
   if (!config) {
@@ -47,7 +55,7 @@ export async function GET(req: Request) {
     );
   }
 
-  const query = (new URL(req.url).searchParams.get('q') ?? '').trim().toLowerCase();
+  const query = (url.searchParams.get('q') ?? '').trim().toLowerCase();
   if (query.length < 2) return NextResponse.json([]);
 
   let registre: BarrufJugador[];
@@ -73,4 +81,13 @@ export async function GET(req: Request) {
       estat: j.estat,
     }))
   );
+}
+
+async function inscripcionsObertes(tournamentId: string | null): Promise<boolean> {
+  if (!tournamentId) return false;
+  const [row] = await db
+    .select({ status: tournaments.status })
+    .from(tournaments)
+    .where(eq(tournaments.id, tournamentId));
+  return row?.status === 'registration';
 }
