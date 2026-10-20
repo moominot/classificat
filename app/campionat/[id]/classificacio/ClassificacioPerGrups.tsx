@@ -3,8 +3,8 @@ import type { GroupBlock } from '@/lib/tag-groups';
 import ClassificacioGeneral, { type DesempatCol } from './ClassificacioGeneral';
 
 /**
- * Classificació general quan el campionat té grups de classificació: un bloc
- * per grup, l'un sota l'altre, amb les posicions contínues
+ * Classificació general quan la fase parteix els jugadors per etiquetes: un
+ * bloc per etiqueta, l'un sota l'altre, amb les posicions contínues
  * (docs/eliminatoria-per-posicions.md). El color fa de zona: el primer grup en
  * verd, l'últim en vermell i els del mig alternant, perquè d'un cop d'ull es
  * vegi on és cadascú dins del conjunt.

@@ -1,43 +1,45 @@
-import type { TagKind } from '@/db/types';
+import type { PhaseConfig } from '@/db/types';
 import type { Tag } from '@/lib/pairing/types';
 
 /**
- * Grups de classificació: etiquetes amb `kind = 'group'` i un ordre. La
- * classificació els apila l'un sota l'altre i les posicions continuen d'un
- * grup al següent: el grup «17-32» comença a la posició 17
- * (docs/eliminatoria-per-posicions.md).
+ * Classificació apilada per grups (docs/eliminatoria-per-posicions.md).
+ *
+ * Els grups no són un tipus d'etiqueta nou: són **les etiquetes que la fase
+ * ja fa servir per partir els jugadors** (`scope: 'intra_tag'` o
+ * `'inter_tag'`). L'ordre surt del nom amb ordenació natural, de manera que
+ * «1-8», «9-16», «17-24» queden en aquest ordre sense haver-lo de configurar.
  */
 
-/** Un grup nou va al final de la classificació apilada. */
-export function nextGroupOrder(existing: Array<{ kind: TagKind; order: number }>): number {
-  return existing.filter((t) => t.kind === 'group').reduce((max, t) => Math.max(max, t.order), 0) + 1;
+/** Les etiquetes amb què una fase parteix els jugadors, si en té. */
+export function phaseGroupTagIds(config: PhaseConfig): string[] {
+  if (config.method === 'manual' || config.scope === 'all') return [];
+  return config.tagIds ?? [];
 }
 
-export function groupTags(tags: Tag[]): Tag[] {
-  return tags
-    .filter((t) => t.kind === 'group')
-    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0) || a.name.localeCompare(b.name));
+/** Ordre natural pel nom: «2» abans que «10», «9-16» abans que «17-32». */
+export function sortGroupTags(tags: Tag[]): Tag[] {
+  return [...tags].sort((a, b) => a.name.localeCompare(b.name, 'ca', { numeric: true }));
 }
 
 export interface GroupBlock<T> {
-  /** null = jugadors sense cap grup, al final. */
+  /** null = jugadors sense cap dels grups, al final. */
   tag: Tag | null;
   rows: T[];
 }
 
 /**
- * Reparteix una classificació ja ordenada en blocs per grup, en l'ordre dels
- * grups, i renumera les posicions de manera contínua.
+ * Reparteix una classificació ja ordenada en blocs, un per grup i en l'ordre
+ * donat, i renumera les posicions de manera contínua: el segon bloc comença
+ * on acaba el primer.
  *
  * Dins de cada grup es manté l'ordre de la classificació (punts i
- * desempats) i els empats continuen compartint posició. Qui té més d'un grup
- * va al primer; qui no en té cap, a un bloc final.
+ * desempats) i els empats continuen compartint posició. Qui és a més d'un
+ * grup va al primer; qui no és a cap, a un bloc final.
  */
 export function stackByGroups<T extends { tagIds: string[]; rank: number }>(
   standings: T[],
-  tags: Tag[]
+  groups: Tag[]
 ): GroupBlock<T>[] {
-  const groups = groupTags(tags);
   const blockByTag = new Map<string, T[]>(groups.map((g) => [g.id, []]));
   const withoutGroup: T[] = [];
 

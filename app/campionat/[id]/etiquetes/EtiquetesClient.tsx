@@ -11,9 +11,6 @@ import EmptyState from '@/components/ui/EmptyState';
 import TagInput from '@/components/forms/TagInput';
 import { useCanManage } from '@/components/ViewerContext';
 import type { Tag } from '@/lib/pairing/types';
-import { groupTags } from '@/lib/tag-groups';
-
-type TipusNova = 'label' | 'group' | 'team';
 
 interface Jugador { id: string; name: string; tagIds: string[]; teamId: string | null; isActive: boolean }
 interface Equip { id: string; name: string }
@@ -33,8 +30,7 @@ export default function EtiquetesClient({
   const canManage = useCanManage();
   const [modalObert, setModalObert] = useState(false);
   const [nomNovaEtiqueta, setNomNovaEtiqueta] = useState('');
-  const [tipus, setTipus] = useState<TipusNova>('label');
-  const esEquip = tipus === 'team';
+  const [esEquip, setEsEquip] = useState(false);
   const [loadingNova, setLoadingNova] = useState(false);
   const [seleccionats, setSeleccionats] = useState<Set<string>>(new Set());
   const [etiquetaBulk, setEtiquetaBulk] = useState('');
@@ -46,10 +42,10 @@ export default function EtiquetesClient({
     await fetch(`/api/tournaments/${tournamentId}/${esEquip ? 'teams' : 'tags'}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: nomNovaEtiqueta.trim(), ...(tipus === 'group' ? { kind: 'group' } : {}) }),
+      body: JSON.stringify({ name: nomNovaEtiqueta.trim() }),
     });
     setNomNovaEtiqueta('');
-    setTipus('label');
+    setEsEquip(false);
     setLoadingNova(false);
     setModalObert(false);
     router.refresh();
@@ -69,21 +65,6 @@ export default function EtiquetesClient({
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tagIds: nouesTags.map((t) => t.id) }),
-    });
-    router.refresh();
-  }
-
-  /** Mou un grup una posició amunt (-1) o avall (+1) a la classificació apilada. */
-  async function mouGrup(tagId: string, direccio: -1 | 1) {
-    const ordre = grups.map((g) => g.id);
-    const i = ordre.indexOf(tagId);
-    const j = i + direccio;
-    if (i < 0 || j < 0 || j >= ordre.length) return;
-    [ordre[i], ordre[j]] = [ordre[j], ordre[i]];
-    await fetch(`/api/tournaments/${tournamentId}/tags`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tagIds: ordre }),
     });
     router.refresh();
   }
@@ -114,8 +95,6 @@ export default function EtiquetesClient({
     router.refresh();
   }
 
-  const grups = groupTags(tags);
-  const etiquetesLliures = tags.filter((t) => t.kind !== 'group');
   const tagMap = new Map(tags.map((t) => [t.id, t]));
   const tagsPerJugador = (j: Jugador) => j.tagIds.map((id) => tagMap.get(id)).filter((t): t is Tag => !!t);
   const equipPerId = new Map(equips.map((e) => [e.id, e]));
@@ -130,7 +109,7 @@ export default function EtiquetesClient({
         </div>
       )}
 
-      <Modal open={modalObert} onClose={() => setModalObert(false)} title={esEquip ? 'Nou equip' : tipus === 'group' ? 'Nou grup' : 'Nova etiqueta'}>
+      <Modal open={modalObert} onClose={() => setModalObert(false)} title={esEquip ? 'Nou equip' : 'Nova etiqueta'}>
         <div className="space-y-4">
           <Input
             label={esEquip ? "Nom de l'equip" : "Nom de l'etiqueta"}
@@ -140,23 +119,27 @@ export default function EtiquetesClient({
             onKeyDown={(e) => e.key === 'Enter' && creaEtiqueta()}
             autoFocus
           />
-          <fieldset className="space-y-2.5">
-            {TIPUS_NOVA.map((t) => (
-              <label key={t.id} className="flex items-start gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="tipus-etiqueta"
-                  checked={tipus === t.id}
-                  onChange={() => setTipus(t.id)}
-                  className="mt-1 accent-accent"
-                />
-                <span>
-                  <span className="block text-sm font-medium text-ink">{t.label}</span>
-                  <span className="block text-xs text-ink-3">{t.description}</span>
-                </span>
-              </label>
-            ))}
-          </fieldset>
+          <label className="flex items-start gap-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={esEquip}
+              onChange={(e) => setEsEquip(e.target.checked)}
+              className="mt-1 accent-current text-accent"
+            />
+            <span>
+              <span className="block text-sm font-medium text-ink">És una etiqueta d&apos;equip</span>
+              <span className="block text-xs text-ink-3">
+                Els equips competeixen en grup: el seu valor surt dels resultats dels membres, segons el
+                criteri de cada fase. Un jugador només pot ser en un equip.
+              </span>
+            </span>
+          </label>
+          {!esEquip && (
+            <p className="text-sm text-ink-3">
+              Un jugador pot tenir qualsevol nombre d&apos;etiquetes alhora — serveixen per filtrar la
+              classificació i, més endavant, per aparellar per categoria.
+            </p>
+          )}
           <div className="flex gap-2 pt-1">
             <Button onClick={creaEtiqueta} loading={loadingNova} disabled={!nomNovaEtiqueta.trim()} className="flex-1 sm:flex-none">
               Crear
@@ -181,21 +164,6 @@ export default function EtiquetesClient({
               <span className="font-semibold text-sm">Etiquetes i equips del campionat</span>
             </div>
             <ul className="divide-y divide-border">
-              {grups.map((g, i) => (
-                <EtiquetaRow
-                  key={g.id}
-                  tag={g}
-                  compte={comptePerTag.get(g.id) ?? 0}
-                  tournamentId={tournamentId}
-                  canManage={canManage}
-                  onChanged={() => router.refresh()}
-                  posicioGrup={{
-                    numero: i + 1,
-                    onAmunt: i > 0 ? () => mouGrup(g.id, -1) : undefined,
-                    onAvall: i < grups.length - 1 ? () => mouGrup(g.id, 1) : undefined,
-                  }}
-                />
-              ))}
               {equips.map((e) => (
                 <EtiquetaRow
                   key={`team-${e.id}`}
@@ -207,7 +175,7 @@ export default function EtiquetesClient({
                   onChanged={() => router.refresh()}
                 />
               ))}
-              {etiquetesLliures.map((t) => (
+              {tags.map((t) => (
                 <EtiquetaRow
                   key={t.id}
                   tag={t}
@@ -331,7 +299,6 @@ function EtiquetaRow({
   tournamentId,
   canManage,
   onChanged,
-  posicioGrup,
 }: {
   tag: Tag;
   esEquip?: boolean;
@@ -339,8 +306,6 @@ function EtiquetaRow({
   tournamentId: string;
   canManage: boolean;
   onChanged: () => void;
-  /** Només els grups de classificació: posició a la classificació apilada. */
-  posicioGrup?: { numero: number; onAmunt?: () => void; onAvall?: () => void };
 }) {
   const [editant, setEditant] = useState(false);
   const [nom, setNom] = useState(tag.name);
@@ -357,18 +322,6 @@ function EtiquetaRow({
     });
     setLoading(false);
     setEditant(false);
-    onChanged();
-  }
-
-  /** Etiqueta lliure ↔ grup de classificació. Els equips no en tenen. */
-  async function canviaTipus() {
-    setLoading(true);
-    await fetch(`/api/tournaments/${tournamentId}/tags/${tag.id}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ kind: posicioGrup ? 'label' : 'group' }),
-    });
-    setLoading(false);
     onChanged();
   }
 
@@ -392,10 +345,8 @@ function EtiquetaRow({
         />
       ) : (
         <span className="flex-1 text-sm text-ink-2">
-          {posicioGrup && <span className="mr-2 text-xs font-semibold text-ink-3 tabular-nums">{posicioGrup.numero}.</span>}
           {tag.name}
           {esEquip && <span className="ml-2 align-middle"><Badge color="purple">Equip</Badge></span>}
-          {posicioGrup && <span className="ml-2 align-middle"><Badge color="green">Grup</Badge></span>}
         </span>
       )}
       <Badge color="blue">{compte} jugador{compte !== 1 ? 's' : ''}</Badge>
@@ -408,42 +359,6 @@ function EtiquetaRow({
           </div>
         ) : (
           <div className="flex gap-1">
-            {posicioGrup && (
-              <>
-                <button
-                  onClick={posicioGrup.onAmunt}
-                  disabled={!posicioGrup.onAmunt}
-                  className="p-1.5 rounded text-ink-3 hover:text-ink-2 hover:bg-surface-2 transition-colors disabled:opacity-30 disabled:pointer-events-none"
-                  title="Puja el grup a la classificació"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                  </svg>
-                </button>
-                <button
-                  onClick={posicioGrup.onAvall}
-                  disabled={!posicioGrup.onAvall}
-                  className="p-1.5 rounded text-ink-3 hover:text-ink-2 hover:bg-surface-2 transition-colors disabled:opacity-30 disabled:pointer-events-none"
-                  title="Baixa el grup a la classificació"
-                >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                  </svg>
-                </button>
-              </>
-            )}
-            {!esEquip && (
-              <button
-                onClick={canviaTipus}
-                disabled={loading}
-                className="p-1.5 rounded text-ink-3 hover:text-ink-2 hover:bg-surface-2 transition-colors disabled:opacity-50"
-                title={posicioGrup ? 'Converteix en etiqueta lliure' : 'Converteix en grup de classificació'}
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h10" />
-                </svg>
-              </button>
-            )}
             <button onClick={() => setEditant(true)} className="p-1.5 rounded text-ink-3 hover:text-ink-2 hover:bg-surface-2 transition-colors" title="Edita el nom">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -462,24 +377,3 @@ function EtiquetaRow({
     </li>
   );
 }
-
-const TIPUS_NOVA: { id: TipusNova; label: string; description: string }[] = [
-  {
-    id: 'label',
-    label: 'Etiqueta',
-    description:
-      "Un jugador pot tenir qualsevol nombre d'etiquetes alhora: serveixen per filtrar la classificació i per aparellar per categoria.",
-  },
-  {
-    id: 'group',
-    label: 'Grup de classificació',
-    description:
-      "La classificació es mostra per grups, l'un sota l'altre i en l'ordre que triïs, i les posicions continuen d'un grup al següent (p. ex. «1-16» i «17-32»).",
-  },
-  {
-    id: 'team',
-    label: 'Equip',
-    description:
-      'Els equips competeixen en grup: el seu valor surt dels resultats dels membres, segons el criteri de cada fase. Un jugador només pot ser en un equip.',
-  },
-];

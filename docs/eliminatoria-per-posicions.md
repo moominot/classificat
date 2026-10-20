@@ -44,8 +44,8 @@ ha d'evitar revanxes.
 | **Anada i tornada** (mateix rival a la ronda següent) | ❌ i el Suís amb «evitar revanxes» faria just el contrari |
 | **Decidir l'eliminatòria** pel global | ❌ la classificació ordena per punts (victòries), no per eliminatòria |
 | **Assignar etiquetes automàticament** en acabar la fase | ❌ |
-| **Ordre de les etiquetes** (`1-16` abans que `17-32`) | ❌ `tags` no té `order` |
-| Classificació per grups apilats, amb colors | ❌ |
+| **Ordre dels grups** (`1-16` abans que `17-32`) | ✅ ordre natural pel nom de l'etiqueta |
+| Classificació per grups apilats, amb colors | ✅ amb les etiquetes que parteixen la fase |
 | Forçar que es juguin totes les partides | ❌ parcial: `askPresence` es pot apagar, però res no impedeix avançar amb resultats pendents |
 | Plantilles de campionat | ❌ només hi ha perfils de joc, que copien les preguntes |
 
@@ -85,12 +85,15 @@ el guanyador de cada eliminatòria a la meitat alta, el perdedor a la baixa.
 
 ### 3.3 Les etiquetes com a font de veritat
 
-Les etiquetes són editables a mà, múltiples i sense ordre. Això té una cara
-bona (l'admin pot corregir un grup movent una etiqueta) i una de dolenta (un
-canvi accidental desquadra el sorteig). Proposta:
+Les etiquetes són editables a mà i múltiples. Això té una cara bona
+(l'admin pot corregir un grup movent una etiqueta) i una de dolenta (un
+canvi accidental desquadra el sorteig).
 
-- Les etiquetes de grup les crea el sistema i porten una marca
-  (`tags.kind = 'group'`) i un `order`.
+**Decidit:** no hi ha cap tipus d'etiqueta nou. Quines etiquetes són grups
+ho diu la fase (les `tagIds` que ja tria per partir els jugadors) i l'ordre
+surt del nom amb ordenació natural («1-8», «9-16», «17-24»…). Proposta per a
+la resta:
+
 - En partir un grup, el jugador **perd l'etiqueta antiga** i rep la nova: en
   cada moment té una sola etiqueta de grup. L'historial ja és a les partides.
 - La generació avisa si algun jugador té zero o dues etiquetes de grup.
@@ -112,8 +115,8 @@ servidor: la interfície també ho mostra, però no n'hi ha prou.
 ### 3.5 Puntuació
 
 Amb aquest format els punts de victòria no ordenen res: l'ordre és **grup →
-resultat dins el grup**. La classificació general ha d'ordenar primer per
-l'`order` de l'etiqueta de grup i, dins del grup, per la fase en curs
+resultat dins el grup**. La classificació general ha d'ordenar primer pel
+grup (ordre natural del nom) i, dins del grup, per la fase en curs
 (diferència, mitjana). Al final, cada grup és d'un sol jugador i l'ordre dels
 grups **és** la classificació final.
 
@@ -151,10 +154,11 @@ compta com a partida jugada, així que no altera la mitjana.
 
 Peces genèriques, reutilitzables fora d'aquest format:
 
-1. **`tags.order` i `tags.kind`** + migració.
-2. **Classificació per grups apilats**: un bloc per etiqueta de grup, en
-   ordre, amb color per bloc i la classificació interna de cada grup. Serveix
-   també per a qualsevol campionat amb grups.
+1. ~~`tags.order` i `tags.kind`~~: descartat. Els grups són les etiquetes
+   que la fase ja fa servir per partir els jugadors.
+2. **Classificació per grups apilats**: un bloc per etiqueta de la fase, en
+   ordre natural del nom, amb color per bloc i les posicions contínues.
+   Serveix per a qualsevol fase per etiquetes.
 3. **Sorteig = una ronda de Round Robin triada a l'atzar** dins de cada grup
    (Round Robin `intra_tag`, opció nova `randomRound`). Reaprofita
    `bergerSchedule()` tal com és. Detalls:
@@ -220,9 +224,9 @@ pot portar un paràmetre «nombre de jugadors» que generi les fases.
 
 ## 5. Ordre de feina
 
-1. ✅ `tags.order`/`kind` + classificació per grups apilats amb colors
-   (migració `0008_tag_groups`, `lib/tag-groups.ts`, pantalla d'Etiquetes i
-   `ClassificacioPerGrups`).
+1. ✅ Classificació per grups apilats amb colors, a partir de les etiquetes
+   de la fase (`lib/tag-groups.ts`, `ClassificacioPerGrups`). Sense canvis a
+   l'esquema.
 2. Sorteig aleatori + anada i tornada.
 3. Tancar eliminatòria i partir grups (+ forçar partides).
 4. Plantilles: desar i crear; plantilla de sèrie «Eliminatòria per posicions (32)».

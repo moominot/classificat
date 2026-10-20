@@ -48,12 +48,6 @@ export const DEFAULT_VISIBILITY: TournamentVisibility = {
   resultsVisible: true,
 };
 
-/**
- * `label`: etiqueta lliure (club, categoria...). `group`: grup de
- * classificació, amb ordre: la classificació els mostra l'un sota l'altre.
- */
-export type TagKind = 'label' | 'group';
-
 // ─── Presència a la ronda següent ─────────────────────────────────────────────
 
 /** Qui ha dit que juga (o no) la ronda següent; qui no ha dit res és «pendent» i no té fila. */

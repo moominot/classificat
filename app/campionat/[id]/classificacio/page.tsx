@@ -13,7 +13,7 @@ import {
 } from '@/lib/db-helpers';
 import { loadStandings } from '@/lib/standings-service';
 import { resolveTiebreaker } from '@/lib/pairing/tiebreakers';
-import { stackByGroups } from '@/lib/tag-groups';
+import { phaseGroupTagIds, sortGroupTags, stackByGroups } from '@/lib/tag-groups';
 import RanquingMetrica from './RanquingMetrica';
 import ClassificacioGeneral from './ClassificacioGeneral';
 import ClassificacioPerGrups from './ClassificacioPerGrups';
@@ -170,18 +170,6 @@ export default async function ClassificacioPage({
     ? vista.standings.filter((s) => passaFiltre(s.entryId, s.displayName, s.tagIds, s.teamId))
     : vista.standings;
 
-  // Amb grups de classificació, la general s'apila per grups. Les posicions
-  // es calculen amb tothom i després es filtra: filtrar no ha de canviar la
-  // posició de ningú.
-  const blocsGrups = vista.standings.some((s) => totesEtiquetes.some((t) => t.kind === 'group' && s.tagIds.includes(t.id)))
-    ? stackByGroups(vista.standings, totesEtiquetes)
-        .map((bloc) => ({
-          ...bloc,
-          rows: hiHaFiltre ? bloc.rows.filter((s) => passaFiltre(s.entryId, s.displayName, s.tagIds, s.teamId)) : bloc.rows,
-        }))
-        .filter((bloc) => bloc.rows.length > 0)
-    : null;
-
   // Mètriques que tenen pestanya pròpia: les preguntes marcades per al
   // rànquing (Bingos, Millor jugada...), no els desempats configurats.
   const metriquesRanquing = totesPreguntes
@@ -203,6 +191,25 @@ export default async function ClassificacioPage({
     .map((key) => ({ key, def: resolveTiebreaker(key) }))
     .filter((d) => d.def?.compute)
     .map((d) => ({ key: d.key, label: d.def!.label }));
+
+  // Si la fase parteix els jugadors per etiquetes, la general s'apila per
+  // aquestes etiquetes (docs/eliminatoria-per-posicions.md). Sense fase
+  // triada, mana la darrera que ja té rondes: una fase creada per endavant
+  // pot apuntar a etiquetes que encara no té ningú. Les posicions es
+  // calculen amb tothom i després es filtra, perquè filtrar no mogui ningú.
+  const faseGrups = faseSeleccionada
+    ? faseReferencia
+    : ([...totes_fases].reverse().find((f) => totes_rondes.some((r) => r.phaseId === f.id)) ?? faseReferencia);
+  const idsGrups = new Set(faseGrups ? phaseGroupTagIds(faseGrups.config) : []);
+  const etiquetesGrup = sortGroupTags(totesEtiquetes.filter((t) => idsGrups.has(t.id)));
+  const blocsGrups = vista.standings.some((s) => s.tagIds.some((t) => idsGrups.has(t)))
+    ? stackByGroups(vista.standings, etiquetesGrup)
+        .map((bloc) => ({
+          ...bloc,
+          rows: hiHaFiltre ? bloc.rows.filter((s) => passaFiltre(s.entryId, s.displayName, s.tagIds, s.teamId)) : bloc.rows,
+        }))
+        .filter((bloc) => bloc.rows.length > 0)
+    : null;
 
   // "Millor partida conjunta" va just després de "Millor jugada" (best_word)
   // si existeix com a pestanya; si no, al final de les mètriques — mai abans

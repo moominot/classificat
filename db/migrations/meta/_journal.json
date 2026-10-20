@@ -57,13 +57,6 @@
       "when": 1791600000000,
       "tag": "0007_short_path",
       "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "6",
-      "when": 1791700000000,
-      "tag": "0008_tag_groups",
-      "breakpoints": true
     }
   ]
 }
