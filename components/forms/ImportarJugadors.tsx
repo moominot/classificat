@@ -213,7 +213,7 @@ export default function ImportarJugadors({ tournamentId }: { tournamentId: strin
           {resultat.tagsCreades.length > 0 && (
             <div className="rounded-lg bg-accent-tint border border-accent p-3">
               <p className="text-sm font-medium text-accent-ink mb-1">
-                {resultat.tagsCreades.length} etiqueta{resultat.tagsCreades.length !== 1 ? 'es' : ''} creada{resultat.tagsCreades.length !== 1 ? 'es' : ''}:
+                {resultat.tagsCreades.length} {resultat.tagsCreades.length !== 1 ? 'etiquetes creades' : 'etiqueta creada'}:
               </p>
               <ul className="text-sm text-accent-ink space-y-0.5">
                 {resultat.tagsCreades.map(n => <li key={n}>+ {n}</li>)}

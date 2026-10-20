@@ -50,7 +50,7 @@ export default function QrCompartir({ tournamentId, shortPath }: { tournamentId:
             />
             <button
               onClick={copiarEnllac}
-              className="shrink-0 text-xs font-semibold px-2 py-1.5 rounded-lg bg-accent text-white hover:bg-accent-ink transition-colors"
+              className="shrink-0 text-xs font-semibold px-2 py-1.5 rounded-lg bg-accent text-surface hover:bg-accent-ink transition-colors"
             >
               {copiat ? '✓' : 'Copia'}
             </button>

@@ -354,7 +354,7 @@ function EtiquetaRow({
         confirmEsborrar ? (
           <div className="flex items-center gap-1.5">
             <span className="text-xs text-loss">Esborrar?</span>
-            <button onClick={esborra} disabled={loading} className="px-2 py-1 rounded text-xs bg-loss text-white hover:opacity-90 disabled:opacity-50">Sí</button>
+            <button onClick={esborra} disabled={loading} className="px-2 py-1 rounded text-xs bg-loss text-surface hover:opacity-90 disabled:opacity-50">Sí</button>
             <button onClick={() => setConfirmEsborrar(false)} className="px-2 py-1 rounded text-xs text-ink-3 hover:bg-surface-2">No</button>
           </div>
         ) : (

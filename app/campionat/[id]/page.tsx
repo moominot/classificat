@@ -247,6 +247,14 @@ export default async function CampionatInici({ params }: { params: Promise<{ id:
 function describeScope(config: PhaseConfig, tagNameById: Map<string, string>): string {
   const noms = (ids: string[]) => ids.map((id) => tagNameById.get(id) ?? '?').join(', ');
 
+  if (config.method === 'round_robin' && config.randomDraw) {
+    const on = config.scope === 'intra_tag' ? ` dins de cada grup (${noms(config.tagIds)})` : ' entre tots';
+    const voltes = config.doubleRound ? ', anada i tornada' : '';
+    const partir = config.splitGroups
+      ? ' Guanya qui suma més punts a les partides contra el mateix rival; els guanyadors passen a la meitat de dalt.'
+      : '';
+    return `Rival per sorteig${on}${voltes}.${partir}`;
+  }
   if (config.method === 'round_robin') {
     const volta = config.doubleRound ? ' a doble volta' : '';
     if (config.scope === 'intra_tag') return `Round Robin${volta}, intra-etiqueta (${noms(config.tagIds)}).`;

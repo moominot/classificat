@@ -30,7 +30,14 @@
     --color-border: oklch(31% 0.006 260);
     --color-ink: oklch(96% 0 0);
     --color-ink-2: oklch(80% 0.004 260);
-    --color-ink-3: oklch(60% 0.006 260);
+    --color-ink-3: oklch(66% 0.006 260);
+    /* Els -ink són text de color: en fosc han de ser clars, o no es llegeixen
+       sobre els -tint ni sobre la superfície. Contrast ≥ 4,5 (WCAG AA). */
+    --color-accent-ink: oklch(82% 0.11 55);
+    --color-p2-ink: oklch(82% 0.08 250);
+    --color-win: oklch(70% 0.15 152);
+    --color-loss: oklch(70% 0.16 25);
+    --color-p2: oklch(70% 0.12 250);
     --color-accent-tint: oklch(30% 0.06 55);
     --color-win-tint: oklch(28% 0.06 152);
     --color-loss-tint: oklch(30% 0.06 25);
@@ -46,7 +53,14 @@
   --color-border: oklch(31% 0.006 260);
   --color-ink: oklch(96% 0 0);
   --color-ink-2: oklch(80% 0.004 260);
-  --color-ink-3: oklch(60% 0.006 260);
+  --color-ink-3: oklch(66% 0.006 260);
+  /* Els -ink són text de color: en fosc han de ser clars, o no es llegeixen
+     sobre els -tint ni sobre la superfície. Contrast ≥ 4,5 (WCAG AA). */
+  --color-accent-ink: oklch(82% 0.11 55);
+  --color-p2-ink: oklch(82% 0.08 250);
+  --color-win: oklch(70% 0.15 152);
+  --color-loss: oklch(70% 0.16 25);
+  --color-p2: oklch(70% 0.12 250);
   --color-accent-tint: oklch(30% 0.06 55);
   --color-win-tint: oklch(28% 0.06 152);
   --color-loss-tint: oklch(30% 0.06 25);

@@ -47,7 +47,7 @@ export default async function RondesPage({ params }: { params: Promise<{ id: str
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <p className="text-sm text-ink-3">
-          {totes_rondes.length} ronda{totes_rondes.length !== 1 ? 'es' : ''} creades
+          {totes_rondes.length} {totes_rondes.length !== 1 ? 'rondes creades' : 'ronda creada'}
         </p>
         {totes_fases.length > 0 && (
           <NouaRonda tournamentId={id} fases={totes_fases} rondesExistents={totes_rondes.map(r => r.number)} />

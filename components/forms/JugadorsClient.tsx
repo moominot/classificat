@@ -342,7 +342,7 @@ function JugadorRow({
                 <button
                   onClick={handleDelete}
                   disabled={deleting}
-                  className="px-2 py-1 rounded text-xs bg-loss text-white hover:opacity-90 disabled:opacity-50"
+                  className="px-2 py-1 rounded text-xs bg-loss text-surface hover:opacity-90 disabled:opacity-50"
                 >Sí</button>
                 <button
                   onClick={() => setConfirmDel(false)}
