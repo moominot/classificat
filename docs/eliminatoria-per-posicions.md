@@ -71,7 +71,8 @@ aleshores, aquesta eliminatòria inclosa).
 - Per coherència amb la mitjana, es compten els de **tot el campionat**.
 - Els bingos són enters petits, així que empaten amb molta més facilitat que
   la mitjana. Que s'arribi a aquest punt ja és molt rar, però si passa cal
-  una sortida: proposo que ho decideixi l'admin, amb un avís.
+  una sortida. **Decidit:** ho decideix l'admin. L'acció de tancar l'eliminatòria
+  s'atura, avisa i demana qui passa.
 
 ### 3.2 Qui passa es decideix per eliminatòria, no per la classificació del grup
 
@@ -142,6 +143,10 @@ mitjana no es distorsiona. Si es vol que el bye doni alguna cosa que compti
 (p. ex. +50 de diferència, com és habitual a Scrabble), cal un ajustament
 nou.
 
+**Decidit:** el bye dona diferència de punts. Ajustament nou a la puntuació
+de la fase, `byeSpread` (p. ex. 50), que suma a la mètrica `spread`. No
+compta com a partida jugada, així que no altera la mitjana.
+
 ## 4. Proposta tècnica
 
 Peces genèriques, reutilitzables fora d'aquest format:
@@ -179,8 +184,23 @@ Peces genèriques, reutilitzables fora d'aquest format:
 
 ### Plantilles de campionat
 
-Avui `game_profiles` només **copia les preguntes** en crear el campionat (la
-puntuació i els desempats del perfil no s'usen enlloc). Proposta:
+Què fan avui els perfils de joc (`game_profiles`):
+
+- N'hi ha tres de sèrie (Scrabble, Escacs, Genèric), creats en arrencar
+  (`db/index.ts`). No hi ha cap pantalla per crear-ne ni per triar-ne:
+  `NouCampionat` no envia `gameProfileId`, i el servidor agafa sempre
+  **Scrabble**.
+- Només se'n **copien les preguntes**. La puntuació, els desempats i els
+  participants per partida que porta el perfil no s'usen enlloc: la primera
+  fase surt de `DEFAULT_SCORING`.
+
+Diferència amb una plantilla: el perfil diu **a què es juga** (preguntes,
+puntuació); la plantilla diria **com és tot el campionat** (això mateix, més
+les fases, les etiquetes i els ajustos). Una plantilla conté un perfil.
+
+Com que els perfils gairebé no s'usen, **fusionar-los surt barat**: els tres
+perfils passen a ser plantilles de sèrie sense fases, i la taula
+`game_profiles` es pot retirar més endavant. Proposta:
 
 - Taula `tournament_templates(id, name, owner_id, is_builtin, config, created_at)`.
 - `config` versionat amb: preguntes, configuració del campionat
@@ -191,8 +211,8 @@ puntuació i els desempats del perfil no s'usen enlloc). Proposta:
   per posició (`carryStandingsFromPhaseIds` → índex), les etiquetes per nom;
   les exclusions entre jugadors es descarten.
 - **Crear des de plantilla**: el pas invers, amb ids nous.
-- Els perfils de joc actuals passen a ser plantilles de sèrie sense fases (o
-  conviuen fins que es decideixi fusionar-los).
+- Els perfils de joc actuals passen a ser plantilles de sèrie sense fases.
+- En crear un campionat es tria la plantilla (avui no es pot triar res).
 
 Per a aquest format, el nombre de fases depèn de N (log₂ N). Una plantilla
 estàtica «32 jugadors» és suficient per començar; més endavant, una plantilla
@@ -217,9 +237,10 @@ Preses (2026-10-20):
 - Sempre per sorteig, també a la primera fase, amb una ronda de Round Robin
   triada a l'atzar dins de cada grup (§4.3).
 
+- Si empaten també els bingos, decideix l'admin (§3.1).
+- El bye dona diferència de punts, configurable (`byeSpread`, §3.6).
+
 Pendents:
 
-- Si empaten també els bingos: decideix l'admin? (§3.1)
-- El bye ha de donar diferència de punts (p. ex. +50)? Cal un ajustament
-  nou (§3.6).
-- Plantilles i perfils de joc: fusionar-los o mantenir-los separats.
+- Confirmar la fusió de perfils de joc i plantilles (proposada a §4).
+- Valor per defecte de `byeSpread` (Scrabble sol fer servir +50).
