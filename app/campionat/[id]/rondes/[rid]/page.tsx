@@ -2,12 +2,13 @@ import { and, asc, eq } from 'drizzle-orm';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { db } from '@/db';
-import { phases, roundAbsences, rounds, tournaments } from '@/db/schema';
+import { matches, phases, roundAbsences, rounds, tournaments } from '@/db/schema';
 import { DEFAULT_VISIBILITY } from '@/db/types';
 import Badge from '@/components/ui/Badge';
 import { canManageTournament, getCurrentAccount } from '@/lib/authz';
 import { loadEntrants, loadRoundMatches, loadTags } from '@/lib/db-helpers';
 import { loadPendingPolicy, loadPresence } from '@/lib/presence';
+import { returnLegNumber } from '@/lib/return-leg';
 import type { RoundRobinConfig } from '@/lib/pairing/types';
 import GenerarAparellaments from './GenerarAparellaments';
 import ResultatAparellament from './ResultatAparellament';
@@ -69,6 +70,18 @@ export default async function RondaPage({
     loadTags(id),
     db.select().from(roundAbsences).where(eq(roundAbsences.roundId, rid)),
   ]);
+
+  // Si és l'anada d'una fase d'anada i tornada, la tornada es generarà alhora
+  // mentre no tingui aparellaments (ho fa la ruta de generació).
+  const numeroTornada = fase ? returnLegNumber(fase, ronda.number) : null;
+  const rondaTornada = numeroTornada !== null ? totes_rondes.find((r) => r.number === numeroTornada) : undefined;
+  const tornadaPendent =
+    numeroTornada !== null &&
+    (!rondaTornada ||
+      (rondaTornada.status !== 'closed' &&
+        (await db.select({ id: matches.id }).from(matches).where(eq(matches.roundId, rondaTornada.id)).limit(1)).length === 0))
+      ? numeroTornada
+      : null;
 
   const [ronda_anterior] = await db
     .select()
@@ -219,6 +232,7 @@ export default async function RondaPage({
           teResultats={jugades > 0}
           resultatsPublics={ronda.resultsVisible ?? null}
           esUltima={!totes_rondes.some((r) => r.number > ronda.number)}
+          tornada={rondaTornada ? numeroTornada : null}
         />
       </div>
 
@@ -235,6 +249,8 @@ export default async function RondaPage({
           previousAbsentIds={absencies_anteriors.map((a) => a.entryId)}
           presencia={Object.fromEntries([...presencia].map(([k, v]) => [k, v.status]))}
           pendentsCompten={presenciaPendents}
+          tornada={tornadaPendent}
+          totsJuguen={!!fase && fase.config.method === 'round_robin' && !!fase.config.randomDraw && !!fase.config.splitGroups}
         />
       )}
 

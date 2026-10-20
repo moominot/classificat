@@ -38,6 +38,8 @@ export default function GenerarAparellaments({
   previousAbsentIds = [],
   presencia = {},
   pendentsCompten = 'present',
+  tornada = null,
+  totsJuguen = false,
 }: {
   tournamentId: string;
   roundId: string;
@@ -50,6 +52,10 @@ export default function GenerarAparellaments({
   presencia?: Record<string, 'present' | 'absent'>;
   /** Com compten els pendents en aparellar (Ajustos). */
   pendentsCompten?: 'present' | 'absent';
+  /** Número de la tornada que es generarà alhora, si aquesta ronda n'és l'anada. */
+  tornada?: number | null;
+  /** Eliminatòria per posicions: es juguen totes les partides i no hi ha absències. */
+  totsJuguen?: boolean;
 }) {
   const router = useRouter();
   const canManage = useCanManage();
@@ -65,7 +71,9 @@ export default function GenerarAparellaments({
     presencia[id]
       ? presencia[id] === 'absent'
       : pendentsCompten === 'absent' || previousAbsentIds.includes(id);
-  const absentIds = new Set(players.filter((p) => pendent.get(p.id) ?? absentPerDefecte(p.id)).map((p) => p.id));
+  const absentIds = totsJuguen
+    ? new Set<string>()
+    : new Set(players.filter((p) => pendent.get(p.id) ?? absentPerDefecte(p.id)).map((p) => p.id));
 
   // Quan el servidor ja reflecteix la marca, l'optimista sobra.
   useEffect(() => {
@@ -103,8 +111,28 @@ export default function GenerarAparellaments({
 
   const playing = players.filter(p => !absentIds.has(p.id));
 
-  const participantsPicker = (
+  const avisos = (
+    <>
+      {tornada !== null && (
+        <div className="rounded-lg bg-accent-tint border border-accent px-4 py-3 text-sm text-accent-ink">
+          Aquesta fase és d&apos;anada i tornada: en generar els aparellaments d&apos;aquesta ronda es generaran també
+          els de la ronda {tornada} (tornada), amb les mateixes parelles i els seients girats.
+        </div>
+      )}
+    </>
+  );
+
+  const participantsPicker = totsJuguen ? (
+    <div className="space-y-3">
+      {avisos}
+      <p className="text-sm text-ink-2">
+        Eliminatòria per posicions: hi juguen els {players.length} jugadors actius. No es tenen en compte les
+        absències; qui abandona es dona de baixa a Jugadors i el seu rival fa bye.
+      </p>
+    </div>
+  ) : (
     <div>
+      {tornada !== null && <div className="mb-3">{avisos}</div>}
       <div className="flex items-center justify-between mb-3">
         <h3 className="text-sm font-semibold text-ink-2">Participants ronda {roundNumber}</h3>
         <span className="text-xs text-ink-3">{playing.length} jugadors</span>

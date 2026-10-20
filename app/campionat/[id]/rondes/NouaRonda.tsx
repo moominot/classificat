@@ -7,8 +7,10 @@ import Select from '@/components/ui/Select';
 import Modal from '@/components/ui/Modal';
 import { useCanManage } from '@/components/ViewerContext';
 import { readError } from '@/lib/http';
+import type { PhaseConfig } from '@/db/types';
+import { returnLegNumber } from '@/lib/return-leg';
 
-interface Fase { id: string; name: string; startRound: number; endRound: number; order: number }
+interface Fase { id: string; name: string; startRound: number; endRound: number; order: number; config: PhaseConfig }
 
 export default function NouaRonda({
   tournamentId,
@@ -22,13 +24,19 @@ export default function NouaRonda({
   const router = useRouter();
   const canManage = useCanManage();
   const [obert, setObert] = useState(false);
-  const [faseId, setFaseId] = useState(fases[0]?.id ?? '');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-
   // Calcula el pròxim número de ronda disponible
   const maxExistent = rondesExistents.length > 0 ? Math.max(...rondesExistents) : 0;
   const propera = maxExistent + 1;
+
+  // Per defecte, la fase on cau la ronda que toca.
+  const [faseId, setFaseId] = useState(
+    (fases.find(f => propera >= f.startRound && propera <= f.endRound) ?? fases[0])?.id ?? ''
+  );
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const fase = fases.find(f => f.id === faseId);
+  const tornada = fase ? returnLegNumber(fase, propera) : null;
 
   async function crearRonda() {
     setLoading(true);
@@ -72,10 +80,17 @@ export default function NouaRonda({
               ))}
             </Select>
           )}
+          {tornada !== null && (
+            <div className="rounded-lg bg-accent-tint border border-accent px-4 py-3 text-sm text-accent-ink">
+              Aquesta fase és d&apos;anada i tornada: es crearan de cop les rondes {propera} i {tornada}. En generar
+              els aparellaments de l&apos;anada es generaran també els de la tornada, amb les mateixes parelles i els
+              seients girats.
+            </div>
+          )}
           {error && <p className="text-sm text-loss">{error}</p>}
           <div className="flex gap-2 pt-1">
             <Button onClick={crearRonda} loading={loading} className="flex-1 sm:flex-none">
-              Crear ronda {propera}
+              {tornada !== null ? `Crear rondes ${propera} i ${tornada}` : `Crear ronda ${propera}`}
             </Button>
             <Button variant="ghost" onClick={() => setObert(false)}>
               Cancel·lar

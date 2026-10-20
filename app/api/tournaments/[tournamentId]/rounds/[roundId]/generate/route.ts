@@ -11,6 +11,7 @@ import type { CsvMatchRow, Entrant, PairingContext, Phase as EnginePhase } from 
 import { loadByeSpread, loadEntrants, loadPreviousMatches, loadQuestionMetrics, loadScoredMatches } from '@/lib/db-helpers';
 import { loadBracketGroups, splitGroupsConfig } from '@/lib/position-groups-service';
 import { isPowerOfTwo } from '@/lib/position-split';
+import { returnLegNumber } from '@/lib/return-leg';
 
 type Params = { params: Promise<{ tournamentId: string; roundId: string }> };
 
@@ -69,10 +70,47 @@ export async function POST(req: Request, { params }: Params) {
         .filter((r: CsvMatchRow) => Number.isInteger(r.tableNumber) && r.entryIds.length > 0)
     : undefined;
 
+  const generated = await generateRound(tournamentId, round, phase, absentEntryIds, csvRows);
+
+  // Anada i tornada: la tornada és l'anada amb els seients girats, així que
+  // es genera alhora (i es crea, si encara no hi és) mentre no tingui
+  // aparellaments.
+  const returnNumber = returnLegNumber(phase, round.number);
+  let returnLeg: Awaited<ReturnType<typeof generateRound>> | null = null;
+  if (returnNumber !== null) {
+    let [second] = await db
+      .select()
+      .from(rounds)
+      .where(and(eq(rounds.tournamentId, tournamentId), eq(rounds.number, returnNumber)));
+    if (!second) {
+      second = { ...round, id: uuid(), number: returnNumber, status: 'draft', createdAt: new Date() };
+      await db.insert(rounds).values(second);
+    }
+    const secondHasMatches =
+      (await db.select({ id: matches.id }).from(matches).where(eq(matches.roundId, second.id)).limit(1)).length > 0;
+    if (second.phaseId === phase.id && second.status !== 'closed' && !secondHasMatches) {
+      returnLeg = await generateRound(tournamentId, second, phase, absentEntryIds, undefined);
+    }
+  }
+
+  return NextResponse.json({ ...generated, returnLeg }, { status: 201 });
+}
+
+/**
+ * Genera i desa els aparellaments d'una ronda. Les absències queden
+ * anotades a la ronda i els byes neixen amb resultat.
+ */
+async function generateRound(
+  tournamentId: string,
+  round: typeof rounds.$inferSelect,
+  phase: typeof phases.$inferSelect,
+  absentEntryIds: string[],
+  csvRows: CsvMatchRow[] | undefined
+) {
   if (absentEntryIds.length > 0) {
     await db
       .insert(roundAbsences)
-      .values(absentEntryIds.map((entryId) => ({ roundId, entryId })))
+      .values(absentEntryIds.map((entryId) => ({ roundId: round.id, entryId })))
       .onConflictDoNothing();
   }
 
@@ -163,28 +201,25 @@ export async function POST(req: Request, { params }: Params) {
 
   const nameByEntry = new Map(entrants.map((e) => [e.id, e]));
 
-  return NextResponse.json(
-    {
-      roundId: round.id,
-      roundNumber: round.number,
-      matches: newMatches.map((m) => ({
-        id: m.id,
-        tableNumber: m.tableNumber,
-        participants: m.entryIds.map((entryId) => ({
-          entryId,
-          displayName: nameByEntry.get(entryId)?.displayName ?? entryId,
-        })),
-      })),
-      warnings: result.warnings,
-      seedingOrder: (result.seedingOrder ?? []).map((entryId, i) => ({
-        seed: i + 1,
+  return {
+    roundId: round.id,
+    roundNumber: round.number,
+    matches: newMatches.map((m) => ({
+      id: m.id,
+      tableNumber: m.tableNumber,
+      participants: m.entryIds.map((entryId) => ({
         entryId,
         displayName: nameByEntry.get(entryId)?.displayName ?? entryId,
-        rating: nameByEntry.get(entryId)?.rating ?? null,
       })),
-    },
-    { status: 201 }
-  );
+    })),
+    warnings: result.warnings,
+    seedingOrder: (result.seedingOrder ?? []).map((entryId, i) => ({
+      seed: i + 1,
+      entryId,
+      displayName: nameByEntry.get(entryId)?.displayName ?? entryId,
+      rating: nameByEntry.get(entryId)?.rating ?? null,
+    })),
+  };
 }
 
 /**

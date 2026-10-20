@@ -4,6 +4,7 @@ import { v4 as uuid } from 'uuid';
 import { db } from '@/db';
 import { matchParticipants, matches, phases, rounds } from '@/db/schema';
 import { canManageTournament, getCurrentAccount, requireTournamentAccess } from '@/lib/authz';
+import { returnLegNumber } from '@/lib/return-leg';
 
 type Params = { params: Promise<{ tournamentId: string }> };
 
@@ -55,6 +56,9 @@ export async function GET(_req: Request, { params }: Params) {
 
 /**
  * POST — Crea una ronda. Neix en esborrany: l'admin decideix quan es publica.
+ *
+ * Si és l'anada d'una fase d'anada i tornada, es crea també la tornada: les
+ * dues van juntes i s'aparellen alhora. La resposta la porta a `returnLeg`.
  */
 export async function POST(req: Request, { params }: Params) {
   const { tournamentId } = await params;
@@ -97,6 +101,12 @@ export async function POST(req: Request, { params }: Params) {
     createdAt: new Date(),
   };
 
-  await db.insert(rounds).values(newRound);
-  return NextResponse.json(newRound, { status: 201 });
+  const returnNumber = returnLegNumber(phase, number);
+  const returnLeg =
+    returnNumber !== null && !existing.some((r) => r.number === returnNumber)
+      ? { ...newRound, id: uuid(), number: returnNumber }
+      : null;
+
+  await db.insert(rounds).values(returnLeg ? [newRound, returnLeg] : [newRound]);
+  return NextResponse.json({ ...newRound, returnLeg }, { status: 201 });
 }

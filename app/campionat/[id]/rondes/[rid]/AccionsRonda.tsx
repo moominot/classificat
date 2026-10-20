@@ -17,6 +17,8 @@ interface AccionsRondaProps {
   resultatsPublics: boolean | null;
   /** És la ronda amb el número més alt: l'única que es pot esborrar. */
   esUltima?: boolean;
+  /** Si és l'anada, la tornada: en esborrar els aparellaments, cauen tots dos. */
+  tornada?: number | null;
 }
 
 /**
@@ -34,6 +36,7 @@ export default function AccionsRonda({
   teResultats,
   resultatsPublics,
   esUltima = false,
+  tornada = null,
 }: AccionsRondaProps) {
   const router = useRouter();
   const canManage = useCanManage();
@@ -41,6 +44,7 @@ export default function AccionsRonda({
   const [confirmEsborrar, setConfirmEsborrar] = useState(false);
   const [confirmRonda, setConfirmRonda] = useState(false);
   const [errorRonda, setErrorRonda] = useState('');
+  const [errorAparellaments, setErrorAparellaments] = useState('');
 
   if (!canManage) return null;
 
@@ -68,9 +72,11 @@ export default function AccionsRonda({
 
   async function esborrarAparellaments() {
     setLoading('esborrar');
-    await fetch(`/api/tournaments/${tournamentId}/rounds/${roundId}/import`, { method: 'DELETE' });
+    setErrorAparellaments('');
+    const res = await fetch(`/api/tournaments/${tournamentId}/rounds/${roundId}/import`, { method: 'DELETE' });
     setLoading(null);
     setConfirmEsborrar(false);
+    if (!res.ok) setErrorAparellaments(await readError(res, 'Error en esborrar els aparellaments'));
     router.refresh();
   }
 
@@ -156,7 +162,11 @@ export default function AccionsRonda({
             </Button>
           ) : (
             <div className="flex items-center gap-2 bg-loss-tint border border-loss rounded-lg px-3 py-1.5">
-              <span className="text-xs text-loss">Segur? S&apos;esborrarà tot.</span>
+              <span className="text-xs text-loss">
+                {tornada !== null
+                  ? `Segur? S'esborraran també els de la tornada (ronda ${tornada}).`
+                  : "Segur? S'esborrarà tot."}
+              </span>
               <Button
                 size="sm"
                 variant="danger"
@@ -170,6 +180,7 @@ export default function AccionsRonda({
               </Button>
             </div>
           )}
+          {errorAparellaments && <span className="text-xs text-loss">{errorAparellaments}</span>}
         </>
       )}
 

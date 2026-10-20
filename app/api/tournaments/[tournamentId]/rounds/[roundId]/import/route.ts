@@ -1,11 +1,12 @@
 import { NextResponse } from 'next/server';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray, isNotNull, ne } from 'drizzle-orm';
 import { v4 as uuid } from 'uuid';
 import { db } from '@/db';
 import { matchParticipants, matches, phases, roundAbsences, rounds } from '@/db/schema';
 import { requireTournamentAccess } from '@/lib/authz';
 import { parseCsvForManualImport } from '@/lib/pairing/methods/manual';
 import { loadEntrants } from '@/lib/db-helpers';
+import { returnLegNumber } from '@/lib/return-leg';
 
 type Params = { params: Promise<{ tournamentId: string; roundId: string }> };
 
@@ -121,7 +122,13 @@ export async function POST(req: Request, { params }: Params) {
   return NextResponse.json({ inserted: toInsert.length, errors }, { status: 201 });
 }
 
-/** DELETE — Esborra els aparellaments d'una ronda per tornar-los a fer. */
+/**
+ * DELETE — Esborra els aparellaments d'una ronda per tornar-los a fer.
+ *
+ * En una anada, també els de la tornada, que en són una còpia: si no, en
+ * tornar a sortejar l'anada, la tornada quedaria amb les parelles velles.
+ * Si la tornada ja té resultats, no es toca res.
+ */
 export async function DELETE(_req: Request, { params }: Params) {
   const { tournamentId, roundId } = await params;
   const guard = await requireTournamentAccess(tournamentId);
@@ -136,7 +143,32 @@ export async function DELETE(_req: Request, { params }: Params) {
     return NextResponse.json({ error: 'La ronda ja està tancada' }, { status: 409 });
   }
 
-  await db.delete(roundAbsences).where(eq(roundAbsences.roundId, roundId));
-  await db.delete(matches).where(eq(matches.roundId, roundId));
+  const roundIds = [roundId];
+  const [phase] = await db.select().from(phases).where(eq(phases.id, round.phaseId));
+  const returnNumber = phase ? returnLegNumber(phase, round.number) : null;
+  if (returnNumber !== null) {
+    const [second] = await db
+      .select()
+      .from(rounds)
+      .where(and(eq(rounds.tournamentId, tournamentId), eq(rounds.number, returnNumber)));
+    if (second) {
+      const played = await db
+        .select({ id: matchParticipants.id })
+        .from(matchParticipants)
+        .innerJoin(matches, eq(matches.id, matchParticipants.matchId))
+        .where(and(eq(matches.roundId, second.id), isNotNull(matchParticipants.rank), ne(matchParticipants.outcome, 'bye')))
+        .limit(1);
+      if (played.length > 0) {
+        return NextResponse.json(
+          { error: `La tornada (ronda ${second.number}) ja té resultats: esborra'ls abans de tornar a sortejar l'anada.` },
+          { status: 409 }
+        );
+      }
+      roundIds.push(second.id);
+    }
+  }
+
+  await db.delete(roundAbsences).where(inArray(roundAbsences.roundId, roundIds));
+  await db.delete(matches).where(inArray(matches.roundId, roundIds));
   return new NextResponse(null, { status: 204 });
 }
