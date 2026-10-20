@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <!-- La fitxa C del Scrabble català, que val 2 (la mateixa del logo de la capçalera) -->
+  <rect x="1" y="1" width="30" height="30" rx="7" fill="#ffe9d9" stroke="#e8d3c5" stroke-width="1.5"/>
+  <text x="14.5" y="23" text-anchor="middle" font-family="'Space Grotesk', 'Helvetica Neue', Arial, sans-serif" font-weight="700" font-size="21" fill="#141414">C</text>
+  <text x="25" y="27" text-anchor="middle" font-family="'Helvetica Neue', Arial, sans-serif" font-weight="700" font-size="9" fill="#630c00">2</text>
+</svg>

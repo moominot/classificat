@@ -48,7 +48,7 @@ function Logo() {
   return (
     <span className="relative w-7 h-7 rounded-lg bg-accent-tint border border-border flex items-center justify-center flex-shrink-0">
       <span className="font-display font-bold text-sm text-ink">C</span>
-      <span className="absolute bottom-0.5 right-1 text-[6px] font-bold text-accent-ink">3</span>
+      <span className="absolute bottom-0.5 right-1 text-[6px] font-bold text-accent-ink">2</span>
     </span>
   );
 }
