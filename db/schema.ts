@@ -104,7 +104,9 @@ export const personMerges = sqliteTable('person_merges', {
 export const tournaments = sqliteTable('tournaments', {
   id:            text('id').primaryKey(),
   name:          text('name').notNull(),
-  slug:          text('slug').notNull(),
+  slug:          text('slug').notNull(),        // id_extern al BARRUF: no s'ha de canviar
+  // Adreça curta opcional (/<shortPath>) que redirigeix al campionat.
+  shortPath:     text('short_path'),
   gameProfileId: text('game_profile_id').references(() => gameProfiles.id, { onDelete: 'set null' }),
   ownerId:       text('owner_id').notNull().references(() => accounts.id),
   status:        text('status').$type<TournamentStatus>().notNull().default('draft'),
@@ -122,6 +124,7 @@ export const tournaments = sqliteTable('tournaments', {
   updatedAt:     integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 }, (t) => [
   uniqueIndex('tournaments_slug_uniq').on(t.slug),
+  uniqueIndex('tournaments_short_path_uniq').on(t.shortPath),
   index('tournaments_owner_idx').on(t.ownerId),
 ]);
 

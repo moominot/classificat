@@ -10,6 +10,8 @@ const useIsomorphicLayoutEffect = typeof window !== 'undefined' ? useLayoutEffec
 interface Title {
   name: string;
   id: string;
+  /** Adreça curta (`/<shortPath>`) per compartir, si el campionat en té. */
+  shortPath?: string | null;
 }
 
 interface Ctx {
@@ -45,15 +47,15 @@ export function useHeaderTitle(): Title | null {
 }
 
 /** Fixa el títol de la capçalera mentre aquest component estigui muntat; el treu en desmuntar-se. */
-export function SetHeaderTitle({ name, id }: Title) {
+export function SetHeaderTitle({ name, id, shortPath = null }: Title) {
   const ctx = useContext(HeaderTitleContext);
   const setTitle = ctx?.setTitle;
   // Depèn només del setter (estable) i de name/id, mai de `ctx` sencer: `ctx`
   // canvia de referència cada cop que `title` canvia, que és precisament el
   // que aquest efecte provoca — dependre'n hi tornaria a entrar en bucle.
   useIsomorphicLayoutEffect(() => {
-    setTitle?.({ name, id });
+    setTitle?.({ name, id, shortPath });
     return () => setTitle?.(null);
-  }, [setTitle, name, id]);
+  }, [setTitle, name, id, shortPath]);
   return null;
 }

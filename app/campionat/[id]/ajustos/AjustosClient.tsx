@@ -8,6 +8,7 @@ import Select from '@/components/ui/Select';
 import Badge from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { readError } from '@/lib/http';
+import { slugify } from '@/lib/short-path';
 import type { PresencePendingAs, StandingsMode, TournamentStatus, TournamentVisibility } from '@/db/types';
 
 const ESTATS: { value: TournamentStatus; label: string }[] = [
@@ -52,6 +53,7 @@ interface Admins {
 export default function AjustosClient({
   tournamentId,
   nom,
+  adrecaCurta,
   estat,
   visibilitat,
   currentAccountId,
@@ -61,6 +63,7 @@ export default function AjustosClient({
 }: {
   tournamentId: string;
   nom: string;
+  adrecaCurta: string | null;
   estat: TournamentStatus;
   infoPublica: InfoPublica;
   visibilitat: TournamentVisibility;
@@ -70,7 +73,7 @@ export default function AjustosClient({
 }) {
   return (
     <div className="space-y-6 max-w-3xl">
-      <General tournamentId={tournamentId} nom={nom} estat={estat} />
+      <General tournamentId={tournamentId} nom={nom} adrecaCurta={adrecaCurta} estat={estat} />
       <Informacio tournamentId={tournamentId} infoPublica={infoPublica} />
       <ClassificacioPublica tournamentId={tournamentId} visibilitat={visibilitat} />
       <PublicacioRondes tournamentId={tournamentId} visibilitat={visibilitat} />
@@ -144,9 +147,22 @@ async function patchCompeticio(tournamentId: string, body: object): Promise<stri
 
 // ─── Grups ────────────────────────────────────────────────────────────────────
 
-function General({ tournamentId, nom, estat }: { tournamentId: string; nom: string; estat: TournamentStatus }) {
+function General({
+  tournamentId,
+  nom,
+  adrecaCurta,
+  estat,
+}: {
+  tournamentId: string;
+  nom: string;
+  adrecaCurta: string | null;
+  estat: TournamentStatus;
+}) {
   const router = useRouter();
   const [nomNou, setNomNou] = useState(nom);
+  const [curta, setCurta] = useState(adrecaCurta ?? '');
+  const [origen, setOrigen] = useState('');
+  useEffect(() => setOrigen(window.location.origin), []);
   const [estatNou, setEstatNou] = useState<TournamentStatus>(estat);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
@@ -159,16 +175,30 @@ function General({ tournamentId, nom, estat }: { tournamentId: string; nom: stri
     }
     setLoading(true);
     setDesat(false);
-    const err = await patchCompeticio(tournamentId, { name: nomNou.trim(), status: estatNou });
+    const err = await patchCompeticio(tournamentId, { name: nomNou.trim(), status: estatNou, shortPath: curta });
     setError(err);
     setDesat(!err);
     setLoading(false);
-    if (!err) router.refresh();
+    if (!err) {
+      setCurta(slugify(curta));
+      router.refresh();
+    }
   }
 
   return (
     <Grup titol="General">
       <Input label="Nom de la competició" value={nomNou} onChange={(e) => setNomNou(e.target.value)} />
+      <Input
+        label="Adreça curta"
+        value={curta}
+        onChange={(e) => setCurta(e.target.value)}
+        placeholder="p. ex. open-soller"
+        hint={
+          slugify(curta)
+            ? `Els jugadors hi podran entrar amb ${origen}/${slugify(curta)}. També la faran servir el QR i l'enllaç de Compartir.`
+            : "Opcional. Un nom senzill per a l'enllaç, en lloc de l'identificador llarg."
+        }
+      />
       <Select
         label="Estat"
         value={estatNou}

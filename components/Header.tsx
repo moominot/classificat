@@ -36,7 +36,7 @@ export default function Header({
         )}
 
         <div className="ml-auto flex items-center gap-1 flex-shrink-0">
-          {title && <QrCompartir tournamentId={title.id} />}
+          {title && <QrCompartir tournamentId={title.id} shortPath={title.shortPath ?? null} />}
           <AccountMenu displayName={displayName} role={role} />
         </div>
       </div>

@@ -3,14 +3,15 @@
 import { useState, useEffect } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
 
-export default function QrCompartir({ tournamentId }: { tournamentId: string }) {
+export default function QrCompartir({ tournamentId, shortPath }: { tournamentId: string; shortPath: string | null }) {
   const [obert, setObert] = useState(false);
   const [copiat, setCopiat] = useState(false);
   const [url, setUrl] = useState('');
 
   useEffect(() => {
-    setUrl(`${window.location.origin}/campionat/${tournamentId}`);
-  }, [tournamentId]);
+    // Amb adreça curta, el QR és més senzill i l'enllaç es pot dictar.
+    setUrl(`${window.location.origin}/${shortPath ?? `campionat/${tournamentId}`}`);
+  }, [tournamentId, shortPath]);
 
   async function copiarEnllac() {
     if (!url) return;

@@ -22,6 +22,7 @@ export default async function AjustosPage({ params }: { params: Promise<{ id: st
     <AjustosClient
       tournamentId={id}
       nom={tournament.name}
+      adrecaCurta={tournament.shortPath}
       estat={tournament.status}
       visibilitat={tournament.visibility ?? DEFAULT_VISIBILITY}
       currentAccountId={account.id}

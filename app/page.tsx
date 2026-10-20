@@ -75,7 +75,7 @@ export default async function HomePage() {
                   <h2 className="font-display font-semibold text-ink group-hover:text-accent-ink transition-colors">
                     {tournament.name}
                   </h2>
-                  <p className="text-xs text-ink-3 mt-1">/{tournament.slug}</p>
+                  {tournament.shortPath && <p className="text-xs text-ink-3 mt-1">/{tournament.shortPath}</p>}
                 </div>
                 <svg
                   className="w-4 h-4 text-ink-3 group-hover:text-accent-ink transition-colors mt-1"

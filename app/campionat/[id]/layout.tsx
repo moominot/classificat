@@ -43,7 +43,7 @@ export default async function CampionatLayout({
         entryId: viewer.entryId,
       }}
     >
-      <SetHeaderTitle name={tournament.name} id={id} />
+      <SetHeaderTitle name={tournament.name} id={id} shortPath={tournament.shortPath} />
       {canManage ? <AutoRefresh tournamentId={id} /> : viewer.entryId ? <PresenciaModal tournamentId={id} /> : null}
       <div className="lg:flex lg:gap-6 lg:items-start">
         {canManage && <ConfigSidebar id={id} />}

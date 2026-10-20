@@ -6,6 +6,7 @@ import { gameProfiles, questionDefinitions, tournaments } from '@/db/schema';
 import { DEFAULT_VISIBILITY } from '@/db/types';
 import type { GameProfileConfig } from '@/db/types';
 import { getCurrentAccount, listManagedTournaments, requireRole } from '@/lib/authz';
+import { slugify } from '@/lib/short-path';
 
 /**
  * GET — Les competicions que el compte pot gestionar.
@@ -86,13 +87,4 @@ async function seedQuestionsFromProfile(tournamentId: string, gameProfileId: str
       order: q.order,
     }))
   );
-}
-
-function slugify(text: string): string {
-  return text
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '') // elimina diacrítics
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
 }

@@ -1,10 +1,11 @@
 import { NextResponse } from 'next/server';
-import { asc, eq } from 'drizzle-orm';
+import { and, asc, eq, ne } from 'drizzle-orm';
 import { db } from '@/db';
 import { groups, phases, teams, tournaments } from '@/db/schema';
 import { getCurrentAccount, canManageTournament, requireTournamentAccess } from '@/lib/authz';
 import type { StandingsMode, TournamentStatus } from '@/db/types';
 import { loadEntrants } from '@/lib/db-helpers';
+import { validateShortPath } from '@/lib/short-path';
 
 const STATUSES: TournamentStatus[] = ['draft', 'registration', 'active', 'finished'];
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -69,6 +70,23 @@ export async function PATCH(req: Request, { params }: Params) {
       return NextResponse.json({ error: 'Valor no vàlid per a la pregunta de presència' }, { status: 400 });
     }
     updates.askPresence = body.askPresence;
+  }
+  if (body.shortPath !== undefined) {
+    const raw = typeof body.shortPath === 'string' ? body.shortPath.trim() : '';
+    if (!raw) {
+      updates.shortPath = null;
+    } else {
+      const result = validateShortPath(raw);
+      if ('error' in result) return NextResponse.json({ error: result.error }, { status: 400 });
+      const [ocupada] = await db
+        .select({ id: tournaments.id })
+        .from(tournaments)
+        .where(and(eq(tournaments.shortPath, result.value), ne(tournaments.id, tournamentId)));
+      if (ocupada) {
+        return NextResponse.json({ error: `L'adreça «${result.value}» ja la fa servir un altre campionat` }, { status: 409 });
+      }
+      updates.shortPath = result.value;
+    }
   }
   // Informació pública: un text buit es desa com a null i no es mostra.
   for (const key of ['location', 'info'] as const) {
