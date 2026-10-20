@@ -31,7 +31,7 @@ export const dynamic = 'force-dynamic';
 
 const METRIC_LABELS: Record<string, string> = {
   wins: 'Victòries',
-  spread: 'Spread',
+  spread: 'Diferència de punts',
   total_score: 'Punts a favor',
 };
 

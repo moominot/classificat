@@ -37,7 +37,7 @@ export const wins = metricTiebreaker('wins', 'Victòries');
  * menys **la mitjana dels altres** de la taula, de manera que a l'1v1 continua
  * sent exactament l'spread de tota la vida (§12.11).
  */
-export const spread = metricTiebreaker('spread', 'Spread');
+export const spread = metricTiebreaker('spread', 'Diferència de punts');
 
 /** Suma de la puntuació pròpia (l'antic "cumulative"). */
 export const totalScore = metricTiebreaker('total_score', 'Punts a favor');

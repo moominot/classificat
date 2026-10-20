@@ -14,7 +14,7 @@ export const dynamic = 'force-dynamic';
 /** Etiquetes de les mètriques estructurals; la resta venen de les preguntes. */
 const METRIC_LABELS: Record<string, string> = {
   wins: 'Victòries',
-  spread: 'Spread',
+  spread: 'Diferència de punts',
   total_score: 'Punts a favor',
   avg_score: 'Mitjana per partida',
 };
