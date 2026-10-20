@@ -65,6 +65,12 @@ export async function PATCH(req: Request, { params }: Params) {
     }
     updates.presencePendingAs = body.presencePendingAs;
   }
+  if (body.byeSpread !== undefined) {
+    if (!Number.isInteger(body.byeSpread) || body.byeSpread < 0 || body.byeSpread > 1000) {
+      return NextResponse.json({ error: 'La diferència del bye ha de ser un enter entre 0 i 1000' }, { status: 400 });
+    }
+    updates.byeSpread = body.byeSpread;
+  }
   if (body.askPresence !== undefined) {
     if (typeof body.askPresence !== 'boolean') {
       return NextResponse.json({ error: 'Valor no vàlid per a la pregunta de presència' }, { status: 400 });

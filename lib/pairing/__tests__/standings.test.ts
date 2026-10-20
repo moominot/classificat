@@ -106,6 +106,19 @@ check('amb 4 jugadors, contra la mitjana dels altres', Math.round(spreads[0] * 1
 check('els spreads d\'una taula sumen zero', Math.abs(spreads.reduce((a, b) => a + b, 0)) < 1e-9, true);
 check('punts de la taula de 4', s4.map((s) => [s.entryId, s.points]), [['a', 3], ['b', 2], ['c', 1], ['d', 0]]);
 
+const ambBye = (byeSpread?: number) =>
+  computeStandings({
+    entryIds: ['a', 'b'],
+    tiebreakers: ['spread'],
+    byeSpread,
+    matches: [
+      makeMatch('m5', [['a', 1, 420, 'win'], ['b', 2, 380, 'loss']], SCRABBLE),
+      makeMatch('m6', [['b', 1, 0, 'bye']], SCRABBLE),
+    ],
+  }).find((s) => s.entryId === 'b')!.metrics.spread;
+check('el bye suma la diferència configurada', ambBye(50), 10);
+check('sense configurar, el bye no hi suma', ambBye(), -40);
+
 // ─── Desempats ────────────────────────────────────────────────────────────────
 
 console.log('\n=== Desempats ===');

@@ -59,6 +59,7 @@ export default function AjustosClient({
   currentAccountId,
   pendentsCompten,
   preguntaPresencia,
+  diferenciaBye,
   infoPublica,
 }: {
   tournamentId: string;
@@ -70,12 +71,14 @@ export default function AjustosClient({
   currentAccountId: string;
   pendentsCompten: PresencePendingAs;
   preguntaPresencia: boolean;
+  diferenciaBye: number;
 }) {
   return (
     <div className="space-y-6 max-w-3xl">
       <General tournamentId={tournamentId} nom={nom} adrecaCurta={adrecaCurta} estat={estat} />
       <Informacio tournamentId={tournamentId} infoPublica={infoPublica} />
       <ClassificacioPublica tournamentId={tournamentId} visibilitat={visibilitat} />
+      <Bye tournamentId={tournamentId} diferenciaBye={diferenciaBye} />
       <PublicacioRondes tournamentId={tournamentId} visibilitat={visibilitat} />
       <PresenciaRondes tournamentId={tournamentId} pendentsCompten={pendentsCompten} preguntaPresencia={preguntaPresencia} />
       <Administradors tournamentId={tournamentId} currentAccountId={currentAccountId} />
@@ -322,6 +325,46 @@ function ClassificacioPublica({ tournamentId, visibilitat }: { tournamentId: str
           onChange={(e) => setRonda(e.target.value)}
         />
       )}
+      <PeuDesar loading={loading} error={error} desat={desat} onSave={desa} />
+    </Grup>
+  );
+}
+
+function Bye({ tournamentId, diferenciaBye }: { tournamentId: string; diferenciaBye: number }) {
+  const router = useRouter();
+  const [valor, setValor] = useState(diferenciaBye.toString());
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [desat, setDesat] = useState(false);
+
+  async function desa() {
+    const n = Number(valor);
+    if (!Number.isInteger(n) || n < 0) {
+      setError('Ha de ser un nombre enter, 0 o més');
+      return;
+    }
+    setLoading(true);
+    setDesat(false);
+    const err = await patchCompeticio(tournamentId, { byeSpread: n });
+    setError(err);
+    setDesat(!err);
+    setLoading(false);
+    if (!err) router.refresh();
+  }
+
+  return (
+    <Grup
+      titol="Bye (descans)"
+      descripcio="Qui descansa una ronda la compta com a guanyada. Els punts de classificació del bye es configuren a cada fase."
+    >
+      <Input
+        label="Diferència de punts que suma un bye"
+        type="number"
+        min={0}
+        value={valor}
+        onChange={(e) => setValor(e.target.value)}
+        hint="Habitualment +50. Posa 0 perquè el bye no afecti la diferència de punts."
+      />
       <PeuDesar loading={loading} error={error} desat={desat} onSave={desa} />
     </Grup>
   );
