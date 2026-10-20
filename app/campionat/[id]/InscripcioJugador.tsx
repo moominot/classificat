@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import Select from '@/components/ui/Select';
@@ -8,6 +8,8 @@ import NomBarrufInput, { type BarrufResultat } from '@/components/forms/NomBarru
 import { readError } from '@/lib/http';
 
 interface Jugador { id: string; name: string }
+
+const SEGONS_CONSULTA = 5;
 
 /**
  * Targeta de l'inici amb les inscripcions obertes: substitueix el «qui ets»
@@ -80,6 +82,21 @@ export default function InscripcioJugador({
   const retira = () => crida(`/api/tournaments/${tournamentId}/registrations`, 'DELETE');
   const identifica = () => crida(`/api/tournaments/${tournamentId}/identify`, 'POST', { entryId: triat });
   const oblida = () => crida(`/api/tournaments/${tournamentId}/identify`, 'DELETE');
+
+  // Mentre espera la validació, el mòbil pregunta cada pocs segons si ja
+  // s'ha resolt i només refresca la pàgina quan canvia.
+  const pendent = !entryId && sollicitud?.status === 'pending';
+  useEffect(() => {
+    if (!pendent) return;
+    const timer = setInterval(async () => {
+      if (document.visibilityState !== 'visible') return;
+      const res = await fetch(`/api/tournaments/${tournamentId}/registrations/mine`, { cache: 'no-store' }).catch(() => null);
+      if (!res?.ok) return;
+      const { status } = await res.json();
+      if (status !== 'pending') router.refresh();
+    }, SEGONS_CONSULTA * 1000);
+    return () => clearInterval(timer);
+  }, [pendent, tournamentId, router]);
 
   const targeta = 'rounded-2xl border p-4 space-y-3';
   const jo = jugadors.find((j) => j.id === entryId);
