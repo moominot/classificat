@@ -12,9 +12,18 @@ import type { PresencePendingAs, StandingsMode, TournamentStatus, TournamentVisi
 
 const ESTATS: { value: TournamentStatus; label: string }[] = [
   { value: 'draft', label: 'Esborrany' },
+  { value: 'registration', label: 'Inscripcions obertes' },
   { value: 'active', label: 'En joc' },
   { value: 'finished', label: 'Acabada' },
 ];
+
+/** Dades que es mostren a l'inici; les que es deixen en blanc no hi surten. */
+export interface InfoPublica {
+  location: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  info: string | null;
+}
 
 const MODES: { value: StandingsMode; label: string; hint: string }[] = [
   { value: 'closed_rounds', label: 'Només rondes tancades', hint: 'Cada fase decideix si hi compta també la ronda oberta (vegeu Fases).' },
@@ -48,10 +57,12 @@ export default function AjustosClient({
   currentAccountId,
   pendentsCompten,
   preguntaPresencia,
+  infoPublica,
 }: {
   tournamentId: string;
   nom: string;
   estat: TournamentStatus;
+  infoPublica: InfoPublica;
   visibilitat: TournamentVisibility;
   currentAccountId: string;
   pendentsCompten: PresencePendingAs;
@@ -60,6 +71,7 @@ export default function AjustosClient({
   return (
     <div className="space-y-6 max-w-3xl">
       <General tournamentId={tournamentId} nom={nom} estat={estat} />
+      <Informacio tournamentId={tournamentId} infoPublica={infoPublica} />
       <ClassificacioPublica tournamentId={tournamentId} visibilitat={visibilitat} />
       <PublicacioRondes tournamentId={tournamentId} visibilitat={visibilitat} />
       <PresenciaRondes tournamentId={tournamentId} pendentsCompten={pendentsCompten} preguntaPresencia={preguntaPresencia} />
@@ -157,11 +169,76 @@ function General({ tournamentId, nom, estat }: { tournamentId: string; nom: stri
   return (
     <Grup titol="General">
       <Input label="Nom de la competició" value={nomNou} onChange={(e) => setNomNou(e.target.value)} />
-      <Select label="Estat" value={estatNou} onChange={(e) => setEstatNou(e.target.value as TournamentStatus)}>
+      <Select
+        label="Estat"
+        value={estatNou}
+        onChange={(e) => setEstatNou(e.target.value as TournamentStatus)}
+        hint={
+          estatNou === 'registration'
+            ? "Els jugadors veuran a l'inici un formulari per inscriure's. Les sol·licituds s'han de validar a Jugadors."
+            : undefined
+        }
+      >
         {ESTATS.map((e) => (
           <option key={e.value} value={e.value}>{e.label}</option>
         ))}
       </Select>
+      <PeuDesar loading={loading} error={error} desat={desat} onSave={desa} />
+    </Grup>
+  );
+}
+
+function Informacio({ tournamentId, infoPublica }: { tournamentId: string; infoPublica: InfoPublica }) {
+  const router = useRouter();
+  const [lloc, setLloc] = useState(infoPublica.location ?? '');
+  const [inici, setInici] = useState(infoPublica.startDate ?? '');
+  const [final, setFinal] = useState(infoPublica.endDate ?? '');
+  const [info, setInfo] = useState(infoPublica.info ?? '');
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [desat, setDesat] = useState(false);
+
+  async function desa() {
+    setLoading(true);
+    setDesat(false);
+    const err = await patchCompeticio(tournamentId, { location: lloc, startDate: inici, endDate: final, info });
+    setError(err);
+    setDesat(!err);
+    setLoading(false);
+    if (!err) router.refresh();
+  }
+
+  return (
+    <Grup titol="Informació" descripcio="Es mostra a l'inici del campionat. El que es deixi en blanc no surt.">
+      <Input
+        label="Lloc"
+        value={lloc}
+        onChange={(e) => setLloc(e.target.value)}
+        placeholder="P. ex. Casal de Cultura, Sóller"
+      />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Input label="Data d'inici" type="date" value={inici} onChange={(e) => setInici(e.target.value)} />
+        <Input
+          label="Data de final"
+          type="date"
+          value={final}
+          min={inici || undefined}
+          onChange={(e) => setFinal(e.target.value)}
+          hint="Si és d'un sol dia, deixa-la en blanc."
+        />
+      </div>
+      <div className="flex flex-col gap-1">
+        <label htmlFor="info-extra" className="text-sm font-medium text-ink-2">Informació addicional</label>
+        <textarea
+          id="info-extra"
+          value={info}
+          onChange={(e) => setInfo(e.target.value)}
+          rows={5}
+          placeholder="Reglament, horaris, preu, enllaços…"
+          className="w-full rounded-xl border border-border px-3 py-2 text-sm text-ink placeholder:text-ink-3 bg-surface focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+        />
+        <p className="text-xs text-ink-3">Els enllaços (https://…) es podran clicar.</p>
+      </div>
       <PeuDesar loading={loading} error={error} desat={desat} onSave={desa} />
     </Grup>
   );

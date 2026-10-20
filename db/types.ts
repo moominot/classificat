@@ -19,7 +19,11 @@ export interface AccountPreferences {
 
 // ─── Competició ───────────────────────────────────────────────────────────────
 
-export type TournamentStatus = 'draft' | 'active' | 'finished';
+/** `registration`: inscripcions obertes, els jugadors s'hi poden apuntar des de l'inici. */
+export type TournamentStatus = 'draft' | 'registration' | 'active' | 'finished';
+
+/** Sol·licitud d'inscripció feta pel jugador; l'accepta o la rebutja qui gestiona la competició. */
+export type RegistrationStatus = 'pending' | 'accepted' | 'rejected';
 
 /** Com es mostra la classificació al jugador (docs/pla-rols.md §8.2 i §15.5). */
 export type StandingsMode =

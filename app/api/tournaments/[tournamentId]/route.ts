@@ -6,7 +6,8 @@ import { getCurrentAccount, canManageTournament, requireTournamentAccess } from 
 import type { StandingsMode, TournamentStatus } from '@/db/types';
 import { loadEntrants } from '@/lib/db-helpers';
 
-const STATUSES: TournamentStatus[] = ['draft', 'active', 'finished'];
+const STATUSES: TournamentStatus[] = ['draft', 'registration', 'active', 'finished'];
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 const STANDINGS_MODES: StandingsMode[] = ['live', 'closed_rounds', 'frozen_at', 'hidden'];
 
 type Params = { params: Promise<{ tournamentId: string }> };
@@ -68,6 +69,27 @@ export async function PATCH(req: Request, { params }: Params) {
       return NextResponse.json({ error: 'Valor no vàlid per a la pregunta de presència' }, { status: 400 });
     }
     updates.askPresence = body.askPresence;
+  }
+  // Informació pública: un text buit es desa com a null i no es mostra.
+  for (const key of ['location', 'info'] as const) {
+    if (body[key] !== undefined) {
+      const value = typeof body[key] === 'string' ? body[key].trim() : '';
+      updates[key] = value || null;
+    }
+  }
+  for (const key of ['startDate', 'endDate'] as const) {
+    if (body[key] !== undefined) {
+      const value = typeof body[key] === 'string' ? body[key].trim() : '';
+      if (value && !DATE_RE.test(value)) {
+        return NextResponse.json({ error: 'Data no vàlida' }, { status: 400 });
+      }
+      updates[key] = value || null;
+    }
+  }
+  const inici = updates.startDate !== undefined ? updates.startDate : existing.startDate;
+  const final = updates.endDate !== undefined ? updates.endDate : existing.endDate;
+  if (inici && final && final < inici) {
+    return NextResponse.json({ error: "La data de final no pot ser anterior a la d'inici" }, { status: 400 });
   }
   // Els interruptors del panell: mode de classificació, ronda congelada i els
   // defectes de publicació (docs/pla-rols.md §8.5).

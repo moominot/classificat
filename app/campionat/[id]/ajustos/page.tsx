@@ -27,6 +27,12 @@ export default async function AjustosPage({ params }: { params: Promise<{ id: st
       currentAccountId={account.id}
       pendentsCompten={tournament.presencePendingAs}
       preguntaPresencia={tournament.askPresence}
+      infoPublica={{
+        location: tournament.location,
+        startDate: tournament.startDate,
+        endDate: tournament.endDate,
+        info: tournament.info,
+      }}
     />
   );
 }

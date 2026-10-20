@@ -10,13 +10,18 @@ import { loadPresence, roundAwaitingPresence } from '@/lib/presence';
 import { loadEntrants, loadTags } from '@/lib/db-helpers';
 import { loadStandings } from '@/lib/standings-service';
 import { resolveTiebreaker } from '@/lib/pairing/tiebreakers';
+import { findViewerRequest, loadPendingRequests, toSollicitud } from '@/lib/registrations';
 import PresenciaJugador from './PresenciaJugador';
+import InscripcioJugador from './InscripcioJugador';
+import InfoCampionat from './InfoCampionat';
+import SollicitudsInscripcio from './SollicitudsInscripcio';
 import type { PhaseConfig } from '@/lib/pairing/types';
 
 export const dynamic = 'force-dynamic';
 
 const STATUS_BADGE: Record<string, { label: string; color: 'gray' | 'green' | 'blue' }> = {
   draft: { label: 'Esborrany', color: 'gray' },
+  registration: { label: 'Inscripcions obertes', color: 'blue' },
   active: { label: 'En curs', color: 'green' },
   finished: { label: 'Finalitzat', color: 'blue' },
 };
@@ -61,13 +66,36 @@ export default async function CampionatInici({ params }: { params: Promise<{ id:
   const jugadorsActius = jugadors.filter((j) => j.isActive).map((j) => ({ id: j.id, name: j.displayName }));
   const mostraPresencia = !canManage && jugadorsActius.length > 0;
 
+  // Inscripcions obertes: el jugador s'hi apunta des d'aquí i veu qui hi ha.
+  // Qui gestiona la competició hi valida les sol·licituds, encara que ja les
+  // hagi tancades.
+  const obertes = tournament.status === 'registration';
+  const pendents = obertes || canManage ? await loadPendingRequests(id) : [];
+  const sollicitud = obertes && !canManage && !viewer.entryId ? await findViewerRequest(id, viewer) : null;
+
   const statusBadge = STATUS_BADGE[tournament.status] ?? STATUS_BADGE.draft;
   const rondesTancades = totesRondes.filter((r) => r.status === 'closed').length;
   const top = vista.standings.slice(0, 8);
 
   return (
     <div className="space-y-5">
-      {mostraPresencia && (
+      {canManage && (
+        <SollicitudsInscripcio tournamentId={id} sollicituds={pendents.map(toSollicitud)} />
+      )}
+
+      {obertes && !canManage ? (
+        <InscripcioJugador
+          tournamentId={id}
+          jugadors={jugadorsActius}
+          entryId={viewer.entryId}
+          compte={viewer.account?.displayName ?? null}
+          sollicitud={
+            sollicitud && sollicitud.status !== 'accepted'
+              ? { displayName: sollicitud.displayName, status: sollicitud.status }
+              : null
+          }
+        />
+      ) : mostraPresencia && (
         <PresenciaJugador
           tournamentId={id}
           jugadors={jugadorsActius}
@@ -85,6 +113,38 @@ export default async function CampionatInici({ params }: { params: Promise<{ id:
           {totesRondes.length > 0 && ` · ${rondesTancades}/${totesRondes.length} rondes tancades`}
         </span>
       </div>
+
+      <InfoCampionat
+        location={tournament.location}
+        startDate={tournament.startDate}
+        endDate={tournament.endDate}
+        info={tournament.info}
+      />
+
+      {obertes && (
+        <Card padding={false}>
+          <div className="px-4 pt-3.5 pb-2">
+            <CardTitle>Inscrits ({jugadorsActius.length})</CardTitle>
+          </div>
+          {jugadorsActius.length === 0 && pendents.length === 0 ? (
+            <p className="text-sm text-ink-3 text-center py-6">Encara no s&apos;hi ha inscrit ningú.</p>
+          ) : (
+            <ul className="divide-y divide-border">
+              {[...jugadorsActius]
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map((j) => (
+                  <li key={j.id} className="px-4 py-2 text-sm text-ink">{j.name}</li>
+                ))}
+              {pendents.map((p) => (
+                <li key={p.id} className="px-4 py-2 text-sm text-ink-3 flex items-center gap-2">
+                  <span className="flex-1 truncate">{p.displayName}</span>
+                  <Badge color="gray">Pendent</Badge>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+      )}
 
       <div className="grid gap-3 sm:grid-cols-3">
         <AccesCard href={`/campionat/${id}/jugadors`} label="Jugadors" value={jugadors.length.toString()} />

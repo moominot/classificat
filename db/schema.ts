@@ -14,6 +14,7 @@ import type {
   QuestionAggregate,
   QuestionScope,
   QuestionType,
+  RegistrationStatus,
   Role,
   RoundStatus,
   ScoringConfig,
@@ -112,6 +113,11 @@ export const tournaments = sqliteTable('tournaments', {
   presencePendingAs: text('presence_pending_as').$type<PresencePendingAs>().notNull().default('present'),
   // Si es pregunta als jugadors que hi seran a la ronda següent (inici, modal i formulari de resultat).
   askPresence:   integer('ask_presence', { mode: 'boolean' }).notNull().default(true),
+  // Informació pública: si es deixa en blanc, no es mostra.
+  location:      text('location'),
+  startDate:     text('start_date'),            // AAAA-MM-DD
+  endDate:       text('end_date'),              // AAAA-MM-DD
+  info:          text('info'),                  // reglament, horaris, enllaços...
   createdAt:     integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt:     integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 }, (t) => [
@@ -192,6 +198,36 @@ export const entries = sqliteTable('entries', {
   index('entries_person_idx').on(t.personId),
   index('entries_group_idx').on(t.groupId),
   index('entries_team_idx').on(t.teamId),
+]);
+
+/**
+ * Sol·licitud d'inscripció que fa el mateix jugador amb les inscripcions
+ * obertes. No és una `entry` fins que algú que gestiona la competició
+ * l'accepta: així una sol·licitud pendent no es pot colar mai en un
+ * aparellament ni a la classificació.
+ *
+ * `personId` hi és quan qui s'inscriu ja té compte (o quan s'ha acceptat);
+ * si no, `displayName` i les dades del BARRUF serveixen per crear o
+ * retrobar la persona en acceptar-la. `deviceId` permet lligar el mòbil
+ * amb la inscripció un cop acceptada (com el «qui ets»).
+ */
+export const registrationRequests = sqliteTable('registration_requests', {
+  id:           text('id').primaryKey(),
+  tournamentId: text('tournament_id').notNull().references(() => tournaments.id, { onDelete: 'cascade' }),
+  personId:     text('person_id').references(() => people.id, { onDelete: 'set null' }),
+  accountId:    text('account_id').references(() => accounts.id, { onDelete: 'set null' }),
+  displayName:  text('display_name').notNull(),
+  club:         text('club'),
+  rating:       integer('rating'),
+  barrufNumero: integer('barruf_numero'),
+  deviceId:     text('device_id'),
+  status:       text('status').$type<RegistrationStatus>().notNull().default('pending'),
+  entryId:      text('entry_id').references(() => entries.id, { onDelete: 'set null' }),
+  reviewedBy:   text('reviewed_by').references(() => accounts.id, { onDelete: 'set null' }),
+  reviewedAt:   integer('reviewed_at', { mode: 'timestamp' }),
+  createdAt:    integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (t) => [
+  index('registration_requests_tournament_idx').on(t.tournamentId, t.status),
 ]);
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -479,6 +515,7 @@ export type Team = typeof teams.$inferSelect;
 export type NewTeam = typeof teams.$inferInsert;
 export type Entry = typeof entries.$inferSelect;
 export type NewEntry = typeof entries.$inferInsert;
+export type RegistrationRequest = typeof registrationRequests.$inferSelect;
 export type Phase = typeof phases.$inferSelect;
 export type NewPhase = typeof phases.$inferInsert;
 export type Round = typeof rounds.$inferSelect;

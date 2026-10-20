@@ -21,6 +21,8 @@ interface Props {
   autoFocus?: boolean;
   disabled?: boolean;
   onKeyDownEnter?: () => void;
+  /** Per al formulari d'inscripció del jugador: la cerca només és pública amb les inscripcions obertes. */
+  tournamentId?: string;
 }
 
 /**
@@ -30,7 +32,7 @@ interface Props {
  * s'agafa tal qual com a nom nou.
  */
 const NomBarrufInput = forwardRef<HTMLInputElement, Props>(function NomBarrufInput(
-  { value, onChange, onPick, label, placeholder, autoFocus, disabled, onKeyDownEnter },
+  { value, onChange, onPick, label, placeholder, autoFocus, disabled, onKeyDownEnter, tournamentId },
   ref
 ) {
   const [resultats, setResultats] = useState<BarrufResultat[]>([]);
@@ -52,7 +54,8 @@ const NomBarrufInput = forwardRef<HTMLInputElement, Props>(function NomBarrufInp
 
     timer.current = setTimeout(async () => {
       setLoading(true);
-      const res = await fetch(`/api/barruf/jugadors?q=${encodeURIComponent(q)}`);
+      const torneig = tournamentId ? `&torneig=${encodeURIComponent(tournamentId)}` : '';
+      const res = await fetch(`/api/barruf/jugadors?q=${encodeURIComponent(q)}${torneig}`);
       if (res.ok) {
         const data = await res.json();
         setResultats(data);
