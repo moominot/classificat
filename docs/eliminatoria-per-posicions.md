@@ -90,7 +90,7 @@ bona (l'admin pot corregir un grup movent una etiqueta) i una de dolenta (un
 canvi accidental desquadra el sorteig). Proposta:
 
 - Les etiquetes de grup les crea el sistema i porten una marca
-  (`tags.kind = 'position_group'`) i un `order`.
+  (`tags.kind = 'group'`) i un `order`.
 - En partir un grup, el jugador **perd l'etiqueta antiga** i rep la nova: en
   cada moment té una sola etiqueta de grup. L'historial ja és a les partides.
 - La generació avisa si algun jugador té zero o dues etiquetes de grup.
@@ -220,7 +220,9 @@ pot portar un paràmetre «nombre de jugadors» que generi les fases.
 
 ## 5. Ordre de feina
 
-1. `tags.order`/`kind` + classificació per grups apilats amb colors.
+1. ✅ `tags.order`/`kind` + classificació per grups apilats amb colors
+   (migració `0008_tag_groups`, `lib/tag-groups.ts`, pantalla d'Etiquetes i
+   `ClassificacioPerGrups`).
 2. Sorteig aleatori + anada i tornada.
 3. Tancar eliminatòria i partir grups (+ forçar partides).
 4. Plantilles: desar i crear; plantilla de sèrie «Eliminatòria per posicions (32)».
@@ -239,8 +241,9 @@ Preses (2026-10-20):
 
 - Si empaten també els bingos, decideix l'admin (§3.1).
 - El bye dona diferència de punts, configurable (`byeSpread`, §3.6).
+- Perfils de joc i plantilles es fusionen: els perfils passen a ser
+  plantilles de sèrie sense fases (§4).
 
 Pendents:
 
-- Confirmar la fusió de perfils de joc i plantilles (proposada a §4).
 - Valor per defecte de `byeSpread`: cal confirmar-lo amb el reglament que segueixi el campionat.

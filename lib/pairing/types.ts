@@ -4,6 +4,7 @@ import type {
   PhaseConfig,
   ScoringConfig,
   StandingsScopeKey,
+  TagKind,
   TeamAggregation,
 } from '@/db/types';
 
@@ -52,6 +53,9 @@ export interface Group {
 export interface Tag {
   id: string;
   name: string;
+  /** Absent = etiqueta lliure (`label`). */
+  kind?: TagKind;
+  order?: number;
 }
 
 export interface Team {

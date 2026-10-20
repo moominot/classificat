@@ -48,10 +48,10 @@ async function loadTagIdsByEntry(entryIds: string[]): Promise<Map<string, string
 /** Les etiquetes d'una competició. */
 export async function loadTags(tournamentId: string): Promise<Tag[]> {
   return db
-    .select({ id: tags.id, name: tags.name })
+    .select({ id: tags.id, name: tags.name, kind: tags.kind, order: tags.order })
     .from(tags)
     .where(eq(tags.tournamentId, tournamentId))
-    .orderBy(asc(tags.name));
+    .orderBy(asc(tags.order), asc(tags.name));
 }
 
 /** Les inscripcions d'una competició, amb el nom que es mostra. */

@@ -19,6 +19,7 @@ import type {
   RoundStatus,
   ScoringConfig,
   StandingsScopeKey,
+  TagKind,
   TeamAggregation,
   TournamentStatus,
   TournamentVisibility,
@@ -158,6 +159,10 @@ export const tags = sqliteTable('tags', {
   id:           text('id').primaryKey(),
   tournamentId: text('tournament_id').notNull().references(() => tournaments.id, { onDelete: 'cascade' }),
   name:         text('name').notNull(),
+  // `group`: grup de classificació. La classificació els apila en ordre i
+  // les posicions continuen d'un grup al següent (docs/eliminatoria-per-posicions.md).
+  kind:         text('kind').$type<TagKind>().notNull().default('label'),
+  order:        integer('order').notNull().default(0),
   createdAt:    integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 }, (t) => [
   index('tags_tournament_idx').on(t.tournamentId),

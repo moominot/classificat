@@ -13,8 +13,10 @@ import {
 } from '@/lib/db-helpers';
 import { loadStandings } from '@/lib/standings-service';
 import { resolveTiebreaker } from '@/lib/pairing/tiebreakers';
+import { stackByGroups } from '@/lib/tag-groups';
 import RanquingMetrica from './RanquingMetrica';
 import ClassificacioGeneral from './ClassificacioGeneral';
+import ClassificacioPerGrups from './ClassificacioPerGrups';
 import RanquingPartidaConjunta from './RanquingPartidaConjunta';
 import FiltresClassificacio from './FiltresClassificacio';
 
@@ -167,6 +169,18 @@ export default async function ClassificacioPage({
   const standingsFiltrats = hiHaFiltre
     ? vista.standings.filter((s) => passaFiltre(s.entryId, s.displayName, s.tagIds, s.teamId))
     : vista.standings;
+
+  // Amb grups de classificació, la general s'apila per grups. Les posicions
+  // es calculen amb tothom i després es filtra: filtrar no ha de canviar la
+  // posició de ningú.
+  const blocsGrups = vista.standings.some((s) => totesEtiquetes.some((t) => t.kind === 'group' && s.tagIds.includes(t.id)))
+    ? stackByGroups(vista.standings, totesEtiquetes)
+        .map((bloc) => ({
+          ...bloc,
+          rows: hiHaFiltre ? bloc.rows.filter((s) => passaFiltre(s.entryId, s.displayName, s.tagIds, s.teamId)) : bloc.rows,
+        }))
+        .filter((bloc) => bloc.rows.length > 0)
+    : null;
 
   // Mètriques que tenen pestanya pròpia: les preguntes marcades per al
   // rànquing (Bingos, Millor jugada...), no els desempats configurats.
@@ -427,6 +441,8 @@ export default async function ClassificacioPage({
             </>
           )}
         </>
+      ) : pestanya === 'general' && blocsGrups ? (
+        <ClassificacioPerGrups tournamentId={id} blocs={blocsGrups} desempats={desempatsGeneral} />
       ) : pestanya === 'general' ? (
         <ClassificacioGeneral tournamentId={id} standings={standingsFiltrats} desempats={desempatsGeneral} />
       ) : pestanya === 'partida-conjunta' ? (
