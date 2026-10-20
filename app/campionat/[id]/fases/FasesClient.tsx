@@ -530,6 +530,12 @@ function FaseCard({
 function describeConfig(config: PhaseConfig, tagMap: Map<string, string>): string {
   const noms = (ids: string[]) => ids.map(id => tagMap.get(id) ?? '?').join(', ');
 
+  if (config.method === 'round_robin' && config.randomDraw) {
+    const voltes = config.doubleRound ? ' · anada i tornada' : '';
+    return config.scope === 'intra_tag'
+      ? `Sorteig per etiqueta (${noms(config.tagIds)})${voltes}`
+      : `Sorteig global${voltes}`;
+  }
   if (config.method === 'round_robin') {
     const doble = config.doubleRound ? ' (doble volta)' : '';
     if (config.scope === 'intra_tag') return `Round Robin intra-etiqueta${doble} (${noms(config.tagIds)})`;
@@ -610,6 +616,7 @@ function EditarFaseForm({
   const [rrScope, setRrScope] = useState<'all' | 'intra_tag' | 'inter_tag'>(rrConfig?.scope ?? 'all');
   const [rrTagIds, setRrTagIds] = useState<string[]>(rrConfig?.tagIds ?? []);
   const [rrDoble, setRrDoble] = useState(rrConfig?.doubleRound ?? false);
+  const [rrSorteig, setRrSorteig] = useState(rrConfig?.randomDraw ?? false);
   const [rrTagExclusions, setRrTagExclusions] = useState<TagPairExclusion[]>(rrConfig?.tagExclusions ?? []);
 
   const kothConfig = fase.method === 'king_of_the_hill' ? (fase.config as KingOfTheHillConfig) : null;
@@ -650,6 +657,7 @@ function EditarFaseForm({
         tagIds: rrScope === 'all' ? [] : rrTagIds,
         doubleRound: rrDoble,
         tagExclusions: rrScope === 'inter_tag' ? cleanTagExclusions(rrTagExclusions) : [],
+        randomDraw: rrSorteig && rrScope !== 'inter_tag',
       };
     }
     if (fase.method === 'king_of_the_hill') {
@@ -795,6 +803,8 @@ function EditarFaseForm({
           setTagIds={setRrTagIds}
           doble={rrDoble}
           setDoble={setRrDoble}
+          sorteig={rrSorteig}
+          setSorteig={setRrSorteig}
           tags={tags}
           tagExclusions={rrTagExclusions}
           setTagExclusions={setRrTagExclusions}
@@ -867,6 +877,7 @@ function NovaFaseForm({
   const [rrScope, setRrScope] = useState<'all' | 'intra_tag' | 'inter_tag'>('all');
   const [rrTagIds, setRrTagIds] = useState<string[]>([]);
   const [rrDoble, setRrDoble] = useState(false);
+  const [rrSorteig, setRrSorteig] = useState(false);
   const [rrTagExclusions, setRrTagExclusions] = useState<TagPairExclusion[]>([]);
   const [swissAvoidRematches, setSwissAvoidRematches] = useState(true);
   const [swissCarry, setSwissCarry] = useState<string[]>([]);
@@ -920,6 +931,7 @@ function NovaFaseForm({
         tagIds: rrScope === 'all' ? [] : rrTagIds,
         doubleRound: rrDoble,
         tagExclusions: rrScope === 'inter_tag' ? cleanTagExclusions(rrTagExclusions) : [],
+        randomDraw: rrSorteig && rrScope !== 'inter_tag',
       };
     }
     if (metode === 'king_of_the_hill') {
@@ -1065,6 +1077,8 @@ function NovaFaseForm({
           setTagIds={setRrTagIds}
           doble={rrDoble}
           setDoble={setRrDoble}
+          sorteig={rrSorteig}
+          setSorteig={setRrSorteig}
           tags={tags}
           tagExclusions={rrTagExclusions}
           setTagExclusions={setRrTagExclusions}
@@ -1593,7 +1607,7 @@ function ConfigSwissFide({
 }
 
 function ConfigRoundRobin({
-  scope, setScope, tagIds, setTagIds, doble, setDoble, tags, tagExclusions, setTagExclusions,
+  scope, setScope, tagIds, setTagIds, doble, setDoble, sorteig, setSorteig, tags, tagExclusions, setTagExclusions,
 }: {
   scope: 'all' | 'intra_tag' | 'inter_tag';
   setScope: (v: 'all' | 'intra_tag' | 'inter_tag') => void;
@@ -1601,6 +1615,8 @@ function ConfigRoundRobin({
   setTagIds: (v: string[]) => void;
   doble: boolean;
   setDoble: (v: boolean) => void;
+  sorteig: boolean;
+  setSorteig: (v: boolean) => void;
   tags: Tag[];
   tagExclusions: TagPairExclusion[];
   setTagExclusions: (v: TagPairExclusion[]) => void;
@@ -1614,7 +1630,7 @@ function ConfigRoundRobin({
         tagIds={tagIds}
         setTagIds={setTagIds}
         tags={tags}
-        allowInter
+        allowInter={!sorteig}
         color="win"
       />
       {scope === 'inter_tag' && (
@@ -1625,10 +1641,38 @@ function ConfigRoundRobin({
           setRules={setTagExclusions}
         />
       )}
-      <label className="flex items-center gap-2 text-sm text-ink-2">
-        <input type="checkbox" checked={doble} onChange={e => setDoble(e.target.checked)} className="accent-current text-win" />
-        Doble volta (cada parella juga dos cops)
+      <label className="flex items-start gap-2 text-sm text-ink-2">
+        <input
+          type="checkbox"
+          checked={sorteig}
+          disabled={scope === 'inter_tag'}
+          onChange={e => setSorteig(e.target.checked)}
+          className="mt-1 accent-current text-win"
+        />
+        <span>
+          <span className="block">Sorteig</span>
+          <span className="block text-xs text-ink-3">
+            En lloc del round robin sencer, una sola ronda a l&apos;atzar dins de cada etiqueta (o de tothom).
+            Si algú ha abandonat i el grup queda senar, a qui li tocaria fa bye.
+          </span>
+        </span>
       </label>
+      <label className="flex items-start gap-2 text-sm text-ink-2">
+        <input type="checkbox" checked={doble} onChange={e => setDoble(e.target.checked)} className="mt-1 accent-current text-win" />
+        {sorteig ? (
+          <span>
+            <span className="block">Anada i tornada</span>
+            <span className="block text-xs text-ink-3">
+              La segona ronda de la fase repeteix les parelles de l&apos;anada amb els seients girats.
+            </span>
+          </span>
+        ) : (
+          'Doble volta (cada parella juga dos cops)'
+        )}
+      </label>
+      {sorteig && (
+        <p className="text-xs text-ink-3">La fase ha de tenir {doble ? 'dues rondes' : 'una ronda'}.</p>
+      )}
     </div>
   );
 }

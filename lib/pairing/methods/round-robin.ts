@@ -25,7 +25,18 @@ export function generateRoundRobinPairings(ctx: PairingContext): PairingEngineRe
   const relativeRound = ctx.roundNumber - ctx.phase.startRound + 1;
 
   if (ctx.phase.participantsPerMatch > 2) {
+    if (config.randomDraw) {
+      warnings.push({
+        type: 'uneven_table',
+        message: "El sorteig només és per a partides d'1 contra 1: s'aparella com un round robin de taules grans.",
+        affectedEntryIds: [],
+      });
+    }
     return generateMultiTables(ctx, warnings);
+  }
+
+  if (config.randomDraw) {
+    return generateDraw(ctx, config, relativeRound);
   }
 
   let matches: GeneratedMatch[];
@@ -53,6 +64,131 @@ export function generateRoundRobinPairings(ctx: PairingContext): PairingEngineRe
   }
 
   return { matches, warnings };
+}
+
+// ─── Sorteig ──────────────────────────────────────────────────────────────────
+
+/**
+ * Sorteig dins de cada etiqueta: una ronda del round robin a l'atzar, i amb
+ * `doubleRound`, la tornada (docs/eliminatoria-per-posicions.md §4).
+ *
+ * Triar una ronda de Berger a l'atzar sobre la llista en ordre fix només pot
+ * donar n−1 emparellaments diferents. Barrejant la llista abans, qualsevol
+ * emparellament és igual de probable, i n'hi ha prou amb la primera ronda.
+ *
+ * Un grup senar (algú ha abandonat) fa servir el fantasma de Berger: qui li
+ * toca fa bye.
+ */
+function generateDraw(ctx: PairingContext, config: RoundRobinConfig, relativeRound: number): PairingEngineResult {
+  const warnings: PairingWarning[] = [];
+  const legs = config.doubleRound ? 2 : 1;
+
+  if (config.scope === 'inter_tag') {
+    warnings.push({
+      type: 'no_pairings_possible',
+      message: 'El sorteig només funciona dins de cada etiqueta o amb tothom, no entre etiquetes.',
+      affectedEntryIds: [],
+    });
+    return { matches: [], warnings };
+  }
+
+  if (relativeRound > legs) {
+    warnings.push({
+      type: 'incomplete_round_robin',
+      message: config.doubleRound
+        ? `El sorteig és d'anada i tornada: la ronda ${relativeRound} de la fase sobra.`
+        : `El sorteig és d'una sola ronda: la ronda ${relativeRound} de la fase sobra.`,
+      affectedEntryIds: [],
+    });
+    return { matches: [], warnings };
+  }
+
+  if (relativeRound === 2) return returnLeg(ctx, warnings);
+
+  const random = ctx.random ?? Math.random;
+  const active = ctx.entrants.filter((e) => e.isActive);
+  let pools: string[][];
+  if (config.scope === 'intra_tag') {
+    const { partitions, warnings: tagWarnings } = partitionByTags(active, config.tagIds ?? []);
+    warnings.push(...tagWarnings);
+    pools = [...partitions.values()];
+  } else {
+    pools = [active.map((e) => e.id)];
+  }
+
+  const matches: GeneratedMatch[] = [];
+  let tableNumber = 1;
+  for (const pool of pools) {
+    for (const match of bergerSchedule(shuffle(pool, random), 1, false) ?? []) {
+      matches.push({ ...match, tableNumber: tableNumber++ });
+    }
+  }
+  return { matches, warnings };
+}
+
+/**
+ * La tornada **copia l'anada** amb els seients girats, en lloc de tornar a
+ * calcular Berger: si algú ha abandonat entre les dues partides, la llista
+ * canvia i Berger donaria parelles diferents. Així, qui s'ha quedat sense
+ * rival fa bye.
+ */
+function returnLeg(ctx: PairingContext, warnings: PairingWarning[]): PairingEngineResult {
+  const firstLeg = ctx.previousMatches.filter(
+    (m) => m.phaseId === ctx.phase.id && m.roundNumber === ctx.roundNumber - 1
+  );
+  if (firstLeg.length === 0) {
+    warnings.push({
+      type: 'no_pairings_possible',
+      message: "Cal generar l'anada abans de la tornada.",
+      affectedEntryIds: [],
+    });
+    return { matches: [], warnings };
+  }
+
+  const active = new Set(ctx.entrants.filter((e) => e.isActive).map((e) => e.id));
+  const placed = new Set<string>();
+  const matches: GeneratedMatch[] = [];
+  let tableNumber = 1;
+
+  for (const previous of firstLeg) {
+    const ids = previous.entryIds.filter((id) => active.has(id));
+    ids.forEach((id) => placed.add(id));
+    if (ids.length === 2) {
+      matches.push({ tableNumber: tableNumber++, entryIds: [ids[1], ids[0]] });
+    } else if (ids.length === 1) {
+      if (previous.entryIds.length > 1) {
+        warnings.push({
+          type: 'bye_reassigned',
+          message: "El rival de l'anada no hi és: a la tornada fa bye.",
+          affectedEntryIds: ids,
+        });
+      }
+      matches.push({ tableNumber: 0, entryIds: ids });
+    }
+  }
+
+  // Qui no era a l'anada (p. ex. absent) no té rival assignat.
+  const unplaced = [...active].filter((id) => !placed.has(id));
+  if (unplaced.length > 0) {
+    warnings.push({
+      type: 'no_pairings_possible',
+      message: "No eren a l'anada i no tenen rival a la tornada: fan bye.",
+      affectedEntryIds: unplaced,
+    });
+    for (const id of unplaced) matches.push({ tableNumber: 0, entryIds: [id] });
+  }
+
+  return { matches, warnings };
+}
+
+/** Fisher-Yates amb la font d'atzar donada. */
+function shuffle<T>(items: T[], random: () => number): T[] {
+  const result = [...items];
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+  return result;
 }
 
 // ─── Taules de més de dos ─────────────────────────────────────────────────────

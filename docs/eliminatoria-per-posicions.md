@@ -160,14 +160,16 @@ Peces genèriques, reutilitzables fora d'aquest format:
    ordre natural del nom, amb color per bloc i les posicions contínues.
    Serveix per a qualsevol fase per etiquetes.
 3. **Sorteig = una ronda de Round Robin triada a l'atzar** dins de cada grup
-   (Round Robin `intra_tag`, opció nova `randomRound`). Reaprofita
+   (Round Robin `intra_tag`, opció nova `randomDraw`). Reaprofita
    `bergerSchedule()` tal com és. Detalls:
    - Cada jugador té la mateixa probabilitat, 1/(n−1), de trobar cada rival.
      En canvi, amb l'ordre de la llista fix només són possibles n−1
      emparellaments dels molts que n'hi ha. Per evitar-ho, n'hi ha prou amb
      **barrejar la llista** abans de calcular la ronda: és una línia.
-   - La llavor (o la ronda triada i l'ordre) es desa a la ronda, perquè el
-     sorteig es pugui comprovar.
+   - Implementat: es barreja la llista i es pren la primera ronda de Berger
+     (barrejar i triar una ronda qualsevol dona la mateixa distribució).
+   - No es desa cap llavor: el registre del sorteig són les partides
+     generades. Si s'esborren i es tornen a generar, surt un sorteig nou.
 4. **Anada i tornada**: `doubleRound` ja fa que la ronda r + (n−1) sigui la
    ronda r amb els seients girats. Tot i així, la tornada ha de **copiar
    l'anada** (girant els seients) en lloc de tornar a calcular Berger. Si
@@ -227,7 +229,8 @@ pot portar un paràmetre «nombre de jugadors» que generi les fases.
 1. ✅ Classificació per grups apilats amb colors, a partir de les etiquetes
    de la fase (`lib/tag-groups.ts`, `ClassificacioPerGrups`). Sense canvis a
    l'esquema.
-2. Sorteig aleatori + anada i tornada.
+2. ✅ Sorteig + anada i tornada (`randomDraw` al Round Robin, amb
+   `doubleRound` com a tornada; formulari de Fases).
 3. Tancar eliminatòria i partir grups (+ forçar partides).
 4. Plantilles: desar i crear; plantilla de sèrie «Eliminatòria per posicions (32)».
 

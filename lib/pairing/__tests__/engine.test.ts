@@ -260,5 +260,80 @@ console.log('\n=== Els mètodes d\'1v1 no accepten taules grans ===');
   check('i ho explica', tableSizeError('swiss', 4)?.includes('només funciona amb taules de dos'), true);
 }
 
+// ─── Sorteig (Round Robin amb `randomDraw`) ───────────────────────────────────
+
+/** Atzar reproduïble per a les proves (LCG). */
+function seeded(seed: number): () => number {
+  let state = seed;
+  return () => {
+    state = (state * 1664525 + 1013904223) % 4294967296;
+    return state / 4294967296;
+  };
+}
+
+function tagged(id: string, tagId: string): Entrant {
+  return { ...makeEntrant(id), tagIds: [tagId] };
+}
+
+const DRAW_CONFIG: RoundRobinConfig = {
+  method: 'round_robin', scope: 'intra_tag', tagIds: ['dalt', 'baix'], doubleRound: true, tagExclusions: [], randomDraw: true,
+};
+
+console.log('\n=== Sorteig dins de cada etiqueta ===');
+{
+  const entrants = [
+    ...['A1', 'A2', 'A3', 'A4'].map((id) => tagged(id, 'dalt')),
+    ...['B1', 'B2', 'B3', 'B4'].map((id) => tagged(id, 'baix')),
+  ];
+  const ctx = { ...makeCtx(makePhase('round_robin', DRAW_CONFIG), entrants, []), random: seeded(7) };
+  const result = generateRoundRobinPairings(ctx);
+  check('4 partides', result.matches.length, 4);
+  check('tothom juga un cop', coversEveryone(result.matches, entrants.map((e) => e.id)), true);
+  check('mai entre etiquetes', result.matches.every((m) => m.entryIds[0][0] === m.entryIds[1][0]), true);
+  check('taules 1..4', result.matches.map((m) => m.tableNumber), [1, 2, 3, 4]);
+
+  // Qualsevol rival és igual de probable: amb 4 jugadors, 1/3 cadascun.
+  const counts: Record<string, number> = {};
+  const random = seeded(42);
+  const four = ['A1', 'A2', 'A3', 'A4'].map((id) => tagged(id, 'dalt'));
+  for (let i = 0; i < 900; i++) {
+    const r = generateRoundRobinPairings({ ...makeCtx(makePhase('round_robin', DRAW_CONFIG), four, []), random });
+    const rival = r.matches.find((m) => m.entryIds.includes('A1'))!.entryIds.find((id) => id !== 'A1')!;
+    counts[rival] = (counts[rival] ?? 0) + 1;
+  }
+  check('els tres rivals possibles surten', Object.keys(counts).sort(), ['A2', 'A3', 'A4']);
+  check('amb freqüències semblants', Object.values(counts).every((c) => c > 240 && c < 360), true);
+}
+{
+  const entrants = ['A1', 'A2', 'A3'].map((id) => tagged(id, 'dalt'));
+  const result = generateRoundRobinPairings({ ...makeCtx(makePhase('round_robin', DRAW_CONFIG), entrants, []), random: seeded(1) });
+  check('grup senar: una partida i un bye', result.matches.map((m) => m.entryIds.length).sort(), [1, 2]);
+}
+
+console.log('\n=== Tornada ===');
+{
+  const entrants = ['A1', 'A2', 'A3', 'A4'].map((id) => tagged(id, 'dalt'));
+  const anada: PreviousMatch[] = [
+    { roundNumber: 1, phaseId: 'phase1', entryIds: ['A3', 'A1'], ranks: [1, 2] },
+    { roundNumber: 1, phaseId: 'phase1', entryIds: ['A2', 'A4'], ranks: [2, 1] },
+    // D'una altra fase: no s'ha de copiar.
+    { roundNumber: 1, phaseId: 'altra', entryIds: ['A1', 'A2'], ranks: [1, 2] },
+  ];
+  const ctx = { ...makeCtx(makePhase('round_robin', DRAW_CONFIG), entrants, [], anada), roundNumber: 2 };
+  const result = generateRoundRobinPairings(ctx);
+  check('mateixes parelles amb els seients girats', result.matches.map((m) => m.entryIds), [['A1', 'A3'], ['A4', 'A2']]);
+
+  const senseA4 = entrants.map((e) => (e.id === 'A4' ? { ...e, isActive: false } : e));
+  const abandonament = generateRoundRobinPairings({ ...ctx, entrants: senseA4 });
+  check('si el rival ha abandonat, bye', abandonament.matches.map((m) => m.entryIds), [['A1', 'A3'], ['A2']]);
+  check('i avisa', abandonament.warnings.some((w) => w.type === 'bye_reassigned'), true);
+
+  const senseAnada = generateRoundRobinPairings({ ...ctx, previousMatches: [] });
+  check("sense anada no genera res", senseAnada.matches.length, 0);
+
+  const tercera = generateRoundRobinPairings({ ...ctx, roundNumber: 3 });
+  check('una tercera ronda sobra', [tercera.matches.length, tercera.warnings[0]?.type], [0, 'incomplete_round_robin']);
+}
+
 console.log(failed === 0 ? '\n✓ Tots els tests passen.\n' : `\n✗ ${failed} fallades.\n`);
 process.exit(failed === 0 ? 0 : 1);

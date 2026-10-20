@@ -163,6 +163,13 @@ export interface RoundRobinConfig {
   tagIds: string[];
   doubleRound: boolean;
   tagExclusions: TagPairExclusion[];
+  /**
+   * Sorteig: en lloc de tot el round robin, una sola ronda a l'atzar dins de
+   * cada etiqueta (o de tothom). Amb `doubleRound`, la segona ronda de la
+   * fase és la tornada: les mateixes parelles amb els seients girats
+   * (docs/eliminatoria-per-posicions.md). No admet `inter_tag`.
+   */
+  randomDraw?: boolean;
 }
 
 export interface KingOfTheHillConfig {

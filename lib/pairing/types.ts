@@ -223,6 +223,8 @@ export interface PairingContext {
   entrants: Entrant[];
   standings: Standing[];
   previousMatches: PreviousMatch[];
+  /** Font d'atzar dels sortejos, [0, 1). Per defecte `Math.random`; les proves la fixen. */
+  random?: () => number;
 }
 
 /** Una taula generada: N participacions. Una de sola vol dir bye. */
