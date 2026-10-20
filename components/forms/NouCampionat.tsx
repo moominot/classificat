@@ -1,11 +1,22 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
 import Modal from '@/components/ui/Modal';
+import Select from '@/components/ui/Select';
 import { readError } from '@/lib/http';
+
+interface Plantilla {
+  id: string;
+  name: string;
+  isBuiltin: boolean;
+  summary: string;
+}
+
+/** La de sèrie que es tria si no se'n canvia (db/builtin-templates.ts). */
+const PER_DEFECTE = 'builtin:scrabble';
 
 export default function NouCampionat() {
   const router = useRouter();
@@ -13,6 +24,18 @@ export default function NouCampionat() {
   const [nom, setNom] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [plantilles, setPlantilles] = useState<Plantilla[]>([]);
+  const [plantillaId, setPlantillaId] = useState(PER_DEFECTE);
+
+  useEffect(() => {
+    if (!obert || plantilles.length > 0) return;
+    fetch('/api/templates')
+      .then((res) => (res.ok ? res.json() : []))
+      .then(setPlantilles)
+      .catch(() => {});
+  }, [obert, plantilles.length]);
+
+  const triada = plantilles.find((p) => p.id === plantillaId);
 
   function tanca() {
     setObert(false);
@@ -29,7 +52,7 @@ export default function NouCampionat() {
     const res = await fetch('/api/tournaments', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: nom.trim() }),
+      body: JSON.stringify({ name: nom.trim(), templateId: plantillaId }),
     });
 
     if (res.ok) {
@@ -57,6 +80,23 @@ export default function NouCampionat() {
             error={error}
             autoFocus
           />
+          {plantilles.length > 0 && (
+            <Select
+              label="Plantilla"
+              value={plantillaId}
+              onChange={e => setPlantillaId(e.target.value)}
+              hint={triada?.summary}
+            >
+              <optgroup label="De sèrie">
+                {plantilles.filter(p => p.isBuiltin).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+              </optgroup>
+              {plantilles.some(p => !p.isBuiltin) && (
+                <optgroup label="Desades">
+                  {plantilles.filter(p => !p.isBuiltin).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </optgroup>
+              )}
+            </Select>
+          )}
           <div className="flex gap-2 pt-1">
             <Button type="submit" loading={loading} disabled={!nom.trim()} className="flex-1 sm:flex-none">
               Crear

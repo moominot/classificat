@@ -234,6 +234,8 @@ export interface GameProfileConfig {
 }
 
 export interface GameProfileQuestion {
+  /** Pregunta de sèrie (no es pot esborrar). Absent = sí, com les dels perfils. */
+  isBuiltin?: boolean;
   key: string;
   type: QuestionType;
   scope: QuestionScope;
@@ -245,6 +247,51 @@ export interface GameProfileQuestion {
   usableAsTiebreaker: boolean;
   showInRanking: boolean;
   order: number;
+}
+
+// ─── Plantilles de campionat ──────────────────────────────────────────────────
+
+/**
+ * Plantilla de campionat: tot el que defineix com es juga, sense jugadors ni
+ * resultats (docs/eliminatoria-per-posicions.md §4). Substitueix els perfils
+ * de joc: un perfil és una plantilla sense fases.
+ *
+ * Es copia en crear el campionat, no s'hi enllaça. Dins de `phases[].config`
+ * les referències no són ids: `tagIds` (i les de `tagExclusions`) són **noms**
+ * d'etiqueta de `tags`, i `carryStandingsFromPhaseIds` són **índexs** de
+ * `phases` en text. Vegeu `lib/templates.ts`.
+ */
+export interface TemplateConfig {
+  version: 1;
+  questions: GameProfileQuestion[];
+  settings: {
+    visibility: TournamentVisibility;
+    presencePendingAs: PresencePendingAs;
+    askPresence: boolean;
+  };
+  tags: string[];
+  phases: TemplatePhase[];
+  /**
+   * Fases que depenen del nombre de jugadors i no es poden fixar a la
+   * plantilla: es creen des de Fases quan ja hi ha tots els jugadors.
+   */
+  phaseGenerator?: 'position_elimination';
+  /** Puntuació i desempats de les fases que crea `phaseGenerator`. */
+  generatorDefaults?: { scoring: ScoringConfig; tiebreakers: string[] };
+}
+
+export interface TemplatePhase {
+  name: string;
+  method: PairingMethod;
+  config: PhaseConfig;
+  participantsPerMatch: number;
+  scoring: ScoringConfig;
+  tiebreakers: string[];
+  standingsScope: StandingsScopeKey[];
+  teamAggregation: TeamAggregation | null;
+  standingsLive: boolean;
+  startRound: number;
+  endRound: number;
 }
 
 // ─── Trobades ─────────────────────────────────────────────────────────────────

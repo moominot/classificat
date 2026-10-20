@@ -79,6 +79,7 @@ export default function AjustosClient({
       <PublicacioRondes tournamentId={tournamentId} visibilitat={visibilitat} />
       <PresenciaRondes tournamentId={tournamentId} pendentsCompten={pendentsCompten} preguntaPresencia={preguntaPresencia} />
       <Administradors tournamentId={tournamentId} currentAccountId={currentAccountId} />
+      <Plantilles tournamentId={tournamentId} nom={nom} />
       <ZonaPerill tournamentId={tournamentId} nom={nom} />
     </div>
   );
@@ -514,6 +515,100 @@ function Administradors({ tournamentId, currentAccountId }: { tournamentId: stri
         </>
       )}
       {error && <p className="text-sm text-loss">{error}</p>}
+    </Grup>
+  );
+}
+
+interface PlantillaDesada {
+  id: string;
+  name: string;
+  isBuiltin: boolean;
+  summary: string;
+}
+
+/**
+ * Desar el campionat com a plantilla: preguntes, ajustos, fases i les
+ * etiquetes que fan servir, sense jugadors ni resultats
+ * (docs/eliminatoria-per-posicions.md §4). I les plantilles pròpies, per
+ * esborrar les que ja no calen.
+ */
+function Plantilles({ tournamentId, nom }: { tournamentId: string; nom: string }) {
+  const [nomPlantilla, setNomPlantilla] = useState(nom);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [desada, setDesada] = useState('');
+  const [plantilles, setPlantilles] = useState<PlantillaDesada[]>([]);
+  const [confirmant, setConfirmant] = useState<string | null>(null);
+
+  const carrega = useCallback(async () => {
+    const res = await fetch('/api/templates');
+    if (res.ok) setPlantilles(((await res.json()) as PlantillaDesada[]).filter((p) => !p.isBuiltin));
+  }, []);
+
+  useEffect(() => { carrega(); }, [carrega]);
+
+  async function desa() {
+    setLoading(true);
+    setError('');
+    setDesada('');
+    const res = await fetch('/api/templates', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tournamentId, name: nomPlantilla.trim() }),
+    });
+    setLoading(false);
+    if (!res.ok) {
+      setError(await readError(res, 'Error en desar la plantilla'));
+      return;
+    }
+    setDesada(nomPlantilla.trim());
+    carrega();
+  }
+
+  async function esborra(id: string) {
+    setConfirmant(null);
+    const res = await fetch(`/api/templates/${id}`, { method: 'DELETE' });
+    if (res.ok) carrega();
+    else setError(await readError(res, 'Error en esborrar la plantilla'));
+  }
+
+  return (
+    <Grup
+      titol="Plantilla"
+      descripcio="Desa la configuració d'aquest campionat per crear-ne d'altres iguals: preguntes, ajustos, fases i les etiquetes que fan servir. No s'hi desen jugadors, resultats ni dates."
+    >
+      <div className="flex flex-col sm:flex-row sm:items-end gap-2">
+        <div className="flex-1">
+          <Input label="Nom de la plantilla" value={nomPlantilla} onChange={(e) => setNomPlantilla(e.target.value)} />
+        </div>
+        <Button onClick={desa} loading={loading} disabled={!nomPlantilla.trim()}>Desa com a plantilla</Button>
+      </div>
+      {desada && !error && <p className="text-sm text-ink-3">Desada com a «{desada}». La trobaràs en crear un campionat nou.</p>}
+      {error && <p className="text-sm text-loss">{error}</p>}
+      {plantilles.length > 0 && (
+        <div className="space-y-1.5">
+          <p className="text-sm font-medium text-ink-2">Les teves plantilles</p>
+          <ul className="divide-y divide-border border border-border rounded-xl">
+            {plantilles.map((p) => (
+              <li key={p.id} className="flex items-center gap-2 px-3 py-2">
+                <span className="flex-1 min-w-0">
+                  <span className="block text-sm text-ink truncate">{p.name}</span>
+                  <span className="block text-xs text-ink-3">{p.summary}</span>
+                </span>
+                {confirmant === p.id ? (
+                  <span className="flex items-center gap-1.5">
+                    <span className="text-xs text-loss">Esborrar?</span>
+                    <Button size="sm" variant="danger" onClick={() => esborra(p.id)}>Sí</Button>
+                    <Button size="sm" variant="ghost" onClick={() => setConfirmant(null)}>No</Button>
+                  </span>
+                ) : (
+                  <Button size="sm" variant="ghost" className="text-loss" onClick={() => setConfirmant(p.id)}>Esborra</Button>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </Grup>
   );
 }

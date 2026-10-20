@@ -19,6 +19,7 @@ import type {
   RoundStatus,
   ScoringConfig,
   StandingsScopeKey,
+  TemplateConfig,
   TeamAggregation,
   TournamentStatus,
   TournamentVisibility,
@@ -107,7 +108,10 @@ export const tournaments = sqliteTable('tournaments', {
   slug:          text('slug').notNull(),        // id_extern al BARRUF: no s'ha de canviar
   // Adreça curta opcional (/<shortPath>) que redirigeix al campionat.
   shortPath:     text('short_path'),
+  // Obsolet: els perfils de joc ara són plantilles (`templateId`). Es manté per no reconstruir la taula.
   gameProfileId: text('game_profile_id').references(() => gameProfiles.id, { onDelete: 'set null' }),
+  // Plantilla de la qual es va crear. Només informativa: la configuració ja s'hi va copiar.
+  templateId:    text('template_id').references(() => tournamentTemplates.id, { onDelete: 'set null' }),
   ownerId:       text('owner_id').notNull().references(() => accounts.id),
   status:        text('status').$type<TournamentStatus>().notNull().default('draft'),
   visibility:    text('visibility', { mode: 'json' }).$type<TournamentVisibility>().notNull(),
@@ -395,7 +399,10 @@ export const matchAnswers = sqliteTable('match_answers', {
   uniqueIndex('match_answers_uniq').on(t.matchId, t.questionId, t.participantId),
 ]);
 
-/** Plantilla de joc: es copia en crear una competició, no s'hi enllaça (§13.1 #4). */
+/**
+ * Obsolet: substituït per `tournamentTemplates`. La taula es manté perquè
+ * `tournaments.game_profile_id` hi apunta.
+ */
 export const gameProfiles = sqliteTable('game_profiles', {
   id:        text('id').primaryKey(),
   name:      text('name').notNull(),
@@ -404,6 +411,21 @@ export const gameProfiles = sqliteTable('game_profiles', {
   createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 }, (t) => [
   uniqueIndex('game_profiles_name_uniq').on(t.name),
+]);
+
+/**
+ * Plantilles de campionat (docs/eliminatoria-per-posicions.md §4): es copien
+ * en crear-ne un. `ownerId` null = de sèrie, amb id fix (`builtin:…`).
+ */
+export const tournamentTemplates = sqliteTable('tournament_templates', {
+  id:        text('id').primaryKey(),
+  name:      text('name').notNull(),
+  ownerId:   text('owner_id').references(() => accounts.id, { onDelete: 'cascade' }),
+  isBuiltin: integer('is_builtin', { mode: 'boolean' }).notNull().default(false),
+  config:    text('config', { mode: 'json' }).$type<TemplateConfig>().notNull(),
+  createdAt: integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
+}, (t) => [
+  index('tournament_templates_owner_idx').on(t.ownerId),
 ]);
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -533,6 +555,7 @@ export type NewQuestionDefinition = typeof questionDefinitions.$inferInsert;
 export type MatchAnswer = typeof matchAnswers.$inferSelect;
 export type NewMatchAnswer = typeof matchAnswers.$inferInsert;
 export type GameProfile = typeof gameProfiles.$inferSelect;
+export type TournamentTemplate = typeof tournamentTemplates.$inferSelect;
 export type NewGameProfile = typeof gameProfiles.$inferInsert;
 export type EntryClaim = typeof entryClaims.$inferSelect;
 export type MatchRevision = typeof matchRevisions.$inferSelect;

@@ -1,20 +1,21 @@
-import type { GameProfileConfig } from './types';
-import { DEFAULT_SCORING } from './types';
+import type { GameProfileQuestion, TemplateConfig } from './types';
+import { DEFAULT_VISIBILITY } from './types';
 
 /**
- * Perfils de joc "de sèrie".
+ * Plantilles de campionat de sèrie.
  *
- * Són plantilles: en crear una competició, la configuració es **copia** i
- * després es pot ajustar lliurement (docs/pla-rols.md §13.1 #4). Per això
- * canviar un perfil no altera les competicions ja creades.
+ * Abans eren «perfils de joc», que només aportaven les preguntes: ara un
+ * perfil és una plantilla sense fases. Es **copien** en crear una competició
+ * (docs/pla-rols.md §13.1 #4), així que canviar-ne una no altera les
+ * competicions ja creades. L'id és fix perquè el sembrat les pugui
+ * actualitzar sense duplicar-les.
  */
-export const BUILTIN_GAME_PROFILES: Array<{ name: string; config: GameProfileConfig }> = [
+
+const PROFILES: Array<{ id: string; name: string; config: { questions: GameProfileQuestion[] } }> = [
   {
+    id: 'builtin:scrabble',
     name: 'Scrabble',
     config: {
-      scoring: DEFAULT_SCORING,
-      tiebreakers: ['spread', 'wins', 'buchholz'],
-      participantsPerMatch: 2,
       questions: [
         {
           key: 'score', type: 'value', scope: 'participant', label: 'Resultat',
@@ -43,11 +44,9 @@ export const BUILTIN_GAME_PROFILES: Array<{ name: string; config: GameProfileCon
     },
   },
   {
+    id: 'builtin:escacs',
     name: 'Escacs',
     config: {
-      scoring: DEFAULT_SCORING,
-      tiebreakers: ['buchholz', 'median_buchholz', 'berger', 'wins'],
-      participantsPerMatch: 2,
       questions: [
         {
           key: 'score', type: 'value', scope: 'participant', label: 'Resultat',
@@ -58,11 +57,9 @@ export const BUILTIN_GAME_PROFILES: Array<{ name: string; config: GameProfileCon
     },
   },
   {
+    id: 'builtin:generic',
     name: 'Genèric',
     config: {
-      scoring: DEFAULT_SCORING,
-      tiebreakers: ['wins'],
-      participantsPerMatch: 2,
       questions: [
         {
           key: 'score', type: 'value', scope: 'participant', label: 'Puntuació',
@@ -73,3 +70,31 @@ export const BUILTIN_GAME_PROFILES: Array<{ name: string; config: GameProfileCon
     },
   },
 ];
+
+function plain(questions: GameProfileQuestion[]): TemplateConfig {
+  return {
+    version: 1,
+    questions,
+    settings: { visibility: DEFAULT_VISIBILITY, presencePendingAs: 'present', askPresence: true },
+    tags: [],
+    phases: [],
+  };
+}
+
+/** La plantilla per defecte quan no se'n tria cap. */
+export const DEFAULT_TEMPLATE_ID = 'builtin:scrabble';
+
+export const BUILTIN_TEMPLATES: Array<{ id: string; name: string; config: TemplateConfig }> = [
+  ...PROFILES.map((p) => ({ id: p.id, name: p.name, config: plain(p.config.questions) })),
+  {
+    // Les fases depenen del nombre de jugadors: es creen des de Fases.
+    id: 'builtin:position-elimination',
+    name: 'Eliminatòria per posicions (Scrabble)',
+    config: {
+      ...plain(PROFILES[0].config.questions),
+      settings: { visibility: DEFAULT_VISIBILITY, presencePendingAs: 'present', askPresence: false },
+      phaseGenerator: 'position_elimination',
+    },
+  },
+];
+

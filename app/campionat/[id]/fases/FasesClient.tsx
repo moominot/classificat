@@ -366,11 +366,14 @@ export default function FasesClient({
   fases,
   tags,
   entrants,
+  eliminatoriaPerPosicions = false,
 }: {
   tournamentId: string;
   fases: Fase[];
   tags: Tag[];
   entrants: EntrantOption[];
+  /** El campionat es va crear amb la plantilla d'eliminatòria per posicions. */
+  eliminatoriaPerPosicions?: boolean;
 }) {
   const router = useRouter();
   const canManage = useCanManage();
@@ -401,11 +404,23 @@ export default function FasesClient({
       )}
 
       {fases.length === 0 && !mostrarForm ? (
-        <EmptyState
-          title="Sense fases"
-          description="Afegeix fases per definir com es generaran els aparellaments. Exemple: rondes 1–20 Round Robin per grups, rondes 21–28 Sistema Suís."
-          action={canManage ? <Button onClick={() => setMostrarForm(true)}>+ Nova fase</Button> : undefined}
-        />
+        <div className="space-y-4">
+          {canManage && eliminatoriaPerPosicions && (
+            <GeneradorEliminatoria tournamentId={tournamentId} jugadors={entrants.length} onDone={() => router.refresh()} />
+          )}
+          <EmptyState
+            title="Sense fases"
+            description="Afegeix fases per definir com es generaran els aparellaments. Exemple: rondes 1–20 Round Robin per grups, rondes 21–28 Sistema Suís."
+            action={canManage ? (
+              <div className="flex flex-wrap justify-center gap-2">
+                <Button onClick={() => setMostrarForm(true)}>+ Nova fase</Button>
+                {!eliminatoriaPerPosicions && (
+                  <GeneradorEliminatoria tournamentId={tournamentId} jugadors={entrants.length} onDone={() => router.refresh()} compacte />
+                )}
+              </div>
+            ) : undefined}
+          />
+        </div>
       ) : (
         <div className="space-y-3">
           {fases.map((fase) => (
@@ -531,6 +546,60 @@ function FaseCard({
             className="text-loss hover:bg-loss-tint">Esborrar</Button>
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * Crea d'un cop totes les fases d'una eliminatòria per posicions a partir
+ * dels jugadors actius (docs/eliminatoria-per-posicions.md): una fase de
+ * sorteig amb anada i tornada per cada partició, fins a les posicions finals.
+ */
+function GeneradorEliminatoria({
+  tournamentId, jugadors, onDone, compacte = false,
+}: {
+  tournamentId: string;
+  jugadors: number;
+  onDone: () => void;
+  compacte?: boolean;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const fases = jugadors >= 2 && (jugadors & (jugadors - 1)) === 0 ? Math.log2(jugadors) : null;
+
+  async function genera() {
+    setLoading(true);
+    setError('');
+    const res = await fetch(`/api/tournaments/${tournamentId}/phases/generate`, { method: 'POST' });
+    setLoading(false);
+    if (res.ok) onDone();
+    else setError(await readError(res, 'Error en crear les fases'));
+  }
+
+  if (compacte) {
+    return (
+      <span className="flex flex-col items-center gap-1">
+        <Button variant="secondary" onClick={genera} loading={loading} disabled={fases === null}
+          title={fases === null ? 'Calen 2, 4, 8, 16, 32… jugadors actius' : undefined}>
+          Eliminatòria per posicions
+        </Button>
+        {error && <span className="text-xs text-loss">{error}</span>}
+      </span>
+    );
+  }
+
+  return (
+    <div className="bg-win-tint rounded-xl p-4 space-y-2">
+      <p className="text-sm font-semibold text-ink">Eliminatòria per posicions</p>
+      <p className="text-sm text-ink-2">
+        Quan hi hagi tots els jugadors, crea les fases d&apos;un cop: un sorteig amb anada i tornada per fase, partint
+        els grups per la meitat fins a la classificació final.{' '}
+        {fases !== null
+          ? `Amb ${jugadors} jugadors actius, ${fases} fase${fases !== 1 ? 's' : ''} i ${fases * 2} rondes.`
+          : `Hi ha ${jugadors} jugadors actius: en calen 2, 4, 8, 16, 32…`}
+      </p>
+      <Button onClick={genera} loading={loading} disabled={fases === null}>Crea les fases</Button>
+      {error && <p className="text-sm text-loss">{error}</p>}
     </div>
   );
 }

@@ -239,6 +239,31 @@ Per a aquest format, el nombre de fases depèn de N (log₂ N). Una plantilla
 estàtica «32 jugadors» és suficient per començar; més endavant, una plantilla
 pot portar un paràmetre «nombre de jugadors» que generi les fases.
 
+**Implementat** (`lib/templates.ts`, `lib/templates-service.ts`,
+`db/builtin-templates.ts`, migració `0008_tournament_templates`):
+
+- Taula `tournament_templates`; `tournaments.template_id` recorda de quina es
+  va crear (informatiu: la configuració ja s'hi va copiar).
+- Plantilles de sèrie, amb id fix i actualitzades en arrencar: Scrabble,
+  Escacs, Genèric (els antics perfils, només preguntes) i «Eliminatòria per
+  posicions (Scrabble)» (sense pregunta de presència i amb generador de
+  fases). `game_profiles` ja no se sembra ni s'usa; la taula i la columna
+  `tournaments.game_profile_id` es mantenen per no haver de reconstruir
+  `tournaments`.
+- «Nou campionat» té selector de plantilla (per defecte, Scrabble).
+- A Ajustos, «Desa com a plantilla» i la llista de plantilles pròpies per
+  esborrar-les. Es desen les preguntes, els ajustos de visibilitat i
+  presència, les fases i només les etiquetes que fan servir les fases.
+- Una eliminatòria per posicions pura (totes les fases ho són i la primera és
+  de tothom) es desa com a **generador**, amb la puntuació i els desempats de
+  la primera fase: així la mateixa plantilla serveix per a 8, 16 o 32.
+- A Fases, sense cap fase, «Crea les fases» d'una eliminatòria per
+  posicions a partir dels jugadors actius (log₂ N fases de dues rondes).
+  Si el campionat ve d'una plantilla amb generador, surt destacat.
+- El generador llegeix la puntuació de la plantilla a través de
+  `template_id`: si s'esborra la plantilla, fa servir la puntuació per
+  defecte.
+
 ## 5. Ordre de feina
 
 1. ✅ Classificació per grups apilats amb colors, a partir de les etiquetes
@@ -248,7 +273,8 @@ pot portar un paràmetre «nombre de jugadors» que generi les fases.
    `doubleRound` com a tornada; formulari de Fases).
 3. ✅ Tancar eliminatòria i partir grups (+ forçar partides i diferència per
    bye, `byeSpread`).
-4. Plantilles: desar i crear; plantilla de sèrie «Eliminatòria per posicions (32)».
+4. ✅ Plantilles: desar i crear; plantilla de sèrie «Eliminatòria per
+   posicions (Scrabble)» amb fases generades segons el nombre de jugadors.
 
 Amb 1–3 ja es pot jugar el campionat configurant les fases a mà.
 

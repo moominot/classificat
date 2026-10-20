@@ -2,11 +2,12 @@ import { NextResponse } from 'next/server';
 import { eq } from 'drizzle-orm';
 import { v4 as uuid } from 'uuid';
 import { db } from '@/db';
-import { gameProfiles, questionDefinitions, tournaments } from '@/db/schema';
+import { tournaments } from '@/db/schema';
+import { DEFAULT_TEMPLATE_ID } from '@/db/builtin-templates';
 import { DEFAULT_VISIBILITY } from '@/db/types';
-import type { GameProfileConfig } from '@/db/types';
 import { getCurrentAccount, listManagedTournaments, requireRole } from '@/lib/authz';
 import { slugify } from '@/lib/short-path';
+import { applyTemplate, canUseTemplate } from '@/lib/templates-service';
 
 /**
  * GET — Les competicions que el compte pot gestionar.
@@ -20,16 +21,26 @@ export async function GET() {
   return NextResponse.json(await listManagedTournaments(account));
 }
 
+/**
+ * POST — Crea una competició a partir d'una plantilla (`templateId`; per
+ * defecte, Scrabble). La plantilla es **copia**: preguntes, ajustos,
+ * etiquetes i fases. Així es poden ajustar sense tocar la plantilla ni les
+ * altres competicions (§13.1 #4).
+ */
 export async function POST(req: Request) {
   const guard = await requireRole('admin');
   if (guard.error) return guard.error;
 
   const body = await req.json().catch(() => ({}));
-  const { name, gameProfileId } = body;
+  const { name } = body;
+  const templateId: string = typeof body.templateId === 'string' && body.templateId ? body.templateId : DEFAULT_TEMPLATE_ID;
 
   if (!name || typeof name !== 'string' || name.trim().length === 0) {
     return NextResponse.json({ error: 'Cal un nom per a la competició' }, { status: 400 });
   }
+
+  const template = await canUseTemplate(guard.account, templateId);
+  if (!template) return NextResponse.json({ error: 'Plantilla no trobada' }, { status: 404 });
 
   const slug = slugify(name.trim());
   const existing = await db.select().from(tournaments).where(eq(tournaments.slug, slug));
@@ -38,53 +49,25 @@ export async function POST(req: Request) {
   }
 
   const now = new Date();
+  const settings = template.config.settings;
   const tournament = {
     id: uuid(),
     name: name.trim(),
     slug,
-    gameProfileId: gameProfileId ?? null,
+    templateId: template.id,
     ownerId: guard.account.id,
     status: 'draft' as const,
-    visibility: DEFAULT_VISIBILITY,
+    visibility: settings?.visibility ?? DEFAULT_VISIBILITY,
+    presencePendingAs: settings?.presencePendingAs ?? 'present',
+    askPresence: settings?.askPresence ?? true,
     createdAt: now,
     updatedAt: now,
   };
 
-  await db.insert(tournaments).values(tournament);
-  await seedQuestionsFromProfile(tournament.id, gameProfileId ?? null);
+  db.transaction((tx) => {
+    tx.insert(tournaments).values(tournament).run();
+    applyTemplate(tx, tournament.id, template.config);
+  });
 
   return NextResponse.json(tournament, { status: 201 });
-}
-
-/**
- * Les preguntes del perfil de joc es **copien** a la competició, no s'hi
- * enllacen: així es poden ajustar sense tocar el perfil ni afectar les altres
- * competicions (§13.1 #4).
- */
-async function seedQuestionsFromProfile(tournamentId: string, gameProfileId: string | null) {
-  const profile = gameProfileId
-    ? (await db.select().from(gameProfiles).where(eq(gameProfiles.id, gameProfileId)))[0]
-    : (await db.select().from(gameProfiles).where(eq(gameProfiles.name, 'Scrabble')))[0];
-
-  const config = profile?.config as GameProfileConfig | undefined;
-  if (!config?.questions?.length) return;
-
-  await db.insert(questionDefinitions).values(
-    config.questions.map((q) => ({
-      id: uuid(),
-      tournamentId,
-      key: q.key,
-      isBuiltin: true,
-      type: q.type,
-      scope: q.scope,
-      label: q.label,
-      label1: q.label1 ?? null,
-      label2: q.label2 ?? null,
-      answerType: q.answerType ?? null,
-      aggregate: q.aggregate,
-      usableAsTiebreaker: q.usableAsTiebreaker,
-      showInRanking: q.showInRanking,
-      order: q.order,
-    }))
-  );
 }

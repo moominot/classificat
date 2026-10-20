@@ -6,7 +6,7 @@ import path from 'path';
 import fs from 'fs';
 import { v4 as uuid } from 'uuid';
 import { hashPassword } from '../lib/auth';
-import { BUILTIN_GAME_PROFILES } from './game-profiles';
+import { BUILTIN_TEMPLATES } from './builtin-templates';
 
 // Determina la ruta de la base de dades
 const DATA_DIR = process.env.DATA_DIR ?? path.join(process.cwd(), '.data');
@@ -47,16 +47,21 @@ try {
 
 // ─── Sembra ───────────────────────────────────────────────────────────────────
 
-seedGameProfiles();
+seedBuiltinTemplates();
 seedSuperadmin();
 
-/** Els perfils de sèrie. Les competicions ja creades no en depenen: se'n copien. */
-function seedGameProfiles() {
-  const insert = sqlite.prepare(
-    'INSERT OR IGNORE INTO game_profiles (id, name, is_builtin, config) VALUES (?, ?, 1, ?)'
+/**
+ * Les plantilles de sèrie, sempre al dia: l'id és fix i un canvi al codi
+ * s'hi aplica en arrencar. Les competicions ja creades no en depenen: se'n
+ * copien. (Els antics perfils de joc, `game_profiles`, ja no se sembren.)
+ */
+function seedBuiltinTemplates() {
+  const upsert = sqlite.prepare(
+    `INSERT INTO tournament_templates (id, name, owner_id, is_builtin, config) VALUES (?, ?, NULL, 1, ?)
+     ON CONFLICT(id) DO UPDATE SET name = excluded.name, config = excluded.config`
   );
-  for (const profile of BUILTIN_GAME_PROFILES) {
-    insert.run(uuid(), profile.name, JSON.stringify(profile.config));
+  for (const template of BUILTIN_TEMPLATES) {
+    upsert.run(template.id, template.name, JSON.stringify(template.config));
   }
 }
 
