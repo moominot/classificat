@@ -1,7 +1,8 @@
 # Format «Champions»: lliga amb bombos + eliminatòries
 
 > Estat: **pla**, no implementat (2026-10-20). Avalua com encaixa amb el
-> sistema de fases actual i proposa l'ordre de feina.
+> sistema de fases actual i proposa l'ordre de feina. Per a l'eliminatòria on
+> tothom continua jugant, vegeu `eliminatoria-per-posicions.md`.
 
 ## 1. El format de referència
 
