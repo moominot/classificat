@@ -140,7 +140,7 @@ Com encaixa amb el que ja hi ha:
 format no ordenen res (§3.5), així que no tenen cap efecte. El bye tampoc no
 compta per a la diferència ni per a la mitjana: està bé, perquè així la
 mitjana no es distorsiona. Si es vol que el bye doni alguna cosa que compti
-(p. ex. +50 de diferència, com és habitual a Scrabble), cal un ajustament
+(p. ex. +50 de diferència; és un valor que es veu sovint a Scrabble, però no està verificat amb el reglament NASPA/WESPA), cal un ajustament
 nou.
 
 **Decidit:** el bye dona diferència de punts. Ajustament nou a la puntuació
@@ -243,4 +243,4 @@ Preses (2026-10-20):
 Pendents:
 
 - Confirmar la fusió de perfils de joc i plantilles (proposada a §4).
-- Valor per defecte de `byeSpread` (Scrabble sol fer servir +50).
+- Valor per defecte de `byeSpread`: cal confirmar-lo amb el reglament que segueixi el campionat.
