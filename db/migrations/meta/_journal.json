@@ -62,7 +62,14 @@
       "idx": 8,
       "version": "6",
       "when": 1791700000000,
-      "tag": "0008_tournament_templates",
+      "tag": "0008_bye_spread",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1791800000000,
+      "tag": "0009_tournament_templates",
       "breakpoints": true
     }
   ]

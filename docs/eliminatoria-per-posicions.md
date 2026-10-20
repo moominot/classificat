@@ -146,9 +146,10 @@ mitjana no es distorsiona. Si es vol que el bye doni alguna cosa que compti
 (p. ex. +50 de diferència; és un valor que es veu sovint a Scrabble, però no està verificat amb el reglament NASPA/WESPA), cal un ajustament
 nou.
 
-**Decidit:** el bye dona diferència de punts. Ajustament nou a la puntuació
-de la fase, `byeSpread` (p. ex. 50), que suma a la mètrica `spread`. No
-compta com a partida jugada, així que no altera la mitjana.
+**Decidit:** el bye dona diferència de punts. És un ajust de **tot el
+campionat** (Ajustos, `tournaments.byeSpread`, 50 per defecte), que suma a
+la mètrica `spread`. No compta com a partida jugada, així que no altera la
+mitjana. Les plantilles el desen amb la resta d'ajustos.
 
 ## 4. Proposta tècnica
 
@@ -271,8 +272,8 @@ pot portar un paràmetre «nombre de jugadors» que generi les fases.
    l'esquema.
 2. ✅ Sorteig + anada i tornada (`randomDraw` al Round Robin, amb
    `doubleRound` com a tornada; formulari de Fases).
-3. ✅ Tancar eliminatòria i partir grups (+ forçar partides i diferència per
-   bye, `byeSpread`).
+3. ✅ Tancar eliminatòria i partir grups (+ forçar partides). La diferència
+   per bye és l'ajust de campionat que ja hi havia a main.
 4. ✅ Plantilles: desar i crear; plantilla de sèrie «Eliminatòria per
    posicions (Scrabble)» amb fases generades segons el nombre de jugadors.
 
@@ -289,10 +290,8 @@ Preses (2026-10-20):
   triada a l'atzar dins de cada grup (§4.3).
 
 - Si empaten també els bingos, decideix l'admin (§3.1).
-- El bye dona diferència de punts, configurable (`byeSpread`, §3.6).
+- El bye dona diferència de punts, configurable a Ajustos (50 per defecte, §3.6).
 - Perfils de joc i plantilles es fusionen: els perfils passen a ser
   plantilles de sèrie sense fases (§4).
 
-Pendents:
-
-- Valor per defecte de `byeSpread`: cal confirmar-lo amb el reglament que segueixi el campionat.
+Pendents: cap.

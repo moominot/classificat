@@ -71,7 +71,6 @@ interface PuntuacioState {
   positionPoints: string;
   trailingPoints: string;
   byePoints: string;
-  byeSpread: string;
   forfeitPoints: string;
   scope: StandingsScopeKey[];
   teamRule: TeamAggregation['rule'];
@@ -86,7 +85,6 @@ function puntuacioInicial(
     positionPoints: scoring.positionPoints.join(', '),
     trailingPoints: String(scoring.trailingPoints),
     byePoints: String(scoring.byePoints),
-    byeSpread: String(scoring.byeSpread ?? 0),
     forfeitPoints: String(scoring.forfeitPoints),
     scope: base?.standingsScope ?? ['global'],
     teamRule: base?.teamAggregation?.rule ?? 'sum',
@@ -102,14 +100,14 @@ function puntuacioPayload(
   if (positionPoints.length === 0 || positionPoints.some((n) => Number.isNaN(n))) {
     return { error: 'Els punts per posició han de ser nombres separats per comes (p. ex. 1, 0)' };
   }
-  const [trailingPoints, byePoints, byeSpread, forfeitPoints] = [st.trailingPoints, st.byePoints, st.byeSpread, st.forfeitPoints].map(Number);
-  if ([trailingPoints, byePoints, byeSpread, forfeitPoints].some((n) => Number.isNaN(n))) {
+  const [trailingPoints, byePoints, forfeitPoints] = [st.trailingPoints, st.byePoints, st.forfeitPoints].map(Number);
+  if ([trailingPoints, byePoints, forfeitPoints].some((n) => Number.isNaN(n))) {
     return { error: 'Els punts de bye, incompareixença i posicions restants han de ser nombres' };
   }
   const n = parseInt(st.teamN, 10);
   if (st.teamRule === 'top_n' && !(n >= 1)) return { error: 'Indica quants membres compten per equip' };
   return {
-    scoring: { positionPoints, trailingPoints, byePoints, forfeitPoints, ...(byeSpread ? { byeSpread } : {}) },
+    scoring: { positionPoints, trailingPoints, byePoints, forfeitPoints },
     standingsScope: st.scope,
     teamAggregation: st.teamRule === 'top_n' ? { rule: 'top_n', n } : { rule: st.teamRule },
   };
@@ -134,14 +132,11 @@ function PuntuacioPicker({ value, onChange }: { value: PuntuacioState; onChange:
             value={value.positionPoints}
             onChange={(e) => set({ positionPoints: e.target.value })}
           />
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="grid grid-cols-3 gap-3">
             <Input label="Posicions restants" type="number" step="any" value={value.trailingPoints}
               onChange={(e) => set({ trailingPoints: e.target.value })} />
             <Input label="Bye" type="number" step="any" value={value.byePoints}
               onChange={(e) => set({ byePoints: e.target.value })} />
-            <Input label="Diferència per bye" type="number" step="any" value={value.byeSpread}
-              hint="Suma a la diferència de punts; no compta per a la mitjana"
-              onChange={(e) => set({ byeSpread: e.target.value })} />
             <Input label="Incompareixença" type="number" step="any" value={value.forfeitPoints}
               onChange={(e) => set({ forfeitPoints: e.target.value })} />
           </div>

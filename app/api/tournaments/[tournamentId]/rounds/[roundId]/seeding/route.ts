@@ -6,7 +6,7 @@ import type { PhaseConfig, SeedingCriterion } from '@/db/types';
 import { requireTournamentAccess } from '@/lib/authz';
 import { computeStandings } from '@/lib/pairing/standings';
 import { DEFAULT_SEEDING_CRITERIA } from '@/lib/pairing/types';
-import { loadEntrants, loadQuestionMetrics, loadScoredMatches } from '@/lib/db-helpers';
+import { loadByeSpread, loadEntrants, loadQuestionMetrics, loadScoredMatches } from '@/lib/db-helpers';
 
 type Params = { params: Promise<{ tournamentId: string; roundId: string }> };
 
@@ -49,6 +49,7 @@ export async function GET(req: Request, { params }: Params) {
     tiebreakers: phase.tiebreakers,
     questionMetrics: metrics,
     answers,
+    byeSpread: await loadByeSpread(tournamentId),
   });
   const standingByEntry = new Map(standings.map((s) => [s.entryId, s]));
 

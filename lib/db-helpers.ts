@@ -45,6 +45,15 @@ async function loadTagIdsByEntry(entryIds: string[]): Promise<Map<string, string
   return result;
 }
 
+/** Diferència de punts que suma cada bye en aquesta competició (Ajustos). */
+export async function loadByeSpread(tournamentId: string): Promise<number> {
+  const [row] = await db
+    .select({ byeSpread: tournaments.byeSpread })
+    .from(tournaments)
+    .where(eq(tournaments.id, tournamentId));
+  return row?.byeSpread ?? 0;
+}
+
 /** Les etiquetes d'una competició. */
 export async function loadTags(tournamentId: string): Promise<Tag[]> {
   return db

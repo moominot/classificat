@@ -79,11 +79,6 @@ export interface ScoringConfig {
   trailingPoints: number;
   byePoints: number;
   forfeitPoints: number;
-  /**
-   * Diferència de punts que dona un bye (p. ex. 50). No compta com a partida
-   * jugada, així que no altera la mitjana. Absent = 0.
-   */
-  byeSpread?: number;
 }
 
 /** L'1v1 clàssic: victòria 1, derrota 0, empat 0,5 pel repartiment. */
@@ -268,6 +263,8 @@ export interface TemplateConfig {
     visibility: TournamentVisibility;
     presencePendingAs: PresencePendingAs;
     askPresence: boolean;
+    /** Diferència de punts per bye (`tournaments.byeSpread`). Absent = el valor per defecte. */
+    byeSpread?: number;
   };
   tags: string[];
   phases: TemplatePhase[];

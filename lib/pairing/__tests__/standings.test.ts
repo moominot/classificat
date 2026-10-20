@@ -106,23 +106,35 @@ check('amb 4 jugadors, contra la mitjana dels altres', Math.round(spreads[0] * 1
 check('els spreads d\'una taula sumen zero', Math.abs(spreads.reduce((a, b) => a + b, 0)) < 1e-9, true);
 check('punts de la taula de 4', s4.map((s) => [s.entryId, s.points]), [['a', 3], ['b', 2], ['c', 1], ['d', 0]]);
 
+const ambBye = (byeSpread?: number) =>
+  computeStandings({
+    entryIds: ['a', 'b'],
+    tiebreakers: ['spread'],
+    byeSpread,
+    matches: [
+      makeMatch('m5', [['a', 1, 420, 'win'], ['b', 2, 380, 'loss']], SCRABBLE),
+      makeMatch('m6', [['b', 1, 0, 'bye']], SCRABBLE),
+    ],
+  }).find((s) => s.entryId === 'b')!.metrics.spread;
+check('el bye suma la diferència configurada', ambBye(50), 10);
+check('sense configurar, el bye no hi suma', ambBye(), -40);
+check(
+  'el bye no altera la mitjana',
+  computeStandings({
+    entryIds: ['b'],
+    tiebreakers: [],
+    byeSpread: 50,
+    matches: [
+      makeMatch('m7', [['a', 1, 420, 'win'], ['b', 2, 380, 'loss']], SCRABBLE),
+      makeMatch('m8', [['b', 1, 0, 'bye']], SCRABBLE),
+    ],
+  })[0].metrics.avg_score,
+  380
+);
+
 // ─── Desempats ────────────────────────────────────────────────────────────────
 
 console.log('\n=== Desempats ===');
-// El bye pot donar diferència de punts, però no compta per a la mitjana.
-{
-  const ambBye = computeStandings({
-    entryIds: ['A'],
-    matches: [
-      makeMatch('mb1', [['A', 1, 400, 'win'], ['X', 2, 300, 'loss']], SCRABBLE),
-      makeMatch('mb2', [['A', 1, 0, 'bye']], { ...SCRABBLE, byeSpread: 50 }),
-    ],
-    tiebreakers: [],
-  });
-  check('el bye suma la diferència de la fase', ambBye[0].metrics.spread, 150);
-  check('i no altera la mitjana', ambBye[0].metrics.avg_score, 400);
-}
-
 const tied = computeStandings({
   entryIds: ['a', 'b'],
   tiebreakers: ['spread'],

@@ -65,6 +65,7 @@ export async function snapshotTournament(tournamentId: string): Promise<Template
       visibility: tournament.visibility,
       presencePendingAs: tournament.presencePendingAs,
       askPresence: tournament.askPresence,
+      byeSpread: tournament.byeSpread,
     },
     questions: questionRows.map((q) => ({
       isBuiltin: q.isBuiltin,

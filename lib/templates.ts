@@ -1,12 +1,10 @@
 import type {
   GameProfileQuestion,
   PhaseConfig,
-  PresencePendingAs,
   RoundRobinConfig,
   ScoringConfig,
   TemplateConfig,
   TemplatePhase,
-  TournamentVisibility,
 } from '@/db/types';
 import { DEFAULT_SCORING } from '@/db/types';
 import { isPowerOfTwo } from '@/lib/position-split';
@@ -53,7 +51,7 @@ function mapRefs(
 // ─── Desar com a plantilla ────────────────────────────────────────────────────
 
 export interface TournamentSnapshot {
-  settings: { visibility: TournamentVisibility; presencePendingAs: PresencePendingAs; askPresence: boolean };
+  settings: TemplateConfig['settings'];
   questions: (GameProfileQuestion & { isBuiltin: boolean })[];
   /** En ordre. */
   phases: (TemplatePhase & { id: string })[];

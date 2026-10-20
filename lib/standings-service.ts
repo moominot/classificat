@@ -95,6 +95,7 @@ export async function loadStandings(
     tiebreakers: referencePhase?.tiebreakers ?? [],
     questionMetrics: metrics,
     answers,
+    byeSpread: tournament.byeSpread,
   });
 
   const entrantById = new Map(entrants.map((e) => [e.id, e]));

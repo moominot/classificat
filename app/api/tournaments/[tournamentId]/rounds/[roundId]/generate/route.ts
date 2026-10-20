@@ -8,7 +8,7 @@ import { requireTournamentAccess } from '@/lib/authz';
 import { generatePairings } from '@/lib/pairing/engine';
 import { computeStandings } from '@/lib/pairing/standings';
 import type { CsvMatchRow, Entrant, PairingContext, Phase as EnginePhase } from '@/lib/pairing/types';
-import { loadEntrants, loadPreviousMatches, loadQuestionMetrics, loadScoredMatches } from '@/lib/db-helpers';
+import { loadByeSpread, loadEntrants, loadPreviousMatches, loadQuestionMetrics, loadScoredMatches } from '@/lib/db-helpers';
 import { loadBracketGroups, splitGroupsConfig } from '@/lib/position-groups-service';
 import { isPowerOfTwo } from '@/lib/position-split';
 
@@ -94,6 +94,7 @@ export async function POST(req: Request, { params }: Params) {
     tiebreakers: phase.tiebreakers,
     questionMetrics: metrics,
     answers,
+    byeSpread: await loadByeSpread(tournamentId),
   });
 
   const enginePhase: EnginePhase = {

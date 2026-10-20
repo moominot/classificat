@@ -60,6 +60,8 @@ export async function POST(req: Request) {
     visibility: settings?.visibility ?? DEFAULT_VISIBILITY,
     presencePendingAs: settings?.presencePendingAs ?? 'present',
     askPresence: settings?.askPresence ?? true,
+    // Sense valor a la plantilla, el de la base de dades (50).
+    ...(settings?.byeSpread !== undefined ? { byeSpread: settings.byeSpread } : {}),
     createdAt: now,
     updatedAt: now,
   };

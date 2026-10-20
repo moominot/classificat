@@ -119,6 +119,8 @@ export const tournaments = sqliteTable('tournaments', {
   presencePendingAs: text('presence_pending_as').$type<PresencePendingAs>().notNull().default('present'),
   // Si es pregunta als jugadors que hi seran a la ronda següent (inici, modal i formulari de resultat).
   askPresence:   integer('ask_presence', { mode: 'boolean' }).notNull().default(true),
+  // Diferència de punts que suma un bye (al Scrabble, habitualment +50).
+  byeSpread:     integer('bye_spread').notNull().default(50),
   // Informació pública: si es deixa en blanc, no es mostra.
   location:      text('location'),
   startDate:     text('start_date'),            // AAAA-MM-DD
