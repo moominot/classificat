@@ -12,8 +12,11 @@
 - Guanya qui fa més punts sumant les dues partides (és a dir, la diferència
   de punts de l'eliminatòria és positiva).
 - Empat en el global: **mitjana de punts a favor de tot el campionat**
-  (vegeu §3.1), i si persisteix, una regla final fixa.
+  (vegeu §3.1); si persisteix, **nombre de bingos (Scrabbles)**.
 - Es juguen totes les partides: no hi ha absències ni byes per presència.
+  L'única excepció és l'abandonament (§3.6).
+- **Sempre per sorteig**, també a la primera fase.
+- **No es pot començar** si el nombre de jugadors no és potència de 2 (§3.4).
 
 Exemple amb 32 jugadors (5 fases × 2 rondes = 10 partides cadascú):
 
@@ -37,7 +40,7 @@ ha d'evitar revanxes.
 | Aparellar dins de cada etiqueta (`scope: 'intra_tag'`) | ✅ Suís, Rei del turó, RR |
 | Mètriques `spread` i `avg_score` | ✅ |
 | Filtrar la classificació per etiqueta | ✅ |
-| **Sorteig aleatori** dins l'etiqueta | ❌ cap mètode no ho fa: el Rei del turó aparella 1–2, 3–4 per classificació; el Suís, per grups de punts |
+| **Sorteig aleatori** dins l'etiqueta | 🟡 el Round Robin `intra_tag` ja té les rondes de Berger de cada grup: només cal triar-ne una a l'atzar (§4.3) |
 | **Anada i tornada** (mateix rival a la ronda següent) | ❌ i el Suís amb «evitar revanxes» faria just el contrari |
 | **Decidir l'eliminatòria** pel global | ❌ la classificació ordena per punts (victòries), no per eliminatòria |
 | **Assignar etiquetes automàticament** en acabar la fase | ❌ |
@@ -58,9 +61,17 @@ peces. La part nova, però, és petita i acotada.
 Si el global és empat, A₁ + A₂ = B₁ + B₂, i per tant la mitjana de punts a
 favor de les dues partides és **idèntica** per als dos jugadors. El desempat
 ha de ser la mitjana **de tot el campionat** (totes les partides jugades fins
-aleshores, aquesta eliminatòria inclosa). Encara pot empatar (és rar):
-cal una regla final, p. ex. qui ha fet més punts a la tornada, el rànquing
-inicial o sorteig.
+aleshores, aquesta eliminatòria inclosa).
+
+**Decidit:** si també empata, el **nombre de bingos (Scrabbles)**. Detalls:
+
+- És la mètrica `metric:bingos`, que surt de la pregunta «Bingos» del perfil
+  Scrabble. El campionat l'ha de tenir: la plantilla l'ha de portar i, si
+  falta, l'acció de tancar l'eliminatòria ho ha d'avisar.
+- Per coherència amb la mitjana, es compten els de **tot el campionat**.
+- Els bingos són enters petits, així que empaten amb molta més facilitat que
+  la mitjana. Que s'arribi a aquest punt ja és molt rar, però si passa cal
+  una sortida: proposo que ho decideixi l'admin, amb un avís.
 
 ### 3.2 Qui passa es decideix per eliminatòria, no per la classificació del grup
 
@@ -86,9 +97,16 @@ canvi accidental desquadra el sorteig). Proposta:
 ### 3.4 N que no és potència de 2
 
 Amb 24 jugadors: 12 / 12 → 6 / 6 → **3 / 3**, i un grup de 3 no es pot
-emparellar. Opcions: exigir potència de 2, admetre byes (qui en té un puja a
-la meitat alta? baixa?), o un triangular a l'última fase. Decisió pendent;
-per començar, n'hi ha prou amb exigir potència de 2.
+emparellar.
+
+**Decidit:** el campionat **no es pot començar** si el nombre de jugadors
+actius no és potència de 2. A més, cal que el nombre de fases sigui log₂ N:
+una plantilla de 5 fases només serveix per a 32. Per això convé que les fases
+es generin en començar, a partir de N (16 → 4 fases, 32 → 5, 64 → 6), en
+lloc de venir fixades a la plantilla.
+
+La comprovació es fa en generar la primera ronda de la primera fase, al
+servidor: la interfície també ho mostra, però no n'hi ha prou.
 
 ### 3.5 Puntuació
 
@@ -98,6 +116,32 @@ l'`order` de l'etiqueta de grup i, dins del grup, per la fase en curs
 (diferència, mitjana). Al final, cada grup és d'un sol jugador i l'ordre dels
 grups **és** la classificació final.
 
+### 3.6 Abandonaments
+
+**Decidit:** els rivals de qui abandona obtenen **bye**.
+
+Com encaixa amb el que ja hi ha:
+
+- Abandonar = desactivar la inscripció (`entries.isActive = false`, ja
+  existeix). La generació ja deixa fora els inactius.
+- El grup queda senar i `bergerSchedule()` ja hi afegeix un rival fantasma
+  (`__bye__`): qui li toca té bye. Com que la ronda és per sorteig, qui
+  rep el bye també és a l'atzar. No cal programar res aquí.
+- Qui té bye **guanya l'eliminatòria**. Qui ha abandonat va sempre a la
+  meitat baixa i hi continua fins al final, de manera que els grups mantenen
+  la mida.
+- Si abandona entre l'anada i la tornada, la tornada és bye i l'eliminatòria
+  és per al rival, faci el que faci el resultat de l'anada. L'anada jugada
+  continua comptant per a la mitjana.
+
+**Compte amb «punts segons els ajustaments».** L'únic ajustament que hi ha
+és `byePoints`, que són **punts de classificació** (victòries). En aquest
+format no ordenen res (§3.5), així que no tenen cap efecte. El bye tampoc no
+compta per a la diferència ni per a la mitjana: està bé, perquè així la
+mitjana no es distorsiona. Si es vol que el bye doni alguna cosa que compti
+(p. ex. +50 de diferència, com és habitual a Scrabble), cal un ajustament
+nou.
+
 ## 4. Proposta tècnica
 
 Peces genèriques, reutilitzables fora d'aquest format:
@@ -106,12 +150,22 @@ Peces genèriques, reutilitzables fora d'aquest format:
 2. **Classificació per grups apilats**: un bloc per etiqueta de grup, en
    ordre, amb color per bloc i la classificació interna de cada grup. Serveix
    també per a qualsevol campionat amb grups.
-3. **Sorteig aleatori**: opció `pairingOrder: 'standings' | 'random'` al Rei
-   del turó (`intra_tag`). Aleatori + consecutius = sorteig. La llavor es desa
-   a la fase per poder-lo reproduir.
-4. **Anada i tornada**: `legs: 1 | 2` a la fase. A la ronda parella de la
-   fase el motor no aparella: copia la ronda anterior amb els seients
-   girats. Funciona per a qualsevol mètode.
+3. **Sorteig = una ronda de Round Robin triada a l'atzar** dins de cada grup
+   (Round Robin `intra_tag`, opció nova `randomRound`). Reaprofita
+   `bergerSchedule()` tal com és. Detalls:
+   - Cada jugador té la mateixa probabilitat, 1/(n−1), de trobar cada rival.
+     En canvi, amb l'ordre de la llista fix només són possibles n−1
+     emparellaments dels molts que n'hi ha. Per evitar-ho, n'hi ha prou amb
+     **barrejar la llista** abans de calcular la ronda: és una línia.
+   - La llavor (o la ronda triada i l'ordre) es desa a la ronda, perquè el
+     sorteig es pugui comprovar.
+4. **Anada i tornada**: `doubleRound` ja fa que la ronda r + (n−1) sigui la
+   ronda r amb els seients girats. Tot i així, la tornada ha de **copiar
+   l'anada** (girant els seients) en lloc de tornar a calcular Berger. Si
+   algú abandona entre les dues partides, la llista canvia (queda senar, hi
+   entra el fantasma) i Berger donaria parelles completament diferents. A més,
+   `loadEntrants()` no té `ORDER BY`. Copiant, el que ha abandonat simplement
+   es converteix en un bye.
 5. **Tancar eliminatòria i partir grups**: acció a la fase (o automàtica en
    tancar l'última ronda) que:
    - exigeix que **totes** les partides de la fase tinguin resultat;
@@ -153,11 +207,19 @@ pot portar un paràmetre «nombre de jugadors» que generi les fases.
 
 Amb 1–3 ja es pot jugar el campionat configurant les fases a mà.
 
-## 6. Decisions pendents
+## 6. Decisions
 
-- Desempat final si la mitjana global també empata.
-- N que no és potència de 2.
-- Si un jugador abandona a mig campionat: amb quin marcador compta la partida
-  no jugada (el global en depèn)?
-- Primera fase: sorteig aleatori o per rànquing (1 contra 17, 2 contra 18…)?
+Preses (2026-10-20):
+
+- N ha de ser potència de 2; si no, no es pot començar (§3.4).
+- Desempat: mitjana de punts a favor del campionat → bingos (§3.1).
+- Abandonament: els rivals tenen bye i guanyen l'eliminatòria (§3.6).
+- Sempre per sorteig, també a la primera fase, amb una ronda de Round Robin
+  triada a l'atzar dins de cada grup (§4.3).
+
+Pendents:
+
+- Si empaten també els bingos: decideix l'admin? (§3.1)
+- El bye ha de donar diferència de punts (p. ex. +50)? Cal un ajustament
+  nou (§3.6).
 - Plantilles i perfils de joc: fusionar-los o mantenir-los separats.
