@@ -694,7 +694,7 @@ function describeConfig(config: PhaseConfig, tagMap: Map<string, string>): strin
       : `Sorteig global${voltes}${partir}`;
   }
   if (config.method === 'round_robin') {
-    const doble = config.doubleRound ? ' (doble volta)' : '';
+    const doble = config.doubleRound ? (config.consecutiveLegs ? ' (anada i tornada)' : ' (doble volta)') : '';
     if (config.scope === 'intra_tag') return `Round Robin intra-etiqueta${doble} (${noms(config.tagIds)})`;
     if (config.scope === 'inter_tag') return `Round Robin interetiquetes${doble} (${noms(config.tagIds)})`;
     return `Round Robin global${doble}`;
@@ -775,6 +775,8 @@ function EditarFaseForm({
   const [rrDoble, setRrDoble] = useState(rrConfig?.doubleRound ?? false);
   const [rrSorteig, setRrSorteig] = useState(rrConfig?.randomDraw ?? false);
   const [rrPartir, setRrPartir] = useState(rrConfig?.splitGroups ?? false);
+  // Les fases antigues a doble volta la juguen al final; les noves, seguida.
+  const rrSeguides = rrConfig?.doubleRound ? !!rrConfig.consecutiveLegs : true;
   const [rrTagExclusions, setRrTagExclusions] = useState<TagPairExclusion[]>(rrConfig?.tagExclusions ?? []);
 
   const kothConfig = fase.method === 'king_of_the_hill' ? (fase.config as KingOfTheHillConfig) : null;
@@ -817,6 +819,7 @@ function EditarFaseForm({
         tagExclusions: rrScope === 'inter_tag' ? cleanTagExclusions(rrTagExclusions) : [],
         randomDraw: rrSorteig && rrScope !== 'inter_tag',
         splitGroups: rrSorteig && rrPartir && rrScope !== 'inter_tag',
+        ...(rrDoble && rrSeguides ? { consecutiveLegs: true } : {}),
         ...(rrConfig?.resultTagIds ? { resultTagIds: rrConfig.resultTagIds } : {}),
       };
     }
@@ -967,6 +970,7 @@ function EditarFaseForm({
           setSorteig={setRrSorteig}
           partir={rrPartir}
           setPartir={setRrPartir}
+          seguides={rrSeguides}
           tags={tags}
           tagExclusions={rrTagExclusions}
           setTagExclusions={setRrTagExclusions}
@@ -1096,6 +1100,7 @@ function NovaFaseForm({
         tagExclusions: rrScope === 'inter_tag' ? cleanTagExclusions(rrTagExclusions) : [],
         randomDraw: rrSorteig && rrScope !== 'inter_tag',
         splitGroups: rrSorteig && rrPartir && rrScope !== 'inter_tag',
+        ...(rrDoble ? { consecutiveLegs: true } : {}),
       };
     }
     if (metode === 'king_of_the_hill') {
@@ -1245,6 +1250,7 @@ function NovaFaseForm({
           setSorteig={setRrSorteig}
           partir={rrPartir}
           setPartir={setRrPartir}
+          seguides
           tags={tags}
           tagExclusions={rrTagExclusions}
           setTagExclusions={setRrTagExclusions}
@@ -1773,7 +1779,7 @@ function ConfigSwissFide({
 }
 
 function ConfigRoundRobin({
-  scope, setScope, tagIds, setTagIds, doble, setDoble, sorteig, setSorteig, partir, setPartir, tags, tagExclusions, setTagExclusions,
+  scope, setScope, tagIds, setTagIds, doble, setDoble, sorteig, setSorteig, partir, setPartir, seguides = true, tags, tagExclusions, setTagExclusions,
 }: {
   scope: 'all' | 'intra_tag' | 'inter_tag';
   setScope: (v: 'all' | 'intra_tag' | 'inter_tag') => void;
@@ -1785,6 +1791,8 @@ function ConfigRoundRobin({
   setSorteig: (v: boolean) => void;
   partir: boolean;
   setPartir: (v: boolean) => void;
+  /** Doble volta sense sorteig com a anada i tornada seguides (fases noves). */
+  seguides?: boolean;
   tags: Tag[];
   tagExclusions: TagPairExclusion[];
   setTagExclusions: (v: TagPairExclusion[]) => void;
@@ -1835,7 +1843,22 @@ function ConfigRoundRobin({
             </span>
           </span>
         ) : (
-          'Doble volta (cada parella juga dos cops)'
+          seguides ? (
+            <span>
+              <span className="block">Anada i tornada</span>
+              <span className="block text-xs text-ink-3">
+                Cada parella juga dues partides seguides, amb els seients girats: les dues rondes es creen i es generen
+                alhora. La fase necessita el doble de rondes que un round robin d&apos;una volta.
+              </span>
+            </span>
+          ) : (
+            <span>
+              <span className="block">Doble volta</span>
+              <span className="block text-xs text-ink-3">
+                Cada parella juga dos cops; la segona volta es juga al final, quan s&apos;acaba la primera.
+              </span>
+            </span>
+          )
         )}
       </label>
       {sorteig && (

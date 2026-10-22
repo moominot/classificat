@@ -164,6 +164,14 @@ export interface RoundRobinConfig {
   doubleRound: boolean;
   tagExclusions: TagPairExclusion[];
   /**
+   * Amb `doubleRound`: la segona partida contra el mateix rival es juga a la
+   * ronda següent (anada i tornada, seients girats) en lloc de repetir tot el
+   * cicle al final. Les dues rondes es creen i s'aparellen alhora. Absent =
+   * el comportament antic (segona volta al final), per no canviar el
+   * calendari de les fases que ja existien.
+   */
+  consecutiveLegs?: boolean;
+  /**
    * Sorteig: en lloc de tot el round robin, una sola ronda a l'atzar dins de
    * cada etiqueta (o de tothom). Amb `doubleRound`, la segona ronda de la
    * fase és la tornada: les mateixes parelles amb els seients girats

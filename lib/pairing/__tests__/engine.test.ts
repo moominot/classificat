@@ -335,5 +335,27 @@ console.log('\n=== Tornada ===');
   check('una tercera ronda sobra', [tercera.matches.length, tercera.warnings[0]?.type], [0, 'incomplete_round_robin']);
 }
 
+console.log('\n=== Round Robin amb anada i tornada seguides ===');
+{
+  const entrants = ['P1', 'P2', 'P3', 'P4'].map((id) => makeEntrant(id));
+  const config: RoundRobinConfig = {
+    method: 'round_robin', scope: 'all', tagIds: [], doubleRound: true, tagExclusions: [], consecutiveLegs: true,
+  };
+  const phase = makePhase('round_robin', config);
+  const anada1 = generateRoundRobinPairings({ ...makeCtx(phase, entrants, []), roundNumber: 1 });
+  check('la ronda 1 és la 1a de Berger', anada1.matches.map((m) => m.entryIds), bergerSchedule(['P1', 'P2', 'P3', 'P4'], 1, false)!.map((m) => m.entryIds));
+
+  const previous: PreviousMatch[] = anada1.matches.map((m) => ({ roundNumber: 1, phaseId: 'phase1', entryIds: m.entryIds, ranks: [1, 2] }));
+  const tornada1 = generateRoundRobinPairings({ ...makeCtx(phase, entrants, [], previous), roundNumber: 2 });
+  check('la ronda 2 és la tornada de la 1', tornada1.matches.map((m) => m.entryIds), anada1.matches.map((m) => [...m.entryIds].reverse()));
+
+  const anada2 = generateRoundRobinPairings({ ...makeCtx(phase, entrants, [], previous), roundNumber: 3 });
+  check('la ronda 3 és la 2a de Berger', anada2.matches.map((m) => m.entryIds), bergerSchedule(['P1', 'P2', 'P3', 'P4'], 2, false)!.map((m) => m.entryIds));
+
+  // Sense el senyal, la doble volta antiga: la ronda 2 és la 2a de Berger.
+  const antiga = generateRoundRobinPairings({ ...makeCtx(makePhase('round_robin', { ...config, consecutiveLegs: undefined }), entrants, []), roundNumber: 2 });
+  check('les fases antigues no canvien', antiga.matches.map((m) => m.entryIds), bergerSchedule(['P1', 'P2', 'P3', 'P4'], 2, true)!.map((m) => m.entryIds));
+}
+
 console.log(failed === 0 ? '\n✓ Tots els tests passen.\n' : `\n✗ ${failed} fallades.\n`);
 process.exit(failed === 0 ? 0 : 1);

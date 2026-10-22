@@ -256,7 +256,11 @@ function describeScope(config: PhaseConfig, tagNameById: Map<string, string>): s
     return `Rival per sorteig${on}${voltes}.${partir}`;
   }
   if (config.method === 'round_robin') {
-    const volta = config.doubleRound ? ' a doble volta' : '';
+    const volta = config.doubleRound
+      ? config.consecutiveLegs
+        ? ' amb anada i tornada (les dues partides contra el mateix rival, seguides)'
+        : ' a doble volta'
+      : '';
     if (config.scope === 'intra_tag') return `Round Robin${volta}, intra-etiqueta (${noms(config.tagIds)}).`;
     if (config.scope === 'inter_tag') return `Round Robin${volta}, interetiquetes (${noms(config.tagIds)}).`;
     return `Round Robin${volta}, tots contra tots.`;

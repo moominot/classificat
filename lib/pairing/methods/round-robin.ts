@@ -39,6 +39,22 @@ export function generateRoundRobinPairings(ctx: PairingContext): PairingEngineRe
     return generateDraw(ctx, config, relativeRound);
   }
 
+  // Anada i tornada seguides: les rondes senars són les de Berger, una
+  // volta; cada ronda parella copia l'anterior amb els seients girats.
+  if (config.doubleRound && config.consecutiveLegs) {
+    if (relativeRound % 2 === 0) return returnLeg(ctx, warnings);
+    return singleRoundRobin(ctx, (relativeRound + 1) / 2, { ...config, doubleRound: false }, warnings);
+  }
+
+  return singleRoundRobin(ctx, relativeRound, config, warnings);
+}
+
+function singleRoundRobin(
+  ctx: PairingContext,
+  relativeRound: number,
+  config: RoundRobinConfig,
+  warnings: PairingWarning[]
+): PairingEngineResult {
   let matches: GeneratedMatch[];
 
   if (config.scope === 'intra_tag') {
