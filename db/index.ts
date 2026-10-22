@@ -41,8 +41,10 @@ export type DB = typeof db;
 try {
   migrate(db, { migrationsFolder: path.join(process.cwd(), 'db/migrations') });
 } catch (err) {
-  // Una altra instància ha aplicat la mateixa migració mentrestant.
-  if (!/already exists/i.test(String((err as Error)?.message))) throw err;
+  // Una altra instància ha aplicat la mateixa migració mentrestant. Drizzle
+  // embolcalla l'error d'SQLite: el motiu és a `cause`, no al missatge.
+  const motiu = `${(err as Error)?.message} ${((err as Error)?.cause as Error | undefined)?.message ?? ''}`;
+  if (!/already exists|duplicate column/i.test(motiu)) throw err;
 }
 
 // ─── Sembra ───────────────────────────────────────────────────────────────────
