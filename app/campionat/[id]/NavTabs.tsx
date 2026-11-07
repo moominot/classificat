@@ -11,6 +11,7 @@ const CONTENT_TABS = [
   { key: 'jugadors', label: 'Jugadors' },
   { key: 'rondes', label: 'Rondes' },
   { key: 'classificacio', label: 'Classificació' },
+  { key: 'format', label: 'Format' },
 ];
 
 export default function NavTabs({ id }: { id: string }) {
