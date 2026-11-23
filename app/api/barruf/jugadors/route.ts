@@ -35,7 +35,10 @@ async function loadRegistre(apiUrl: string): Promise<BarrufJugador[]> {
 
   const res = await fetch(`${apiUrl}/jugadors`);
   if (!res.ok) throw new Error(`El BARRUF ha respost amb un error (${res.status})`);
-  const jugadors = (await res.json()) as BarrufJugador[];
+  // L'API embolcalla el registre: {data, edicio, temporada, jugadors: [...]}.
+  const body = await res.json();
+  const jugadors: unknown = Array.isArray(body) ? body : body?.jugadors;
+  if (!Array.isArray(jugadors)) throw new Error('Format inesperat del BARRUF');
   cache = { fetchedAt: Date.now(), jugadors };
   return jugadors;
 }
