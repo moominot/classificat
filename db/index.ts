@@ -3,20 +3,21 @@ import { drizzle } from 'drizzle-orm/better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 import * as schema from './schema';
 import path from 'path';
+import { DATA_DIR, DB_PATH, applyPendingImport } from '../lib/db-files';
 import fs from 'fs';
 import { v4 as uuid } from 'uuid';
 import { hashPassword } from '../lib/auth';
 import { BUILTIN_TEMPLATES } from './builtin-templates';
 
 // Determina la ruta de la base de dades
-const DATA_DIR = process.env.DATA_DIR ?? path.join(process.cwd(), '.data');
-const DB_PATH = path.join(DATA_DIR, 'classificat.db');
-
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-const sqlite = new Database(DB_PATH);
+// Una importació demanada des de l'app s'aplica aquí, abans d'obrir la BD.
+applyPendingImport();
+
+export const sqlite = new Database(DB_PATH);
 
 sqlite.pragma('journal_mode = WAL');
 sqlite.pragma('foreign_keys = ON');

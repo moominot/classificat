@@ -67,14 +67,14 @@ export default function AccountMenu({ displayName, role }: { displayName: string
               Preferències
             </Link>
             {role === 'superadmin' && (
-              <>
-                <Link href="/usuaris" onClick={() => setOpen(false)} className="block px-3.5 py-2 text-sm text-ink-2 hover:bg-surface-2 transition-colors">
-                  Usuaris
-                </Link>
-                <Link href="/configuracio" onClick={() => setOpen(false)} className="block px-3.5 py-2 text-sm text-ink-2 hover:bg-surface-2 transition-colors">
-                  Configuració
-                </Link>
-              </>
+              <Link href="/usuaris" onClick={() => setOpen(false)} className="block px-3.5 py-2 text-sm text-ink-2 hover:bg-surface-2 transition-colors">
+                Usuaris
+              </Link>
+            )}
+            {(role === 'superadmin' || role === 'admin') && (
+              <Link href="/configuracio" onClick={() => setOpen(false)} className="block px-3.5 py-2 text-sm text-ink-2 hover:bg-surface-2 transition-colors">
+                Configuració
+              </Link>
             )}
           </nav>
           <div className="border-t border-border py-1">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Button from '@/components/ui/Button';
 import Input from '@/components/ui/Input';
@@ -10,9 +10,11 @@ import { readError } from '@/lib/http';
 export default function ConfiguracioClient({
   barrufApiUrl,
   barrufApiKeyConfigured,
+  isSuperadmin,
 }: {
   barrufApiUrl: string;
   barrufApiKeyConfigured: boolean;
+  isSuperadmin: boolean;
 }) {
   const router = useRouter();
   const [apiUrl, setApiUrl] = useState(barrufApiUrl);
@@ -24,6 +26,62 @@ export default function ConfiguracioClient({
   const [test, setTest] = useState<{ status: 'idle' | 'loading' | 'ok' | 'error'; message?: string }>({
     status: 'idle',
   });
+
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [dbState, setDbState] = useState<{ status: 'idle' | 'loading' | 'restarting' | 'error'; message?: string }>({
+    status: 'idle',
+  });
+
+  /** Espera que l'app tornï a respondre després del reinici i va a l'entrada. */
+  async function waitForRestart() {
+    setDbState({ status: 'restarting', message: "Base de dades importada. L'aplicació es reinicia…" });
+    await new Promise((r) => setTimeout(r, 2500));
+    for (let i = 0; i < 40; i++) {
+      try {
+        const res = await fetch('/login', { cache: 'no-store' });
+        if (res.ok) {
+          window.location.href = '/login';
+          return;
+        }
+      } catch {
+        // encara reiniciant-se
+      }
+      await new Promise((r) => setTimeout(r, 1500));
+    }
+    setDbState({
+      status: 'error',
+      message: "L'aplicació no ha tornat a respondre. Si no corre amb reinici automàtic (Docker), arrenca-la a mà.",
+    });
+  }
+
+  async function handleImport(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file) return;
+
+    const ok = window.confirm(
+      `Importar "${file.name}" SUBSTITUIRÀ totes les dades actuals (competicions, comptes, resultats) ` +
+        `i reiniciarà l'aplicació. Se'n fa una còpia automàtica de l'actual al servidor.\n\nVols continuar?`
+    );
+    if (!ok) return;
+
+    setDbState({ status: 'loading' });
+    try {
+      const res = await fetch('/api/database/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: file,
+      });
+      if (!res.ok) {
+        setDbState({ status: 'error', message: await readError(res, "No s'ha pogut importar la base de dades") });
+        return;
+      }
+    } catch {
+      setDbState({ status: 'error', message: "No s'ha pogut enviar el fitxer" });
+      return;
+    }
+    await waitForRestart();
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -77,6 +135,7 @@ export default function ConfiguracioClient({
         <p className="text-sm text-ink-3 mt-1">Ajustos d&apos;abast general de l&apos;aplicació.</p>
       </div>
 
+      {isSuperadmin && (
       <Card>
         <CardHeader><CardTitle>Connexió amb el BARRUF</CardTitle></CardHeader>
         <p className="text-sm text-ink-3 -mt-2 mb-4">
@@ -113,6 +172,33 @@ export default function ConfiguracioClient({
           {test.status === 'ok' && <p className="text-sm text-win">{test.message}</p>}
           {test.status === 'error' && <p className="text-sm text-loss">{test.message}</p>}
         </form>
+      </Card>
+      )}
+
+      <Card>
+        <CardHeader><CardTitle>Còpia de seguretat de la base de dades</CardTitle></CardHeader>
+        <p className="text-sm text-ink-3 -mt-2 mb-4">
+          Exporta tota la base de dades en un fitxer, o importa'n una per substituir l&apos;actual
+          (p. ex. en passar a un altre ordinador). Les imatges pujades no hi van incloses. El fitxer
+          conté els comptes i la clau del BARRUF: guarda&apos;l amb cura.
+        </p>
+        <div className="flex items-center gap-2 flex-wrap">
+          <a href="/api/database/export" download>
+            <Button type="button" variant="secondary">Exporta la BD</Button>
+          </a>
+          <Button
+            type="button"
+            variant="danger"
+            loading={dbState.status === 'loading'}
+            disabled={dbState.status === 'restarting'}
+            onClick={() => fileRef.current?.click()}
+          >
+            Importa una BD…
+          </Button>
+          <input ref={fileRef} type="file" accept=".db,.sqlite,.sqlite3" className="hidden" onChange={handleImport} />
+        </div>
+        {dbState.status === 'restarting' && <p className="text-sm text-win mt-3">{dbState.message}</p>}
+        {dbState.status === 'error' && <p className="text-sm text-loss mt-3">{dbState.message}</p>}
       </Card>
     </div>
   );
