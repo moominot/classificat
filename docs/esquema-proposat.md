@@ -283,7 +283,7 @@ d'existir com a columnes: passen a ser **preguntes amb agregació** i mètriques
    propietari o membre de `tournament_admins`. Afegir-ho ara evita haver de repassar després
    totes les rutes ja escrites.
 4. ~~Desempats basats en oponents amb més de dos participants~~ — **resolt (2026-09-08):
-   desactivats.** Buchholz, Buchholz mediana i Sonneborn-Berger **no estan disponibles** en fases
+   desactivats.** Buchholz, Buchholz medià i Sonneborn-Berger **no estan disponibles** en fases
    amb `participants_per_match > 2`. Cada desempat del registre declara la seva aplicabilitat i
    l'editor de fases només ofereix els vàlids; a més, es valida en desar, perquè canviar els
    participants per partida d'una fase ja configurada no hi deixi un desempat impossible.

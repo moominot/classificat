@@ -43,7 +43,7 @@ export function resolveTiebreaker(key: string, label?: string): TiebreakerDef | 
 /**
  * Els desempats que es poden oferir en una fase.
  *
- * Els basats en oponents (Buchholz, mediana, Berger, encontre directe) no
+ * Els basats en oponents (Buchholz, Buchholz medià, Berger, encontre directe) no
  * apareixen quan la fase té taules de més de dos: la noció d'oponent deixa de
  * ser única (§12.10). Cal validar-ho també en desar, perquè canviar els
  * participants per partida d'una fase ja configurada no hi deixi un desempat

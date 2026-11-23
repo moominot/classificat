@@ -31,7 +31,7 @@ export const buchholz: TiebreakerDef = {
 /** Buchholz descartant el millor i el pitjor oponent. */
 export const medianBuchholz: TiebreakerDef = {
   key: 'median_buchholz',
-  label: 'Buchholz mediana',
+  label: 'Buchholz medià',
   description:
     "Com el Buchholz, però descartant el rival amb més punts i el que en té menys (si n'has tingut almenys tres). Així un sol rival excepcional o molt fluix no decideix l'empat.",
   higherIsBetter: true,

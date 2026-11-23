@@ -451,7 +451,7 @@ Els jugadors empatats sumen la mitjana dels punts de les posicions que ocupen. E
 
 Implicació tècnica: els punts de classificació **no són sempre enters**. El camp que els desa ha de ser de coma flotant (o enter multiplicat per 100), i les vistes han de formatar-los sense decimals quan no calguin ("3" i no "3,0").
 
-**Conseqüència per als desempats basats en oponents** — Buchholz, Buchholz mediana i Sonneborn-Berger assumeixen **un oponent per ronda**. Amb N participants, els oponents d'una ronda són els altres N-1 de la taula. Cal decidir com es calculen (mitjana dels oponents de la taula? suma?) o bé declarar aquests desempats **no aplicables** quan la fase té partides de més de dos. Ho recull el punt 12.9: cada desempat declara on és aplicable.
+**Conseqüència per als desempats basats en oponents** — Buchholz, Buchholz medià i Sonneborn-Berger assumeixen **un oponent per ronda**. Amb N participants, els oponents d'una ronda són els altres N-1 de la taula. Cal decidir com es calculen (mitjana dels oponents de la taula? suma?) o bé declarar aquests desempats **no aplicables** quan la fase té partides de més de dos. Ho recull el punt 12.9: cada desempat declara on és aplicable.
 
 ---
 
