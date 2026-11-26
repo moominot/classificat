@@ -5,6 +5,7 @@
 import fs from 'fs';
 import path from 'path';
 import { parseSwissPerfect } from '../swissperfect/parse';
+import { writeSwissPerfect } from '../swissperfect/write';
 import { exportResultsTsv } from '../swissperfect/export';
 
 const dir = path.join(__dirname, 'fixtures/swissperfect');
@@ -39,5 +40,12 @@ check('fila 1', [r[0], r[1], r[2], r[3], r[4], r[6], r[7], r[21], r[23], r[24], 
 const bye = rows.find((x) => x[2] === 'BYE' && x[0] === '1')!;
 check('bye', [bye[1], bye[4], bye[6], bye[7], bye[18], bye[23], bye[24], bye[28]], ['Sebastià Quetglas', '0', '0', '0', 'Victòria automàtica que no afecta a les mitjanes', '1', '0', '19']);
 check('files', rows.length - 1, 112);
+
+// Anada i tornada: llegir, escriure i tornar a llegir ha de donar el mateix.
+const out = writeSwissPerfect(t);
+check('.sco idèntic byte a byte', Buffer.compare(Buffer.from(out.sco), Buffer.from(read('manacor.sco'))), 0);
+const again = parseSwissPerfect(out);
+check('anada i tornada', JSON.stringify(again), JSON.stringify(t));
+check('.ini', Buffer.from(out.ini).toString('latin1').includes('Name=X Campionat de Scrabble Ciutat de Manacor'), true);
 
 process.exit(failed ? 1 : 0);
