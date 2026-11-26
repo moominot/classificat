@@ -83,6 +83,7 @@ export default function AjustosClient({
       <PresenciaRondes tournamentId={tournamentId} pendentsCompten={pendentsCompten} preguntaPresencia={preguntaPresencia} />
       <Administradors tournamentId={tournamentId} currentAccountId={currentAccountId} />
       <Plantilles tournamentId={tournamentId} nom={nom} />
+      <CopiaSwissPerfect tournamentId={tournamentId} />
       <ZonaPerill tournamentId={tournamentId} nom={nom} />
     </div>
   );
@@ -652,6 +653,25 @@ function Plantilles({ tournamentId, nom }: { tournamentId: string; nom: string }
           </ul>
         </div>
       )}
+    </Grup>
+  );
+}
+
+/**
+ * Còpia de seguretat per a SwissPerfect 98: un ZIP amb els fitxers .trn, .sco
+ * i .ini, per si cal continuar el campionat fora de Classificat.
+ */
+function CopiaSwissPerfect({ tournamentId }: { tournamentId: string }) {
+  return (
+    <Grup
+      titol="Còpia per a SwissPerfect 98"
+      descripcio="Baixa el campionat com a fitxers de SwissPerfect 98 (.trn, .sco i .ini en un ZIP), per continuar-lo allà si Classificat falla. Només hi caben partides d'1 contra 1."
+    >
+      <div>
+        <Button onClick={() => { window.location.href = `/api/tournaments/${tournamentId}/export/swissperfect`; }}>
+          Baixa per a SwissPerfect
+        </Button>
+      </div>
     </Grup>
   );
 }
