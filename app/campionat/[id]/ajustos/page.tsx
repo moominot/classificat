@@ -30,6 +30,7 @@ export default async function AjustosPage({ params }: { params: Promise<{ id: st
       preguntaPresencia={tournament.askPresence}
       diferenciaBye={tournament.byeSpread}
       cartell={tournament.posterUrl}
+      imatgeFons={tournament.backgroundUrl}
       colorTema={tournament.accent}
       infoPublica={{
         location: tournament.location,

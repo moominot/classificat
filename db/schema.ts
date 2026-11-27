@@ -129,6 +129,8 @@ export const tournaments = sqliteTable('tournaments', {
   info:          text('info'),                  // reglament, horaris, enllaços...
   // Cartell del campionat (/uploads/posters/...): es veu a l'inici i com a fons atenuat.
   posterUrl:     text('poster_url'),
+  // Imatge de fons (molt atenuada). Si no n'hi ha, es fa servir el cartell.
+  backgroundUrl: text('background_url'),
   // Color del tema del campionat (db/types.ts `TournamentAccent`); null = el de l'aplicació.
   accent:        text('accent').$type<TournamentAccent>(),
   createdAt:     integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),

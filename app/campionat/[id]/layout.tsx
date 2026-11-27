@@ -48,12 +48,12 @@ export default async function CampionatLayout({
         // Fons pàlid del color del tema, per sota del cartell.
         <div aria-hidden className="pointer-events-none fixed inset-0 -z-20" style={{ background: 'var(--color-page)' }} />
       )}
-      {tournament.posterUrl && (
-        // El cartell, molt atenuat, darrere de tot el contingut del campionat.
+      {(tournament.backgroundUrl ?? tournament.posterUrl) && (
+        // La imatge de fons (o, si no n'hi ha, el cartell), molt atenuada, darrere de tot el contingut.
         <div
           aria-hidden
           className="pointer-events-none fixed inset-0 -z-10 bg-center bg-no-repeat bg-cover opacity-[0.06]"
-          style={{ backgroundImage: `url(${JSON.stringify(tournament.posterUrl)})` }}
+          style={{ backgroundImage: `url(${JSON.stringify(tournament.backgroundUrl ?? tournament.posterUrl)})` }}
         />
       )}
       <SetHeaderTitle name={tournament.name} id={id} shortPath={tournament.shortPath} />

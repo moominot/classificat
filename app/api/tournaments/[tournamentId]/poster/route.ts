@@ -19,15 +19,26 @@ function imageExtension(buf: Buffer): string | null {
   return null;
 }
 
-/** Esborra el fitxer d'un cartell anterior, si és a la carpeta de cartells. */
-function removeFile(url: string | null) {
-  if (!url?.startsWith('/uploads/posters/')) return;
-  const file = path.resolve(UPLOADS_DIR, url.slice('/uploads/'.length));
-  if (file.startsWith(path.join(UPLOADS_DIR, 'posters') + path.sep)) fs.rmSync(file, { force: true });
+/** Les dues imatges d'un campionat: el cartell i la imatge de fons (`?kind=background`). */
+const KINDS = {
+  poster: { column: 'posterUrl', folder: 'posters' },
+  background: { column: 'backgroundUrl', folder: 'backgrounds' },
+} as const;
+
+function kindOf(req: Request) {
+  return new URL(req.url).searchParams.get('kind') === 'background' ? KINDS.background : KINDS.poster;
 }
 
-/** POST — Puja (o substitueix) el cartell del campionat. `multipart/form-data` amb `file`. */
+/** Esborra el fitxer d'una imatge anterior, si és a la seva carpeta. */
+function removeFile(url: string | null, folder: string) {
+  if (!url?.startsWith(`/uploads/${folder}/`)) return;
+  const file = path.resolve(UPLOADS_DIR, url.slice('/uploads/'.length));
+  if (file.startsWith(path.join(UPLOADS_DIR, folder) + path.sep)) fs.rmSync(file, { force: true });
+}
+
+/** POST — Puja (o substitueix) el cartell o la imatge de fons. `multipart/form-data` amb `file`. */
 export async function POST(req: Request, { params }: Params) {
+  const kind = kindOf(req);
   const { tournamentId } = await params;
   const guard = await requireTournamentAccess(tournamentId);
   if (guard.error) return guard.error;
@@ -44,20 +55,21 @@ export async function POST(req: Request, { params }: Params) {
   const ext = imageExtension(buffer);
   if (!ext) return NextResponse.json({ error: 'La imatge ha de ser JPG, PNG o WebP' }, { status: 400 });
 
-  const dir = path.join(UPLOADS_DIR, 'posters');
+  const dir = path.join(UPLOADS_DIR, kind.folder);
   fs.mkdirSync(dir, { recursive: true });
   const filename = `${tournamentId}-${Date.now()}.${ext}`;
   fs.writeFileSync(path.join(dir, filename), buffer);
 
-  const posterUrl = `/uploads/posters/${filename}`;
-  await db.update(tournaments).set({ posterUrl, updatedAt: new Date() }).where(eq(tournaments.id, tournamentId));
-  removeFile(existing.posterUrl);
+  const url = `/uploads/${kind.folder}/${filename}`;
+  await db.update(tournaments).set({ [kind.column]: url, updatedAt: new Date() }).where(eq(tournaments.id, tournamentId));
+  removeFile(existing[kind.column], kind.folder);
 
-  return NextResponse.json({ posterUrl }, { status: 201 });
+  return NextResponse.json({ url, posterUrl: url }, { status: 201 });
 }
 
-/** DELETE — Treu el cartell. */
-export async function DELETE(_req: Request, { params }: Params) {
+/** DELETE — Treu el cartell o la imatge de fons. */
+export async function DELETE(req: Request, { params }: Params) {
+  const kind = kindOf(req);
   const { tournamentId } = await params;
   const guard = await requireTournamentAccess(tournamentId);
   if (guard.error) return guard.error;
@@ -65,7 +77,7 @@ export async function DELETE(_req: Request, { params }: Params) {
   const [existing] = await db.select().from(tournaments).where(eq(tournaments.id, tournamentId));
   if (!existing) return NextResponse.json({ error: 'Competició no trobada' }, { status: 404 });
 
-  await db.update(tournaments).set({ posterUrl: null, updatedAt: new Date() }).where(eq(tournaments.id, tournamentId));
-  removeFile(existing.posterUrl);
-  return NextResponse.json({ posterUrl: null });
+  await db.update(tournaments).set({ [kind.column]: null, updatedAt: new Date() }).where(eq(tournaments.id, tournamentId));
+  removeFile(existing[kind.column], kind.folder);
+  return NextResponse.json({ url: null });
 }

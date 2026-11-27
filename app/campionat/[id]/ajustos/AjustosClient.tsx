@@ -62,6 +62,7 @@ export default function AjustosClient({
   diferenciaBye,
   infoPublica,
   cartell,
+  imatgeFons,
   colorTema,
 }: {
   tournamentId: string;
@@ -70,6 +71,7 @@ export default function AjustosClient({
   estat: TournamentStatus;
   infoPublica: InfoPublica;
   cartell: string | null;
+  imatgeFons: string | null;
   colorTema: TournamentAccent | null;
   visibilitat: TournamentVisibility;
   currentAccountId: string;
@@ -82,7 +84,20 @@ export default function AjustosClient({
       <General tournamentId={tournamentId} nom={nom} adrecaCurta={adrecaCurta} estat={estat} />
       <Informacio tournamentId={tournamentId} infoPublica={infoPublica} />
       <ColorTema tournamentId={tournamentId} inicial={colorTema} />
-      <Cartell tournamentId={tournamentId} inicial={cartell} />
+      <ImatgeCampionat
+        tournamentId={tournamentId}
+        kind="poster"
+        inicial={cartell}
+        titol="Cartell"
+        descripcio="Es mostra a l'inici del campionat. JPG, PNG o WebP, fins a 8 MB."
+      />
+      <ImatgeCampionat
+        tournamentId={tournamentId}
+        kind="background"
+        inicial={imatgeFons}
+        titol="Imatge de fons"
+        descripcio="Va molt atenuada darrere de totes les pàgines del campionat. Si no n'hi poses cap, hi fa de fons el cartell."
+      />
       <ClassificacioPublica tournamentId={tournamentId} visibilitat={visibilitat} />
       <Bye tournamentId={tournamentId} diferenciaBye={diferenciaBye} />
       <PublicacioRondes tournamentId={tournamentId} visibilitat={visibilitat} />
@@ -332,24 +347,41 @@ function ColorTema({ tournamentId, inicial }: { tournamentId: string; inicial: T
   );
 }
 
-/** Cartell del campionat: es veu a l'inici i, molt atenuat, de fons de totes les pàgines. */
-function Cartell({ tournamentId, inicial }: { tournamentId: string; inicial: string | null }) {
+/**
+ * Cartell i imatge de fons del campionat. El cartell es veu a l'inici; la
+ * imatge de fons, molt atenuada, darrere de totes les pàgines (si no n'hi ha,
+ * hi fa de fons el cartell).
+ */
+function ImatgeCampionat({
+  tournamentId,
+  kind,
+  inicial,
+  titol,
+  descripcio,
+}: {
+  tournamentId: string;
+  kind: 'poster' | 'background';
+  inicial: string | null;
+  titol: string;
+  descripcio: string;
+}) {
   const router = useRouter();
   const [url, setUrl] = useState(inicial);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const endpoint = `/api/tournaments/${tournamentId}/poster?kind=${kind}`;
 
   async function puja(file: File) {
     setLoading(true);
     setError('');
     const form = new FormData();
     form.append('file', file);
-    const res = await fetch(`/api/tournaments/${tournamentId}/poster`, { method: 'POST', body: form });
+    const res = await fetch(endpoint, { method: 'POST', body: form });
     if (res.ok) {
-      setUrl(((await res.json()) as { posterUrl: string }).posterUrl);
+      setUrl(((await res.json()) as { url: string }).url);
       router.refresh();
     } else {
-      setError(await readError(res, 'No s\'ha pogut pujar el cartell'));
+      setError(await readError(res, "No s'ha pogut pujar la imatge"));
     }
     setLoading(false);
   }
@@ -357,21 +389,21 @@ function Cartell({ tournamentId, inicial }: { tournamentId: string; inicial: str
   async function treu() {
     setLoading(true);
     setError('');
-    const res = await fetch(`/api/tournaments/${tournamentId}/poster`, { method: 'DELETE' });
+    const res = await fetch(endpoint, { method: 'DELETE' });
     if (res.ok) {
       setUrl(null);
       router.refresh();
     } else {
-      setError(await readError(res, 'No s\'ha pogut treure el cartell'));
+      setError(await readError(res, "No s'ha pogut treure la imatge"));
     }
     setLoading(false);
   }
 
   return (
-    <Grup titol="Cartell" descripcio="Es mostra a l'inici del campionat i, molt atenuat, de fons de les pàgines. JPG, PNG o WebP, fins a 8 MB.">
+    <Grup titol={titol} descripcio={descripcio}>
       {url && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={url} alt="Cartell del campionat" className="max-h-64 rounded-xl border border-border" />
+        <img src={url} alt={titol} className="max-h-64 rounded-xl border border-border" />
       )}
       <div className="flex items-center gap-2 flex-wrap">
         <label className="inline-flex">
@@ -387,10 +419,10 @@ function Cartell({ tournamentId, inicial }: { tournamentId: string; inicial: str
             }}
           />
           <span className="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-xl border border-border bg-surface text-ink cursor-pointer hover:border-accent transition-colors">
-            {loading ? 'Pujant…' : url ? 'Canvia el cartell' : 'Puja un cartell'}
+            {loading ? 'Pujant…' : url ? 'Canvia la imatge' : 'Puja una imatge'}
           </span>
         </label>
-        {url && <Button size="sm" variant="ghost" className="text-loss" onClick={treu} disabled={loading}>Treu-lo</Button>}
+        {url && <Button size="sm" variant="ghost" className="text-loss" onClick={treu} disabled={loading}>Treu-la</Button>}
       </div>
       {error && <p className="text-sm text-loss">{error}</p>}
     </Grup>
