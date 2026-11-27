@@ -43,6 +43,14 @@ export default async function CampionatLayout({
         entryId: viewer.entryId,
       }}
     >
+      {tournament.posterUrl && (
+        // El cartell, molt atenuat, darrere de tot el contingut del campionat.
+        <div
+          aria-hidden
+          className="pointer-events-none fixed inset-0 -z-10 bg-center bg-no-repeat bg-cover opacity-[0.06]"
+          style={{ backgroundImage: `url(${JSON.stringify(tournament.posterUrl)})` }}
+        />
+      )}
       <SetHeaderTitle name={tournament.name} id={id} shortPath={tournament.shortPath} />
       {canManage ? <AutoRefresh tournamentId={id} /> : viewer.entryId ? <PresenciaModal tournamentId={id} /> : null}
       <div className="lg:flex lg:gap-6 lg:items-start">

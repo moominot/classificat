@@ -61,12 +61,14 @@ export default function AjustosClient({
   preguntaPresencia,
   diferenciaBye,
   infoPublica,
+  cartell,
 }: {
   tournamentId: string;
   nom: string;
   adrecaCurta: string | null;
   estat: TournamentStatus;
   infoPublica: InfoPublica;
+  cartell: string | null;
   visibilitat: TournamentVisibility;
   currentAccountId: string;
   pendentsCompten: PresencePendingAs;
@@ -77,6 +79,7 @@ export default function AjustosClient({
     <div className="space-y-6 max-w-3xl">
       <General tournamentId={tournamentId} nom={nom} adrecaCurta={adrecaCurta} estat={estat} />
       <Informacio tournamentId={tournamentId} infoPublica={infoPublica} />
+      <Cartell tournamentId={tournamentId} inicial={cartell} />
       <ClassificacioPublica tournamentId={tournamentId} visibilitat={visibilitat} />
       <Bye tournamentId={tournamentId} diferenciaBye={diferenciaBye} />
       <PublicacioRondes tournamentId={tournamentId} visibilitat={visibilitat} />
@@ -275,6 +278,71 @@ function Informacio({ tournamentId, infoPublica }: { tournamentId: string; infoP
         <p className="text-xs text-ink-3">Els enllaços (https://…) es podran clicar.</p>
       </div>
       <PeuDesar loading={loading} error={error} desat={desat} onSave={desa} />
+    </Grup>
+  );
+}
+
+/** Cartell del campionat: es veu a l'inici i, molt atenuat, de fons de totes les pàgines. */
+function Cartell({ tournamentId, inicial }: { tournamentId: string; inicial: string | null }) {
+  const router = useRouter();
+  const [url, setUrl] = useState(inicial);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  async function puja(file: File) {
+    setLoading(true);
+    setError('');
+    const form = new FormData();
+    form.append('file', file);
+    const res = await fetch(`/api/tournaments/${tournamentId}/poster`, { method: 'POST', body: form });
+    if (res.ok) {
+      setUrl(((await res.json()) as { posterUrl: string }).posterUrl);
+      router.refresh();
+    } else {
+      setError(await readError(res, 'No s\'ha pogut pujar el cartell'));
+    }
+    setLoading(false);
+  }
+
+  async function treu() {
+    setLoading(true);
+    setError('');
+    const res = await fetch(`/api/tournaments/${tournamentId}/poster`, { method: 'DELETE' });
+    if (res.ok) {
+      setUrl(null);
+      router.refresh();
+    } else {
+      setError(await readError(res, 'No s\'ha pogut treure el cartell'));
+    }
+    setLoading(false);
+  }
+
+  return (
+    <Grup titol="Cartell" descripcio="Es mostra a l'inici del campionat i, molt atenuat, de fons de les pàgines. JPG, PNG o WebP, fins a 8 MB.">
+      {url && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={url} alt="Cartell del campionat" className="max-h-64 rounded-xl border border-border" />
+      )}
+      <div className="flex items-center gap-2 flex-wrap">
+        <label className="inline-flex">
+          <input
+            type="file"
+            accept="image/jpeg,image/png,image/webp"
+            className="sr-only"
+            disabled={loading}
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              e.target.value = '';
+              if (f) puja(f);
+            }}
+          />
+          <span className="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-xl border border-border bg-surface text-ink cursor-pointer hover:border-accent transition-colors">
+            {loading ? 'Pujant…' : url ? 'Canvia el cartell' : 'Puja un cartell'}
+          </span>
+        </label>
+        {url && <Button size="sm" variant="ghost" className="text-loss" onClick={treu} disabled={loading}>Treu-lo</Button>}
+      </div>
+      {error && <p className="text-sm text-loss">{error}</p>}
     </Grup>
   );
 }

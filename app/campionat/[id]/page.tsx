@@ -127,6 +127,15 @@ export default async function CampionatInici({ params }: { params: Promise<{ id:
         </span>
       </div>
 
+      {tournament.posterUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={tournament.posterUrl}
+          alt={`Cartell: ${tournament.name}`}
+          className="mx-auto max-h-[70vh] w-auto max-w-full rounded-2xl border border-border shadow-sm"
+        />
+      )}
+
       <InfoCampionat
         location={tournament.location}
         startDate={tournament.startDate}

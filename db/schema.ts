@@ -126,6 +126,8 @@ export const tournaments = sqliteTable('tournaments', {
   startDate:     text('start_date'),            // AAAA-MM-DD
   endDate:       text('end_date'),              // AAAA-MM-DD
   info:          text('info'),                  // reglament, horaris, enllaços...
+  // Cartell del campionat (/uploads/posters/...): es veu a l'inici i com a fons atenuat.
+  posterUrl:     text('poster_url'),
   createdAt:     integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt:     integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 }, (t) => [

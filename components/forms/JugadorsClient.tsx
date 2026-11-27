@@ -323,7 +323,6 @@ function JugadorRow({
           </div>
           <div className="flex gap-3 text-xs text-ink-3 mt-0.5 flex-wrap">
             {j.rating && <span>BARRUF {j.rating}</span>}
-            {j.barrufNumero && <span className="text-accent-ink font-medium">#{j.barrufNumero}</span>}
             {j.tagIds.map((id) => (
               <span key={id} className="px-1.5 py-0.5 rounded bg-accent-tint text-accent-ink">
                 {tagMap.get(id) ?? '?'}
