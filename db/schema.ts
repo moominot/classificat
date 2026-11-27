@@ -21,6 +21,7 @@ import type {
   StandingsScopeKey,
   TemplateConfig,
   TeamAggregation,
+  TournamentAccent,
   TournamentStatus,
   TournamentVisibility,
 } from './types';
@@ -128,6 +129,8 @@ export const tournaments = sqliteTable('tournaments', {
   info:          text('info'),                  // reglament, horaris, enllaços...
   // Cartell del campionat (/uploads/posters/...): es veu a l'inici i com a fons atenuat.
   posterUrl:     text('poster_url'),
+  // Color del tema del campionat (db/types.ts `TournamentAccent`); null = el de l'aplicació.
+  accent:        text('accent').$type<TournamentAccent>(),
   createdAt:     integer('created_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
   updatedAt:     integer('updated_at', { mode: 'timestamp' }).notNull().default(sql`(unixepoch())`),
 }, (t) => [

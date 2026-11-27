@@ -123,3 +123,32 @@ h1, h2, h3, .font-display {
     --text-xl--line-height: calc(1.8 / 1.3125);
   }
 }
+
+/* Color del tema d'un campionat (Ajustos → Color del tema). Tons pàlids: només
+   canvia l'accent, els seus tints i el fons de la pàgina, a partir d'un to
+   (--h) i una intensitat (--c). Sense `data-accent`, el color de l'aplicació. */
+[data-accent="orange"] { --h: 60;  --c: 0.13; }
+[data-accent="green"]  { --h: 150; --c: 0.11; }
+[data-accent="blue"]   { --h: 245; --c: 0.10; }
+[data-accent="gray"]   { --h: 260; --c: 0.015; }
+
+[data-accent] {
+  --color-accent: oklch(70% var(--c) var(--h));
+  --color-accent-ink: oklch(35% calc(var(--c) * 0.7) var(--h));
+  --color-accent-tint: oklch(95.5% calc(var(--c) * 0.25) var(--h));
+  --color-page: oklch(97.5% calc(var(--c) * 0.12) var(--h));
+}
+
+:root[data-theme="dark"] [data-accent] {
+  --color-accent-ink: oklch(82% calc(var(--c) * 0.6) var(--h));
+  --color-accent-tint: oklch(30% calc(var(--c) * 0.35) var(--h));
+  --color-page: oklch(19% calc(var(--c) * 0.1) var(--h));
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) [data-accent] {
+    --color-accent-ink: oklch(82% calc(var(--c) * 0.6) var(--h));
+    --color-accent-tint: oklch(30% calc(var(--c) * 0.35) var(--h));
+    --color-page: oklch(19% calc(var(--c) * 0.1) var(--h));
+  }
+}

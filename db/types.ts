@@ -22,6 +22,10 @@ export interface AccountPreferences {
 /** `registration`: inscripcions obertes, els jugadors s'hi poden apuntar des de l'inici. */
 export type TournamentStatus = 'draft' | 'registration' | 'active' | 'finished';
 
+/** Colors del tema que es poden triar per a un campionat (tons pàlids). */
+export const TOURNAMENT_ACCENTS = ['orange', 'green', 'blue', 'gray'] as const;
+export type TournamentAccent = (typeof TOURNAMENT_ACCENTS)[number];
+
 /** Sol·licitud d'inscripció feta pel jugador; l'accepta o la rebutja qui gestiona la competició. */
 export type RegistrationStatus = 'pending' | 'accepted' | 'rejected';
 

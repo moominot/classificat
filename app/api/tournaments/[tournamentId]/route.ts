@@ -3,7 +3,8 @@ import { and, asc, eq, ne } from 'drizzle-orm';
 import { db } from '@/db';
 import { groups, phases, teams, tournaments } from '@/db/schema';
 import { getCurrentAccount, canManageTournament, requireTournamentAccess } from '@/lib/authz';
-import type { StandingsMode, TournamentStatus } from '@/db/types';
+import { TOURNAMENT_ACCENTS } from '@/db/types';
+import type { StandingsMode, TournamentAccent, TournamentStatus } from '@/db/types';
 import { loadEntrants } from '@/lib/db-helpers';
 import { validateShortPath } from '@/lib/short-path';
 
@@ -76,6 +77,15 @@ export async function PATCH(req: Request, { params }: Params) {
       return NextResponse.json({ error: 'Valor no vàlid per a la pregunta de presència' }, { status: 400 });
     }
     updates.askPresence = body.askPresence;
+  }
+  if (body.accent !== undefined) {
+    if (body.accent === null || body.accent === '') {
+      updates.accent = null;
+    } else if (TOURNAMENT_ACCENTS.includes(body.accent)) {
+      updates.accent = body.accent as TournamentAccent;
+    } else {
+      return NextResponse.json({ error: 'Color del tema no vàlid' }, { status: 400 });
+    }
   }
   if (body.shortPath !== undefined) {
     const raw = typeof body.shortPath === 'string' ? body.shortPath.trim() : '';

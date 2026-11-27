@@ -43,6 +43,11 @@ export default async function CampionatLayout({
         entryId: viewer.entryId,
       }}
     >
+      <div data-accent={tournament.accent ?? undefined}>
+      {tournament.accent && (
+        // Fons pàlid del color del tema, per sota del cartell.
+        <div aria-hidden className="pointer-events-none fixed inset-0 -z-20" style={{ background: 'var(--color-page)' }} />
+      )}
       {tournament.posterUrl && (
         // El cartell, molt atenuat, darrere de tot el contingut del campionat.
         <div
@@ -59,6 +64,7 @@ export default async function CampionatLayout({
           <NavTabs id={id} />
           {children}
         </div>
+      </div>
       </div>
     </ViewerProvider>
   );

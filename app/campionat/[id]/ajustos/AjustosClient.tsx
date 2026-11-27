@@ -9,7 +9,7 @@ import Badge from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { readError } from '@/lib/http';
 import { slugify } from '@/lib/short-path';
-import type { PresencePendingAs, StandingsMode, TournamentStatus, TournamentVisibility } from '@/db/types';
+import type { PresencePendingAs, StandingsMode, TournamentAccent, TournamentStatus, TournamentVisibility } from '@/db/types';
 
 const ESTATS: { value: TournamentStatus; label: string }[] = [
   { value: 'draft', label: 'Esborrany' },
@@ -62,6 +62,7 @@ export default function AjustosClient({
   diferenciaBye,
   infoPublica,
   cartell,
+  colorTema,
 }: {
   tournamentId: string;
   nom: string;
@@ -69,6 +70,7 @@ export default function AjustosClient({
   estat: TournamentStatus;
   infoPublica: InfoPublica;
   cartell: string | null;
+  colorTema: TournamentAccent | null;
   visibilitat: TournamentVisibility;
   currentAccountId: string;
   pendentsCompten: PresencePendingAs;
@@ -79,6 +81,7 @@ export default function AjustosClient({
     <div className="space-y-6 max-w-3xl">
       <General tournamentId={tournamentId} nom={nom} adrecaCurta={adrecaCurta} estat={estat} />
       <Informacio tournamentId={tournamentId} infoPublica={infoPublica} />
+      <ColorTema tournamentId={tournamentId} inicial={colorTema} />
       <Cartell tournamentId={tournamentId} inicial={cartell} />
       <ClassificacioPublica tournamentId={tournamentId} visibilitat={visibilitat} />
       <Bye tournamentId={tournamentId} diferenciaBye={diferenciaBye} />
@@ -278,6 +281,53 @@ function Informacio({ tournamentId, infoPublica }: { tournamentId: string; infoP
         <p className="text-xs text-ink-3">Els enllaços (https://…) es podran clicar.</p>
       </div>
       <PeuDesar loading={loading} error={error} desat={desat} onSave={desa} />
+    </Grup>
+  );
+}
+
+const COLORS_TEMA: Array<{ valor: TournamentAccent | null; nom: string; mostra: string }> = [
+  { valor: null, nom: 'Per defecte', mostra: 'oklch(64% 0.18 45)' },
+  { valor: 'orange', nom: 'Taronja', mostra: 'oklch(78% 0.1 60)' },
+  { valor: 'green', nom: 'Verd', mostra: 'oklch(78% 0.09 150)' },
+  { valor: 'blue', nom: 'Blau', mostra: 'oklch(78% 0.08 245)' },
+  { valor: 'gray', nom: 'Gris', mostra: 'oklch(78% 0.012 260)' },
+];
+
+/** Color del tema del campionat: l'accent i un fons pàlid, per a tothom qui el miri. */
+function ColorTema({ tournamentId, inicial }: { tournamentId: string; inicial: TournamentAccent | null }) {
+  const router = useRouter();
+  const [color, setColor] = useState(inicial);
+  const [error, setError] = useState('');
+
+  async function tria(valor: TournamentAccent | null) {
+    const anterior = color;
+    setColor(valor);
+    const err = await patchCompeticio(tournamentId, { accent: valor });
+    setError(err);
+    if (err) setColor(anterior);
+    else router.refresh();
+  }
+
+  return (
+    <Grup titol="Color del tema" descripcio="Canvia el color d'accent i el fons de les pàgines d'aquest campionat. Tons pàlids.">
+      <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Color del tema">
+        {COLORS_TEMA.map((c) => (
+          <button
+            key={c.nom}
+            type="button"
+            role="radio"
+            aria-checked={color === c.valor}
+            onClick={() => tria(c.valor)}
+            className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 text-sm cursor-pointer transition-colors ${
+              color === c.valor ? 'border-accent-ink text-ink font-medium' : 'border-border text-ink-2 hover:border-accent'
+            }`}
+          >
+            <span className="w-4 h-4 rounded-full border border-border" style={{ background: c.mostra }} />
+            {c.nom}
+          </button>
+        ))}
+      </div>
+      {error && <p className="text-sm text-loss">{error}</p>}
     </Grup>
   );
 }
