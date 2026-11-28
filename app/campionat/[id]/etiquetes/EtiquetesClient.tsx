@@ -236,7 +236,7 @@ export default function EtiquetesClient({
             </div>
             <ul className="divide-y divide-border">
               {jugadors.map((j) => (
-                <li key={j.id} className="flex items-start gap-3 px-4 py-2.5">
+                <li key={j.id} className="flex flex-wrap sm:flex-nowrap items-start gap-x-3 gap-y-2 px-4 py-2.5">
                   {canManage && (
                     <input
                       type="checkbox"
@@ -248,7 +248,7 @@ export default function EtiquetesClient({
                   <div className="w-7 h-7 rounded-full bg-accent-tint flex items-center justify-center text-accent-ink text-xs font-semibold flex-shrink-0 mt-1">
                     {j.name[0]}
                   </div>
-                  <div className="mt-0.5 flex-shrink-0 w-36 sm:w-44 min-w-0">
+                  <div className="mt-0.5 flex-1 sm:flex-none min-w-0 sm:w-44">
                     <span className="block text-sm text-ink-2 truncate">{j.name}</span>
                     {(j.club || j.rating != null) && (
                       <span className="block text-xs text-ink-3 truncate">
@@ -257,7 +257,7 @@ export default function EtiquetesClient({
                     )}
                   </div>
                   {canManage ? (
-                    <div className="flex-1 min-w-0 flex flex-wrap items-start gap-2">
+                    <div className="basis-full sm:basis-0 sm:flex-1 min-w-0 flex flex-wrap items-start gap-2">
                       {equips.length > 0 && (
                         <select
                           value={j.teamId ?? ''}
@@ -271,7 +271,7 @@ export default function EtiquetesClient({
                           ))}
                         </select>
                       )}
-                      <div className="flex-1 min-w-48">
+                      <div className="flex-1 min-w-40">
                       <TagInput
                         tournamentId={tournamentId}
                         value={tagsPerJugador(j)}
@@ -280,7 +280,7 @@ export default function EtiquetesClient({
                       </div>
                     </div>
                   ) : (
-                    <div className="flex-1 flex flex-wrap gap-1 mt-1.5">
+                    <div className="basis-full sm:basis-0 sm:flex-1 flex flex-wrap gap-1 sm:mt-1.5">
                       {j.teamId && equipPerId.get(j.teamId) && (
                         <Badge color="blue">{equipPerId.get(j.teamId)!.name}</Badge>
                       )}
