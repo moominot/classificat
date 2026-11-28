@@ -291,29 +291,39 @@ export default function FormulariResultatWizard({
 
         {error && <p className="text-sm text-loss mt-4">{error}</p>}
 
-        <div className="flex gap-2 mt-6">
+        {step === confirmStepIndex && (
+          <p className="mt-4 rounded-xl bg-accent-tint border border-accent px-3 py-2 text-sm font-medium text-accent-ink">
+            Encara no s&apos;ha desat res: prem <strong>Confirma el resultat</strong> perquè quedi registrat.
+          </p>
+        )}
+      </div>
+
+      {/* Sempre visible: enganxada a baix de la pantalla, també amb el teclat obert. */}
+      <div
+        className="sticky bottom-0 z-10 flex gap-2 px-5 pt-3 bg-surface border-t border-border rounded-b-2xl shadow-[0_-6px_12px_-8px_rgba(0,0,0,0.15)]"
+        style={{ paddingBottom: 'max(0.75rem, env(safe-area-inset-bottom))' }}
+      >
+        <Button
+          variant="secondary"
+          className="flex-1 py-4 text-base"
+          disabled={step === 0 || loading}
+          onClick={() => setStep((s) => Math.max(0, s - 1))}
+        >
+          Enrere
+        </Button>
+        {step < confirmStepIndex ? (
           <Button
-            variant="secondary"
-            className="flex-1"
-            disabled={step === 0 || loading}
-            onClick={() => setStep((s) => Math.max(0, s - 1))}
+            className="flex-[2] py-4 text-lg"
+            disabled={loading}
+            onClick={() => setStep((s) => Math.min(confirmStepIndex, s + 1))}
           >
-            Enrere
+            Següent
           </Button>
-          {step < confirmStepIndex ? (
-            <Button
-              className="flex-[2]"
-              disabled={loading}
-              onClick={() => setStep((s) => Math.min(confirmStepIndex, s + 1))}
-            >
-              Següent
-            </Button>
-          ) : (
-            <Button className="flex-[2]" loading={loading} onClick={handleSubmit}>
-              Confirma el resultat
-            </Button>
-          )}
-        </div>
+        ) : (
+          <Button className="flex-[2] py-4 text-lg bg-win! hover:bg-win!" loading={loading} onClick={handleSubmit}>
+            Confirma el resultat
+          </Button>
+        )}
       </div>
     </Card>
   );
