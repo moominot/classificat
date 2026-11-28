@@ -373,6 +373,22 @@ export default function FasesClient({
   const router = useRouter();
   const canManage = useCanManage();
   const [mostrarForm, setMostrarForm] = useState(false);
+  const [errorOrdre, setErrorOrdre] = useState('');
+
+  async function mou(index: number, delta: -1 | 1) {
+    const ids = fases.map((f) => f.id);
+    const destí = index + delta;
+    if (destí < 0 || destí >= ids.length) return;
+    [ids[index], ids[destí]] = [ids[destí], ids[index]];
+    setErrorOrdre('');
+    const res = await fetch(`/api/tournaments/${tournamentId}/phases/reorder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order: ids }),
+    });
+    if (res.ok) router.refresh();
+    else setErrorOrdre(await readError(res, "Error en canviar l'ordre"));
+  }
 
   return (
     <div className="space-y-5">
@@ -418,9 +434,13 @@ export default function FasesClient({
         </div>
       ) : (
         <div className="space-y-3">
-          {fases.map((fase) => (
+          {errorOrdre && <p className="text-sm text-loss">{errorOrdre}</p>}
+          {fases.map((fase, i) => (
             <FaseCard
               key={fase.id}
+              onMou={fases.length > 1 ? (delta) => mou(i, delta) : undefined}
+              esPrimera={i === 0}
+              esUltima={i === fases.length - 1}
               fase={fase}
               tags={tags}
               entrants={entrants}
@@ -438,8 +458,11 @@ export default function FasesClient({
 // ─── Targeta de fase ──────────────────────────────────────────────────────────
 
 function FaseCard({
-  fase, tags, entrants, tournamentId, fases, onRefresh,
+  fase, tags, entrants, tournamentId, fases, onRefresh, onMou, esPrimera = false, esUltima = false,
 }: {
+  onMou?: (delta: -1 | 1) => void;
+  esPrimera?: boolean;
+  esUltima?: boolean;
   fase: Fase;
   tags: Tag[];
   entrants: EntrantOption[];
@@ -536,6 +559,12 @@ function FaseCard({
       )}
       {canManage && (
         <div className="border-t border-border px-3 py-2 flex gap-1">
+          {onMou && (
+            <>
+              <Button size="sm" variant="ghost" onClick={() => onMou(-1)} disabled={esPrimera} aria-label="Puja la fase">▲</Button>
+              <Button size="sm" variant="ghost" onClick={() => onMou(1)} disabled={esUltima} aria-label="Baixa la fase">▼</Button>
+            </>
+          )}
           <Button size="sm" variant="ghost" onClick={() => setMode('edit')}>Editar</Button>
           <Button size="sm" variant="ghost" onClick={() => setMode('delete')}
             className="text-loss hover:bg-loss-tint">Esborrar</Button>
