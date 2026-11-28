@@ -38,6 +38,33 @@ export default function JugadorsClient({
   const [mode, setMode] = useState<'llista' | 'importar'>('llista');
   const [editant, setEditant] = useState<string | null>(null);
   const [ordre, setOrdre] = useState<'nom' | 'elo'>('nom');
+  const [sincronitzant, setSincronitzant] = useState(false);
+  const [resultatSync, setResultatSync] = useState<{ ok: boolean; text: string } | null>(null);
+
+  async function actualitzaBarruf() {
+    setSincronitzant(true);
+    setResultatSync(null);
+    try {
+      const res = await fetch(`/api/tournaments/${tournamentId}/barruf-sync`, { method: 'POST' });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setResultatSync({ ok: false, text: data.error ?? "No s'ha pogut actualitzar el BARRUF" });
+      } else {
+        const sense: string[] = data.senseCoincidencia ?? [];
+        const ambigus: string[] = data.ambigus ?? [];
+        const parts = [`${data.actualitzats} actualitzat${data.actualitzats !== 1 ? 's' : ''} de ${data.total}`];
+        if (data.vinculats > 0) parts.push(`${data.vinculats} vinculat${data.vinculats !== 1 ? 's' : ''} al registre`);
+        if (sense.length > 0) parts.push(`sense coincidència: ${sense.join(', ')}`);
+        if (ambigus.length > 0) parts.push(`nom ambigu: ${ambigus.join(', ')}`);
+        setResultatSync({ ok: true, text: parts.join(' · ') });
+        router.refresh();
+      }
+    } catch {
+      setResultatSync({ ok: false, text: "No s'ha pogut contactar amb el servidor" });
+    } finally {
+      setSincronitzant(false);
+    }
+  }
 
   const tagMap = new Map(tags.map(t => [t.id, t.name]));
 
@@ -76,6 +103,11 @@ export default function JugadorsClient({
                 Importar CSV
               </Button>
             )}
+            {canManage && jugadors.length > 0 && (
+              <Button size="sm" variant="secondary" onClick={actualitzaBarruf} loading={sincronitzant}>
+                Actualitza BARRUF
+              </Button>
+            )}
             <div className="ml-auto flex items-center gap-1 text-xs text-ink-3">
               <span>Ordenar per:</span>
               {(['nom', 'elo'] as const).map(op => (
@@ -95,6 +127,12 @@ export default function JugadorsClient({
           </Button>
         )}
       </div>
+
+      {resultatSync && (
+        <p className={`text-xs rounded-lg px-3 py-2 border ${resultatSync.ok ? 'bg-surface-2 border-border text-ink-2' : 'bg-loss-tint border-loss text-loss'}`}>
+          {resultatSync.text}
+        </p>
+      )}
 
       {/* Afegir ràpidament: sempre visible per no haver de canviar de pantalla */}
       {mode === 'llista' && canManage && (

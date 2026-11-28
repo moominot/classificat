@@ -4,6 +4,7 @@ import { db } from '@/db';
 import { tournaments } from '@/db/schema';
 import { requireRole } from '@/lib/authz';
 import { getBarrufConfig } from '@/lib/settings';
+import { loadRegistre, type BarrufJugador } from '@/lib/barruf-registre';
 
 /**
  * Cerca al registre de jugadors del BARRUF (docs/api.md), per vincular-los
@@ -13,35 +14,6 @@ import { getBarrufConfig } from '@/lib/settings';
  * amb `?torneig=<id>` d'una competició amb les inscripcions obertes, el
  * jugador hi pot cercar el seu nom.
  */
-
-interface BarrufJugador {
-  numero: number;
-  nom: string;
-  club: string | null;
-  barruf: number | null;
-  categoria: string | null;
-  estat: string;
-  alies?: string[];
-}
-
-// El registre sencer es pot guardar en memòria cau un minut (docs/api.md).
-// Compartit pel procés: cada petició amb un `q` diferent es filtra en
-// memòria en lloc de tornar a demanar-lo riu amunt.
-let cache: { fetchedAt: number; jugadors: BarrufJugador[] } | null = null;
-const CACHE_MS = 60_000;
-
-async function loadRegistre(apiUrl: string): Promise<BarrufJugador[]> {
-  if (cache && Date.now() - cache.fetchedAt < CACHE_MS) return cache.jugadors;
-
-  const res = await fetch(`${apiUrl}/jugadors`);
-  if (!res.ok) throw new Error(`El BARRUF ha respost amb un error (${res.status})`);
-  // L'API embolcalla el registre: {data, edicio, temporada, jugadors: [...]}.
-  const body = await res.json();
-  const jugadors: unknown = Array.isArray(body) ? body : body?.jugadors;
-  if (!Array.isArray(jugadors)) throw new Error('Format inesperat del BARRUF');
-  cache = { fetchedAt: Date.now(), jugadors };
-  return jugadors;
-}
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
