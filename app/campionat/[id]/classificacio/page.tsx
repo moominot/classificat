@@ -346,6 +346,7 @@ export default async function ClassificacioPage({
         <div className="flex items-center gap-1.5 text-xs">
           <Link href={hrefFor({ v: null })} className={pillClass(!veureComJugador)}>Vista d&apos;administrador</Link>
           <Link href={hrefFor({ v: 'jugador' })} className={pillClass(veureComJugador)}>Vista de jugador</Link>
+          <Link href={`/campionat/${id}/projector`} target="_blank" className={`${pillClass(false)} ml-auto`}>Projector ⛶</Link>
         </div>
       )}
 
