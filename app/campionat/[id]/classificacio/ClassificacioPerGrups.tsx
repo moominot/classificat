@@ -1,6 +1,6 @@
 import type { StandingRow } from '@/lib/standings-service';
 import type { GroupBlock } from '@/lib/tag-groups';
-import ClassificacioGeneral, { type DesempatCol } from './ClassificacioGeneral';
+import ClassificacioGeneral, { type DesempatCol, type FiltreCol } from './ClassificacioGeneral';
 
 /**
  * Classificació general quan la fase parteix els jugadors per etiquetes: un
@@ -13,15 +13,17 @@ export default function ClassificacioPerGrups({
   tournamentId,
   blocs,
   desempats,
+  filtre,
 }: {
   tournamentId: string;
   blocs: GroupBlock<StandingRow>[];
   desempats: DesempatCol[];
+  filtre?: FiltreCol;
 }) {
   // Al final de l'eliminatòria cada grup és una posició: una capçalera per
   // jugador no aporta res, i la taula única ja té les posicions contínues.
   if (blocs.every((b) => b.tag !== null && b.rows.length === 1)) {
-    return <ClassificacioGeneral tournamentId={tournamentId} standings={blocs.flatMap((b) => b.rows)} desempats={desempats} />;
+    return <ClassificacioGeneral tournamentId={tournamentId} standings={blocs.flatMap((b) => b.rows)} desempats={desempats} filtre={filtre} />;
   }
 
   // El bloc «Sense grup» no compta per decidir quin és l'últim grup.
@@ -42,7 +44,7 @@ export default function ClassificacioPerGrups({
                 jugador{bloc.rows.length !== 1 ? 's' : ''}
               </span>
             </header>
-            <ClassificacioGeneral tournamentId={tournamentId} standings={bloc.rows} desempats={desempats} />
+            <ClassificacioGeneral tournamentId={tournamentId} standings={bloc.rows} desempats={desempats} filtre={filtre} />
           </section>
         );
       })}

@@ -170,6 +170,33 @@ export default async function ClassificacioPage({
     ? vista.standings.filter((s) => passaFiltre(s.entryId, s.displayName, s.tagIds, s.teamId))
     : vista.standings;
 
+  // Posició dins la classificació filtrada (els empats comparteixen posició)
+  // i els criteris que l'expliquen, per a la columna «Filtre».
+  const posicionsFiltre: Record<string, number> = {};
+  if (hiHaFiltre) {
+    let pos = 0;
+    standingsFiltrats.forEach((s, i) => {
+      if (i === 0 || s.rank !== standingsFiltrats[i - 1].rank) pos = i + 1;
+      posicionsFiltre[s.entryId] = pos;
+    });
+  }
+  const nomsEtiquetesSel = tagsSeleccionades.map((tid) => totesEtiquetes.find((t) => t.id === tid)?.name ?? '?');
+  const nomEquipSel = equipSeleccionat ? (totsEquips.find((e) => e.id === equipSeleccionat)?.name ?? '?') : null;
+  const criterisFiltre = [
+    ...(cerca ? [`Nom o club: «${sp.q!.trim()}»`] : []),
+    ...(barrufValor !== null ? [`BARRUF ${barrufComparador === 'lt' ? '<' : '>'} ${barrufValor}`] : []),
+    ...(nomEquipSel ? [`Equip: ${nomEquipSel}`] : []),
+    ...nomsEtiquetesSel.map((n) => `Etiqueta: ${n}`),
+  ];
+  // Un sol criteri i és una etiqueta: el seu nom fa de capçalera.
+  const filtreClassificacio = hiHaFiltre
+    ? {
+        titol: criterisFiltre.length === 1 && nomsEtiquetesSel.length === 1 ? nomsEtiquetesSel[0] : null,
+        criteris: criterisFiltre,
+        posicions: posicionsFiltre,
+      }
+    : undefined;
+
   // Mètriques que tenen pestanya pròpia: les preguntes marcades per al
   // rànquing (Bingos, Millor jugada...), no els desempats configurats.
   const metriquesRanquing = totesPreguntes
@@ -398,6 +425,9 @@ export default async function ClassificacioPage({
           vistaJugador={veureComJugador}
           equips={totsEquips}
           equipSeleccionat={equipSeleccionat}
+          canManage={canManage}
+          entryIdsFiltrats={hiHaFiltre ? standingsFiltrats.map((s) => s.entryId) : []}
+          criterisFiltre={criterisFiltre}
         />
       </div>
 
@@ -449,9 +479,9 @@ export default async function ClassificacioPage({
           )}
         </>
       ) : pestanya === 'general' && blocsGrups ? (
-        <ClassificacioPerGrups tournamentId={id} blocs={blocsGrups} desempats={desempatsGeneral} />
+        <ClassificacioPerGrups tournamentId={id} blocs={blocsGrups} desempats={desempatsGeneral} filtre={filtreClassificacio} />
       ) : pestanya === 'general' ? (
-        <ClassificacioGeneral tournamentId={id} standings={standingsFiltrats} desempats={desempatsGeneral} />
+        <ClassificacioGeneral tournamentId={id} standings={standingsFiltrats} desempats={desempatsGeneral} filtre={filtreClassificacio} />
       ) : pestanya === 'partida-conjunta' ? (
         <RanquingPartidaConjunta
           tournamentId={id}

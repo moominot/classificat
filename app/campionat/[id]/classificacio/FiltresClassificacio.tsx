@@ -25,6 +25,9 @@ export default function FiltresClassificacio({
   vistaJugador = false,
   equips = [],
   equipSeleccionat = null,
+  canManage = false,
+  entryIdsFiltrats = [],
+  criterisFiltre = [],
 }: {
   tournamentId: string;
   pestanya: string;
@@ -41,6 +44,10 @@ export default function FiltresClassificacio({
   vistaJugador?: boolean;
   equips?: { id: string; name: string }[];
   equipSeleccionat?: string | null;
+  canManage?: boolean;
+  /** Jugadors que passen el filtre actual, per crear-ne una etiqueta. */
+  entryIdsFiltrats?: string[];
+  criterisFiltre?: string[];
 }) {
   const router = useRouter();
   const [obert, setObert] = useState(false);
@@ -79,6 +86,39 @@ export default function FiltresClassificacio({
     if (faseVal) params.set('f', faseVal);
     if (tagsVal.length > 0) params.set('tags', tagsVal.join(','));
     navega(params);
+  }
+
+  const [nomEtiqueta, setNomEtiqueta] = useState('');
+  const [creant, setCreant] = useState(false);
+  const [errorEtiqueta, setErrorEtiqueta] = useState('');
+
+  async function creaEtiquetaDelFiltre() {
+    const nom = nomEtiqueta.trim();
+    if (!nom || entryIdsFiltrats.length === 0) return;
+    setCreant(true);
+    setErrorEtiqueta('');
+    try {
+      const r1 = await fetch(`/api/tournaments/${tournamentId}/tags`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: nom }),
+      });
+      if (!r1.ok) throw new Error();
+      const tag = await r1.json();
+      const r2 = await fetch(`/api/tournaments/${tournamentId}/entries/bulk-tags`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ entryIds: entryIdsFiltrats, tagId: tag.id, action: 'add' }),
+      });
+      if (!r2.ok) throw new Error();
+      setNomEtiqueta('');
+      setObert(false);
+      router.refresh();
+    } catch {
+      setErrorEtiqueta("No s'ha pogut crear o assignar l'etiqueta.");
+    } finally {
+      setCreant(false);
+    }
   }
 
   function treuFiltres() {
@@ -201,6 +241,31 @@ export default function FiltresClassificacio({
             )}
           </div>
         </form>
+
+        {canManage && entryIdsFiltrats.length > 0 && (
+          <div className="mt-5 pt-4 border-t border-border space-y-2">
+            <label className="block text-sm font-medium text-ink-2">
+              Crea una etiqueta amb els {entryIdsFiltrats.length} jugadors filtrats
+            </label>
+            {criterisFiltre.length > 0 && (
+              <p className="text-xs text-ink-3">Filtre aplicat: {criterisFiltre.join(' · ')}</p>
+            )}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={nomEtiqueta}
+                onChange={(e) => setNomEtiqueta(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); creaEtiquetaDelFiltre(); } }}
+                placeholder="Nom de l'etiqueta"
+                className="flex-1 min-w-0 text-sm border border-border rounded-lg px-3 py-2 bg-surface text-ink"
+              />
+              <Button type="button" variant="secondary" onClick={creaEtiquetaDelFiltre} loading={creant} disabled={!nomEtiqueta.trim()}>
+                Crea i assigna
+              </Button>
+            </div>
+            {errorEtiqueta && <p className="text-xs text-loss">{errorEtiqueta}</p>}
+          </div>
+        )}
       </Modal>
     </>
   );

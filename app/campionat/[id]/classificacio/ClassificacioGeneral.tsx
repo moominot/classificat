@@ -10,6 +10,14 @@ export interface DesempatCol {
   label: string;
 }
 
+/** Columna «Filtre»: posició dins la classificació filtrada. */
+export interface FiltreCol {
+  /** Nom de l'etiqueta quan és l'únic filtre; si no, «Filtre» amb els criteris desplegables. */
+  titol: string | null;
+  criteris: string[];
+  posicions: Record<string, number>;
+}
+
 /**
  * Classificació general: taula a pc, targetes a mòbil.
  *
@@ -23,10 +31,12 @@ export default function ClassificacioGeneral({
   tournamentId,
   standings,
   desempats,
+  filtre,
 }: {
   tournamentId: string;
   standings: StandingRow[];
   desempats: DesempatCol[];
+  filtre?: FiltreCol;
 }) {
   const [oberts, setOberts] = useState<Set<string>>(new Set());
 
@@ -48,6 +58,18 @@ export default function ClassificacioGeneral({
             <thead>
               <tr className="text-left text-[11px] uppercase tracking-wide text-ink-3 border-b border-border">
                 <th className="px-3 py-2 font-semibold">#</th>
+                {filtre && (
+                  <th className="px-2 py-2 font-semibold text-right whitespace-nowrap">
+                    {filtre.titol ?? (
+                      <details className="relative inline-block text-left normal-case">
+                        <summary className="cursor-pointer uppercase list-none">Filtre ▾</summary>
+                        <ul className="absolute z-10 mt-1 min-w-44 bg-surface border border-border rounded-lg shadow-lg p-2 space-y-1 text-xs font-normal text-ink-2">
+                          {filtre.criteris.map((c) => <li key={c}>{c}</li>)}
+                        </ul>
+                      </details>
+                    )}
+                  </th>
+                )}
                 <th className="px-2 py-2 font-semibold">Jugador</th>
                 <th className="px-2 py-2 font-semibold text-right whitespace-nowrap">Partides</th>
                 <th className="px-2 py-2 font-semibold text-right">V-E-D</th>
@@ -63,6 +85,11 @@ export default function ClassificacioGeneral({
               {standings.map((s) => (
                 <tr key={s.entryId} className="hover:bg-surface-2 transition-colors">
                   <td className="px-3 py-2.5 font-display font-bold text-ink-2 tabular-nums">{s.rank}</td>
+                  {filtre && (
+                    <td className="px-2 py-2.5 text-right font-display font-bold text-accent-ink tabular-nums">
+                      {filtre.posicions[s.entryId] ?? ''}
+                    </td>
+                  )}
                   <td className="px-2 py-2.5 min-w-[9rem]">
                     <Link
                       href={`/campionat/${tournamentId}/jugadors/${s.entryId}`}
@@ -115,6 +142,11 @@ export default function ClassificacioGeneral({
                   <span className="text-sm text-ink-3 tabular-nums">
                     {s.gamesPlayed} partides · {s.wins}-{s.draws}-{s.losses}
                   </span>
+                  {filtre && filtre.posicions[s.entryId] != null && (
+                    <span className="block text-xs text-accent-ink tabular-nums">
+                      {filtre.titol ?? 'Filtre'}: posició {filtre.posicions[s.entryId]}
+                    </span>
+                  )}
                 </div>
                 <span className="font-display font-black text-xl text-ink tabular-nums flex-shrink-0">
                   {formatMetric('points', s.points)}
@@ -133,6 +165,9 @@ export default function ClassificacioGeneral({
 
               {obert && desempats.length > 0 && (
                 <div className="border-t border-border divide-y divide-border">
+                  {filtre && !filtre.titol && filtre.criteris.length > 0 && (
+                    <div className="px-4 py-2.5 text-xs text-ink-3">Filtre: {filtre.criteris.join(' · ')}</div>
+                  )}
                   {desempats.map((d) => (
                     <div key={d.key} className="flex items-center justify-between px-4 py-2.5">
                       <span className="text-sm text-ink-2">{d.label}</span>

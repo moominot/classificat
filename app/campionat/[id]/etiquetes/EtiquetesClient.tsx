@@ -12,7 +12,7 @@ import TagInput from '@/components/forms/TagInput';
 import { useCanManage } from '@/components/ViewerContext';
 import type { Tag } from '@/lib/pairing/types';
 
-interface Jugador { id: string; name: string; tagIds: string[]; teamId: string | null; isActive: boolean }
+interface Jugador { id: string; name: string; tagIds: string[]; teamId: string | null; club: string | null; rating: number | null; isActive: boolean }
 interface Equip { id: string; name: string }
 
 export default function EtiquetesClient({
@@ -248,7 +248,14 @@ export default function EtiquetesClient({
                   <div className="w-7 h-7 rounded-full bg-accent-tint flex items-center justify-center text-accent-ink text-xs font-semibold flex-shrink-0 mt-1">
                     {j.name[0]}
                   </div>
-                  <span className="text-sm text-ink-2 mt-1.5 flex-shrink-0 w-32 truncate">{j.name}</span>
+                  <div className="mt-0.5 flex-shrink-0 w-36 sm:w-44 min-w-0">
+                    <span className="block text-sm text-ink-2 truncate">{j.name}</span>
+                    {(j.club || j.rating != null) && (
+                      <span className="block text-xs text-ink-3 truncate">
+                        {[j.rating != null ? `BARRUF ${j.rating}` : null, j.club].filter(Boolean).join(' · ')}
+                      </span>
+                    )}
+                  </div>
                   {canManage ? (
                     <div className="flex-1 min-w-0 flex flex-wrap items-start gap-2">
                       {equips.length > 0 && (
