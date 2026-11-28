@@ -29,7 +29,12 @@ export async function POST(req: Request, { params }: Params) {
     return NextResponse.json({ error: 'La llista ha de contenir exactament totes les fases' }, { status: 400 });
   }
 
+  // L'índex únic (competició, ordre) xoca si es renumera una fila a la vegada:
+  // primer es passen a valors negatius lliures i després als definitius.
   db.transaction((tx) => {
+    (ids as string[]).forEach((id, i) => {
+      tx.update(phases).set({ order: -(i + 1) }).where(eq(phases.id, id)).run();
+    });
     (ids as string[]).forEach((id, i) => {
       tx.update(phases).set({ order: i + 1 }).where(eq(phases.id, id)).run();
     });
